@@ -8,6 +8,8 @@ package io.opentelemetry.android.instrumentation.navigation.view
 import android.app.Activity
 import android.app.Application
 import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.fragment.app.DialogFragment
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
@@ -18,6 +20,7 @@ import io.opentelemetry.android.instrumentation.navigation.view.models.Navigatio
 import io.opentelemetry.android.instrumentation.navigation.view.models.NavigationNode
 import io.opentelemetry.android.instrumentation.navigation.view.models.NavigationNodeType
 import io.opentelemetry.android.instrumentation.navigation.view.models.NavigationTransitionCandidate
+import io.opentelemetry.android.instrumentation.navigation.view.models.NavigationTrigger
 import io.opentelemetry.android.instrumentation.navigation.view.models.NavigationTransitionType
 import io.opentelemetry.android.instrumentation.navigation.view.models.resolveEntryType
 import io.opentelemetry.sdk.common.Clock
@@ -35,6 +38,10 @@ internal class ViewNavigationCollector(
     private val screenNameExtractor: ScreenNameExtractor = DefaultScreenNameExtractor,
 ) : Application.ActivityLifecycleCallbacks {
 
+    private companion object {
+        const val BACK_PRESS_SIGNAL_TTL_NS: Long = 1_000_000_000L
+    }
+
     /** The currently tracked navigation destination, representing the actively displayed screen. */
     private var currentVisibleNode: NavigationNode? = null
 
@@ -42,7 +49,7 @@ internal class ViewNavigationCollector(
      * Set when the currently paused Activity is finishing, so the next Activity resume can be
      * classified as a [NavigationTransitionType.POP].
      */
-    private var finishingActivityPaused: Boolean = false
+    private var finishingActivityPaused: Activity? = null
 
     /**
      * Stores the historical backstack frame count for each FragmentManager. By comparing
@@ -59,6 +66,15 @@ internal class ViewNavigationCollector(
     private val registeredFragmentManagers: MutableSet<FragmentManager> =
         Collections.newSetFromMap(WeakHashMap())
 
+    /** Tracks the host Activity for each registered FragmentManager. */
+    private val hostActivityByFragmentManager: MutableMap<FragmentManager, Activity> = WeakHashMap()
+
+    /** Back press callbacks registered on supported AndroidX Activity hosts. */
+    private val backPressedCallbacks: MutableMap<ComponentActivity, OnBackPressedCallback> = WeakHashMap()
+
+    /** Timestamp of the most recent observed user back press for each host Activity. */
+    private val pendingBackPressByActivity: MutableMap<Activity, Long> = WeakHashMap()
+
     /**
      * Tracks [Activity] instances that have already been resumed at least once. The first resume
      * of an Activity instance reflects how it was launched (intent extras, deep link, etc.).
@@ -72,14 +88,18 @@ internal class ViewNavigationCollector(
         activity: Activity,
         savedInstanceState: Bundle?,
     ) {
+        if (activity is ComponentActivity) {
+            registerBackPressedCallbackIfNeeded(activity)
+        }
         if (activity is FragmentActivity) {
-            registerFragmentCallbacksIfNeeded(activity.supportFragmentManager)
+            registerFragmentCallbacksIfNeeded(activity.supportFragmentManager, activity)
         }
     }
 
     override fun onActivityResumed(activity: Activity) {
-        val isPop = finishingActivityPaused
-        finishingActivityPaused = false
+        val popSource = finishingActivityPaused
+        finishingActivityPaused = null
+        val transitionType = if (popSource != null) NavigationTransitionType.POP else NavigationTransitionType.PUSH
 
         val isFirstResume = resumedActivities.add(activity)
         val entryType =
@@ -88,28 +108,36 @@ internal class ViewNavigationCollector(
         val destination = NavigationNode(NavigationNodeType.ACTIVITY, screenNameExtractor.extract(activity))
         emitTransitionIfNeeded(
             destination = destination,
-            transitionType = if (isPop) NavigationTransitionType.POP else NavigationTransitionType.PUSH,
+            transitionType = transitionType,
             entryType = entryType,
+            trigger = resolveTrigger(transitionType, popSource),
         )
     }
 
     override fun onActivityPaused(activity: Activity) {
         if (activity.isFinishing) {
-            finishingActivityPaused = true
+            finishingActivityPaused = activity
         }
     }
 
     override fun onActivityDestroyed(activity: Activity) {
         resumedActivities.remove(activity)
+        if (activity is ComponentActivity) {
+            unregisterBackPressedCallbackIfNeeded(activity)
+        }
         if (activity is FragmentActivity) {
             unregisterFragmentCallbacksIfNeeded(activity.supportFragmentManager)
         }
     }
 
-    private fun registerFragmentCallbacksIfNeeded(fragmentManager: FragmentManager) {
+    private fun registerFragmentCallbacksIfNeeded(
+        fragmentManager: FragmentManager,
+        hostActivity: Activity,
+    ) {
         if (!registeredFragmentManagers.add(fragmentManager)) {
             return
         }
+        hostActivityByFragmentManager[fragmentManager] = hostActivity
         backstackCountByManager[fragmentManager] = fragmentManager.backStackEntryCount
         fragmentManager.registerFragmentLifecycleCallbacks(fragmentLifecycleCallbacks, true)
     }
@@ -120,6 +148,36 @@ internal class ViewNavigationCollector(
         }
         fragmentManager.unregisterFragmentLifecycleCallbacks(fragmentLifecycleCallbacks)
         backstackCountByManager.remove(fragmentManager)
+        hostActivityByFragmentManager.remove(fragmentManager)
+    }
+
+    private fun registerBackPressedCallbackIfNeeded(activity: ComponentActivity) {
+        if (backPressedCallbacks.containsKey(activity)) {
+            return
+        }
+
+        val callback =
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    pendingBackPressByActivity[activity] = clock.now()
+                    isEnabled = false
+                    try {
+                        activity.onBackPressedDispatcher.onBackPressed()
+                    } finally {
+                        isEnabled = true
+                    }
+                }
+            }
+
+        backPressedCallbacks[activity] = callback
+        activity.onBackPressedDispatcher.addCallback(callback)
+    }
+
+    private fun unregisterBackPressedCallbackIfNeeded(activity: ComponentActivity) {
+        backPressedCallbacks.remove(activity)?.remove()
+        if (finishingActivityPaused !== activity) {
+            pendingBackPressByActivity.remove(activity)
+        }
     }
 
     /**
@@ -131,9 +189,14 @@ internal class ViewNavigationCollector(
         registeredFragmentManagers.toList().forEach { fragmentManager ->
             unregisterFragmentCallbacksIfNeeded(fragmentManager)
         }
+        backPressedCallbacks.values.toList().forEach { callback ->
+            callback.remove()
+        }
+        backPressedCallbacks.clear()
+        pendingBackPressByActivity.clear()
         resumedActivities.clear()
         currentVisibleNode = null
-        finishingActivityPaused = false
+        finishingActivityPaused = null
     }
 
     /**
@@ -144,6 +207,7 @@ internal class ViewNavigationCollector(
         destination: NavigationNode,
         transitionType: NavigationTransitionType,
         entryType: NavigationEntryType,
+        trigger: NavigationTrigger,
     ) {
         val source = currentVisibleNode
         if (source != null && source == destination) {
@@ -156,6 +220,7 @@ internal class ViewNavigationCollector(
                 destination = destination,
                 transitionType = transitionType,
                 entryType = entryType,
+                trigger = trigger,
                 timestampNanos = clock.now(),
             ),
         )
@@ -172,13 +237,36 @@ internal class ViewNavigationCollector(
                     return
                 }
 
+                val transitionType = inferFragmentTransitionType(fm)
+
                 emitTransitionIfNeeded(
                     destination = NavigationNode(NavigationNodeType.FRAGMENT, screenNameExtractor.extract(f)),
-                    transitionType = inferFragmentTransitionType(fm),
+                    transitionType = transitionType,
                     entryType = NavigationEntryType.INTERNAL,
+                    trigger = resolveTrigger(transitionType, hostActivityByFragmentManager[fm]),
                 )
             }
         }
+
+    private fun resolveTrigger(
+        transitionType: NavigationTransitionType,
+        hostActivity: Activity?,
+    ): NavigationTrigger {
+        if (transitionType != NavigationTransitionType.POP || hostActivity !is ComponentActivity) {
+            return NavigationTrigger.UNKNOWN
+        }
+
+        return if (consumeBackPressSignal(hostActivity)) {
+            NavigationTrigger.BACK_PRESS
+        } else {
+            NavigationTrigger.PROGRAMMATIC
+        }
+    }
+
+    private fun consumeBackPressSignal(activity: Activity): Boolean {
+        val backPressTimestamp = pendingBackPressByActivity.remove(activity) ?: return false
+        return clock.now() - backPressTimestamp <= BACK_PRESS_SIGNAL_TTL_NS
+    }
 
     /**
      * Derives the logical Fragment transition type from back stack depth changes.

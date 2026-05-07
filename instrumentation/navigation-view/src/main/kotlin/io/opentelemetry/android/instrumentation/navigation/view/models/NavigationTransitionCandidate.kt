@@ -12,6 +12,7 @@ package io.opentelemetry.android.instrumentation.navigation.view.models
  * @property destination Screen that became visible.
  * @property transitionType Inferred direction of the transition ([NavigationTransitionType]).
  * @property entryType How the destination Activity was entered (Activity transitions only).
+ * @property trigger Best-effort cause attribution for the transition ([NavigationTrigger]).
  * @property timestampNanos Wall-clock time from [io.opentelemetry.sdk.common.Clock.now] (nanoseconds since epoch).
  */
 internal data class NavigationTransitionCandidate(
@@ -19,5 +20,6 @@ internal data class NavigationTransitionCandidate(
     val destination: NavigationNode,
     val transitionType: NavigationTransitionType,
     val entryType: NavigationEntryType,
+    val trigger: NavigationTrigger,
     val timestampNanos: Long,
 )

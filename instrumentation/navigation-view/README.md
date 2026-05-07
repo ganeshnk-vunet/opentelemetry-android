@@ -46,6 +46,7 @@ this repository.
 | **`navigation.destination.name`** | Human-readable destination label from **`ScreenNameExtractor`** (defaults to **`DefaultScreenNameExtractor`**). |
 | **`navigation.transition.type`** | **`push`** — new destination on stack; **`pop`** — back / finish surfaced as return to previous Activity; **`replace`** — inferred when a Fragment replaces another without shrinking the fragment back stack. |
 | **`navigation.entry.type`** | Only meaningful for Activity-driven transitions when that Activity **first** resumes (`internal`, `deep_link`, `external` — see [Entry-type heuristics](#entry-type-heuristics)). Fragment transitions always emit **`internal`**. Subsequent resumes of the **same Activity instance** use **`internal`**. |
+| **`navigation.trigger`** | Best-effort cause attribution for the transition. `back_press` is emitted only when a supported AndroidX host reports a user back press immediately before a detected `pop`. `programmatic` is emitted for `pop` transitions on supported hosts when no matching back press is observed. `unknown` is emitted for non-`pop` transitions and hosts where back press observation is unavailable. |
 | **`navigation.timestamp_ns`** | **`Clock.now()`** from **`OpenTelemetryRum`** — **nanoseconds since Unix epoch**, matching OpenTelemetry SDK `Clock` units. |
 
 When a prior screen exists (**not** cold start):
@@ -62,10 +63,12 @@ Also set:
 |-----------|-----------|
 | **`screen.name`** | Destination screen name (matches destination; applied after span start so it wins over default appenders where relevant). |
 
-**Not emitted:** causes such as user tap vs programmatic navigation are intentionally **not**
-encoded as attributes here. If **`hybrid-click`** / **`view-click`** runs in the same app, a tap
-that synchronously triggers navigation typically leaves **`ui.click`** current when the lifecycle
-runs, so backends can correlate **`parentSpanId`** → **`ui.click`** vs no parent trace link.
+**Not emitted:** forward-navigation causes such as user tap vs programmatic navigation are still
+not encoded as attributes here. The collector now emits **`navigation.trigger`** only for
+best-effort `pop` attribution on supported AndroidX hosts; other transitions remain conservative.
+If **`hybrid-click`** / **`view-click`** runs in the same app, a tap that synchronously triggers
+navigation typically leaves **`ui.click`** current when the lifecycle runs, so backends can
+correlate **`parentSpanId`** → **`ui.click`** vs no parent trace link.
 
 ### Entry-type heuristics
 
@@ -98,12 +101,16 @@ per-`FragmentManager` lifecycle listeners are removed.
 ## Implementation notes (for maintainers & power users)
 
 * **Activity `pop`:** when the paused Activity’s **`isFinishing`** is true, the next **`onResume`**
-  on another Activity is classified as **`pop`**. This does **not** distinguish user back press from
-  **`finish()`** in code.
+  on another Activity is classified as **`pop`**. On **`ComponentActivity`** hosts, an
+  **`OnBackPressedDispatcher`** callback marks a short-lived signal so the collector can upgrade
+  that `pop` to **`navigation.trigger=back_press`** when the user invoked system back. If the host
+  supports dispatcher observation and no matching back press was seen, the trigger becomes
+  **`programmatic`**; unsupported hosts remain **`unknown`**.
 * **Fragment `pop` vs `replace` vs `push`:** driven by **FragmentManager back stack count** and
   whether the current visible node was already a **fragment**. Forward **`replace()`** that removes
   the previous fragment does **not** rely on `onFragmentDestroyed` for classification (avoids
-  mis-labeling replace as pop).
+  mis-labeling replace as pop). Fragment `pop` transitions on supported AndroidX hosts use the same
+  short-lived back press signal for **`navigation.trigger`** correlation.
 * **Registration scope:** one **`FragmentManager.FragmentLifecycleCallbacks`** per
   **`FragmentActivity.supportFragmentManager`**, keyed weakly so managers are not leaked if unpaired
   destroy paths occur.

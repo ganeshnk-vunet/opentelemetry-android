@@ -15,6 +15,7 @@ import io.opentelemetry.android.instrumentation.navigation.view.ViewNavigationCo
 import io.opentelemetry.android.instrumentation.navigation.view.ViewNavigationConstants.NAVIGATION_SOURCE_NAME_KEY
 import io.opentelemetry.android.instrumentation.navigation.view.ViewNavigationConstants.NAVIGATION_SOURCE_TYPE_KEY
 import io.opentelemetry.android.instrumentation.navigation.view.ViewNavigationConstants.NAVIGATION_TIMESTAMP_NS_KEY
+import io.opentelemetry.android.instrumentation.navigation.view.ViewNavigationConstants.NAVIGATION_TRIGGER_KEY
 import io.opentelemetry.android.instrumentation.navigation.view.ViewNavigationConstants.SPAN_NAME
 import io.opentelemetry.android.instrumentation.navigation.view.models.NavigationTransitionCandidate
 
@@ -29,6 +30,7 @@ internal class ViewNavigationSpanEmitter(
                 .setAttribute(NAVIGATION_DESTINATION_NAME_KEY, candidate.destination.name)
                 .setAttribute(NAVIGATION_TRANSITION_TYPE_KEY, candidate.transitionType.value)
                 .setAttribute(NAVIGATION_ENTRY_TYPE_KEY, candidate.entryType.value)
+                .setAttribute(NAVIGATION_TRIGGER_KEY, candidate.trigger.value)
                 .setAttribute(NAVIGATION_TIMESTAMP_NS_KEY, candidate.timestampNanos)
 
         candidate.source?.let {

@@ -8,6 +8,8 @@ package io.opentelemetry.android.instrumentation.navigation.view
 import android.app.Activity
 import android.app.Application
 import android.content.Intent
+import androidx.activity.OnBackPressedCallback
+import androidx.activity.OnBackPressedDispatcher
 import androidx.fragment.app.DialogFragment
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
@@ -150,6 +152,69 @@ class ViewNavigationCollectorTest {
         val spans = exporter.finishedSpanItems
         assertThat(spans).hasSize(2)
         assertThat(spans[1].attributes.get(ViewNavigationConstants.NAVIGATION_TRANSITION_TYPE_KEY)).isEqualTo("pop")
+        assertThat(spans[1].attributes.get(ViewNavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("unknown")
+    }
+
+    @Test
+    fun emits_back_press_trigger_for_activity_pop_on_supported_host() {
+        val dispatcher = OnBackPressedDispatcher()
+        every { fragmentActivity.onBackPressedDispatcher } returns dispatcher
+        every { fragmentActivity.intent } returns mainIntent()
+        every { fragmentActivity.isFinishing } returns true
+
+        val home = mockActivity()
+        val collector = createCollector(mapOf(fragmentActivity to "DetailsActivity", home to "HomeActivity"))
+
+        collector.onActivityCreated(fragmentActivity, null)
+        collector.onActivityResumed(fragmentActivity)
+        dispatcher.onBackPressed()
+        collector.onActivityPaused(fragmentActivity)
+        collector.onActivityResumed(home)
+
+        val spans = exporter.finishedSpanItems
+        assertThat(spans).hasSize(2)
+        assertThat(spans[1].attributes.get(ViewNavigationConstants.NAVIGATION_TRANSITION_TYPE_KEY)).isEqualTo("pop")
+        assertThat(spans[1].attributes.get(ViewNavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("back_press")
+    }
+
+    @Test
+    fun forwards_back_press_to_existing_dispatcher_callbacks() {
+        val callbackEvents = mutableListOf<String>()
+        val dispatcher = OnBackPressedDispatcher()
+        dispatcher.addCallback(
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    callbackEvents += "app"
+                }
+            },
+        )
+        every { fragmentActivity.onBackPressedDispatcher } returns dispatcher
+
+        val collector = createCollector(mapOf(fragmentActivity to "HostActivity"))
+
+        collector.onActivityCreated(fragmentActivity, null)
+        dispatcher.onBackPressed()
+
+        assertThat(callbackEvents).containsExactly("app")
+    }
+
+    @Test
+    fun emits_programmatic_trigger_for_activity_pop_without_back_press_on_supported_host() {
+        every { fragmentActivity.intent } returns mainIntent()
+        every { fragmentActivity.onBackPressedDispatcher } returns OnBackPressedDispatcher()
+        every { fragmentActivity.isFinishing } returns true
+
+        val home = mockActivity()
+        val collector = createCollector(mapOf(fragmentActivity to "DetailsActivity", home to "HomeActivity"))
+
+        collector.onActivityCreated(fragmentActivity, null)
+        collector.onActivityResumed(fragmentActivity)
+        collector.onActivityPaused(fragmentActivity)
+        collector.onActivityResumed(home)
+
+        val spans = exporter.finishedSpanItems
+        assertThat(spans).hasSize(2)
+        assertThat(spans[1].attributes.get(ViewNavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("programmatic")
     }
 
     @Test
@@ -193,6 +258,7 @@ class ViewNavigationCollectorTest {
         every { fragmentActivity.supportFragmentManager } returns fragmentManager
         every { fragmentManager.backStackEntryCount } returnsMany listOf(0, 1, 2, 1)
         every { fragmentActivity.intent } returns mainIntent()
+        every { fragmentActivity.onBackPressedDispatcher } returns OnBackPressedDispatcher()
 
         val home = mockFragment("HomeFragment")
         val details = mockFragment("DetailsFragment")
@@ -218,6 +284,43 @@ class ViewNavigationCollectorTest {
         val spans = exporter.finishedSpanItems
         assertThat(spans).hasSize(4)
         assertThat(spans[3].attributes.get(ViewNavigationConstants.NAVIGATION_TRANSITION_TYPE_KEY)).isEqualTo("pop")
+        assertThat(spans[3].attributes.get(ViewNavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("programmatic")
+    }
+
+    @Test
+    fun emits_back_press_trigger_for_fragment_pop_when_backstack_shrinks_after_back_press() {
+        val dispatcher = OnBackPressedDispatcher()
+        every { fragmentActivity.supportFragmentManager } returns fragmentManager
+        every { fragmentManager.backStackEntryCount } returnsMany listOf(0, 1, 2, 1)
+        every { fragmentActivity.intent } returns mainIntent()
+        every { fragmentActivity.onBackPressedDispatcher } returns dispatcher
+
+        val home = mockFragment("HomeFragment")
+        val details = mockFragment("DetailsFragment")
+
+        val collector =
+            createCollector(
+                mapOf(
+                    fragmentActivity to "HostActivity",
+                    home to "HomeFragment",
+                    details to "DetailsFragment",
+                ),
+            )
+        collector.onActivityCreated(fragmentActivity, null)
+        collector.onActivityResumed(fragmentActivity)
+
+        val lifecycleSlot = slot<FragmentManager.FragmentLifecycleCallbacks>()
+        verify { fragmentManager.registerFragmentLifecycleCallbacks(capture(lifecycleSlot), true) }
+
+        lifecycleSlot.captured.onFragmentResumed(fragmentManager, home)
+        lifecycleSlot.captured.onFragmentResumed(fragmentManager, details)
+        dispatcher.onBackPressed()
+        lifecycleSlot.captured.onFragmentResumed(fragmentManager, home)
+
+        val spans = exporter.finishedSpanItems
+        assertThat(spans).hasSize(4)
+        assertThat(spans[3].attributes.get(ViewNavigationConstants.NAVIGATION_TRANSITION_TYPE_KEY)).isEqualTo("pop")
+        assertThat(spans[3].attributes.get(ViewNavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("back_press")
     }
 
     @Test
