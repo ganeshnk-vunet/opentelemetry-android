@@ -1,3 +1,9 @@
+public final class io/opentelemetry/android/common/ProcessStartTimestamps {
+	public static final field INSTANCE Lio/opentelemetry/android/common/ProcessStartTimestamps;
+	public static field attachBaseContextEpochMs J
+	public static field contentProviderEpochMs J
+}
+
 public final class io/opentelemetry/android/common/RumConstants {
 	public static final field APP_START_SPAN_NAME Ljava/lang/String;
 	public static final field BATTERY_PERCENT_KEY Lio/opentelemetry/api/common/AttributeKey;

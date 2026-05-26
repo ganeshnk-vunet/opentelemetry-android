@@ -56,6 +56,8 @@ internal class ActivityTracerCache
 
         fun startActivityCreation(activity: Activity): ActivityTracer = getTracer(activity).startActivityCreation()
 
+        fun deferEndForTtid(activity: Activity): ActivityTracer = getTracer(activity).also { it.deferEndForTtid(activity) }
+
         private fun getTracer(activity: Activity): ActivityTracer =
             tracersByActivityClassName.getOrPut(activity.javaClass.name) {
                 tracerFactory(activity)

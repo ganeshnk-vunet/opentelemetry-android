@@ -6,6 +6,9 @@
 package io.opentelemetry.android.instrumentation.activity
 
 import android.app.Activity
+import android.os.Build
+import android.view.ViewTreeObserver
+import androidx.annotation.RequiresApi
 import io.opentelemetry.android.common.RumConstants.APP_START_SPAN_NAME
 import io.opentelemetry.android.common.RumConstants.SCREEN_NAME_KEY
 import io.opentelemetry.android.common.RumConstants.START_TYPE_KEY
@@ -103,6 +106,68 @@ internal class ActivityTracer(
         endActiveSpan()
     }
 
+    /**
+     * Defers ending the current span until the Activity's window draws its first frame
+     * (Time To Initial Display). On first [ViewTreeObserver.OnDrawListener.onDraw] callback:
+     *   1. Adds a `ttid` event to mark the exact frame-draw moment.
+     *   2. Ends the span and releases the listener.
+     *
+     * Falls back to [endSpanForActivityResumed] immediately if:
+     * - The decor view is not yet attached (ViewTreeObserver not alive), or
+     * - Running below API 26 ([ViewTreeObserver.addOnDrawListener] requires API 26+
+     *   to be safely removed from within the callback via
+     *   [ViewTreeObserver.removeOnDrawListener]).
+     */
+    fun deferEndForTtid(activity: Activity) {
+        if (initialAppActivity == null) {
+            initialAppActivity = activityName
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            endActiveSpan()
+            return
+        }
+        val decorView = activity.window?.decorView
+        val vto = decorView?.viewTreeObserver
+        if (vto == null || !vto.isAlive) {
+            endActiveSpan()
+            return
+        }
+        val spanToEnd: Span = activeSpan.currentSpan() ?: run {
+            endActiveSpan()
+            return
+        }
+        // Close the OTel scope immediately so this span is no longer the current context.
+        // Without this, any subsequent spans (e.g. click events) would be parented to the
+        // AppStart span while the TTID listener waits for the first draw.
+        activeSpan.closeScope()
+        registerTtidListener(activity, vto, spanToEnd)
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun registerTtidListener(
+        activity: Activity,
+        vto: ViewTreeObserver,
+        spanToEnd: Span,
+    ) {
+        var listener: ViewTreeObserver.OnDrawListener? = null
+        listener = ViewTreeObserver.OnDrawListener {
+            spanToEnd.addEvent(EVENT_TTID)
+            // End span directly (scope was already closed in deferEndForTtid) and clear the
+            // reference so spanInProgress() returns false for any subsequent lifecycle events.
+            spanToEnd.end()
+            activeSpan.clearSpan()
+            appStartupTimer.end()
+            // Post removal — removing an OnDrawListener from within onDraw is not safe
+            // on all versions; posting to the view's handler defers it to after the frame.
+            activity.window?.decorView?.post {
+                activity.window?.decorView?.viewTreeObserver
+                    ?.takeIf { it.isAlive }
+                    ?.removeOnDrawListener(listener)
+            }
+        }
+        vto.addOnDrawListener(listener)
+    }
+
     fun endActiveSpan() {
         // If we happen to be in app startup, make sure this ends it. It's harmless if we're already
         // out of the startup phase.
@@ -122,5 +187,8 @@ internal class ActivityTracer(
 
     internal companion object {
         val ACTIVITY_NAME_KEY: AttributeKey<String> = AttributeKey.stringKey("activity.name")
+
+        /** Milestone: first frame drawn on screen — Time To Initial Display. */
+        const val EVENT_TTID = "ttid"
     }
 }

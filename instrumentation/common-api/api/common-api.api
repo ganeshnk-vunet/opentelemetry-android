@@ -6,6 +6,9 @@ public final class io/opentelemetry/android/instrumentation/common/ActiveSpan {
 	public fun <init> (Lkotlin/jvm/functions/Function0;)V
 	public final fun addEvent (Ljava/lang/String;)V
 	public final fun addPreviousScreenAttribute (Ljava/lang/String;)V
+	public final fun clearSpan ()V
+	public final fun closeScope ()V
+	public final fun currentSpan ()Lio/opentelemetry/api/trace/Span;
 	public final fun endActiveSpan ()V
 	public final fun spanInProgress ()Z
 	public final fun startSpan (Lkotlin/jvm/functions/Function0;)V

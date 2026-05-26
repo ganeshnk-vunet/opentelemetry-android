@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Copyright The OpenTelemetry Authors
+  SPDX-License-Identifier: Apache-2.0
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!--
+          AppAnchorContentProvider fires FIRST — before Firebase, WorkManager, and any other
+          library ContentProvider — because android:initOrder is set to Integer.MAX_VALUE.
+          It captures the wall-clock time immediately after Application.attachBaseContext()
+          completed, before any third-party SDK has had a chance to run.
+          Used to emit the app.base_context milestone event on the AppStart span.
+        -->
+        <provider
+            android:name=".AppAnchorContentProvider"
+            android:authorities="${applicationId}.otel.android.app_anchor"
+            android:exported="false"
+            android:initOrder="2147483647"
+            android:multiprocess="false" />
+
+        <!--
+          EarlyStartupContentProvider fires after all other ContentProviders because it uses
+          the default initOrder (0). It captures the wall-clock time just before
+          Application.onCreate(), after all library providers (Firebase, etc.) have initialised.
+          Used to emit the app.init.contentprovider milestone event on the AppStart span.
+        -->
+        <provider
+            android:name=".EarlyStartupContentProvider"
+            android:authorities="${applicationId}.otel.android.early_startup"
+            android:exported="false"
+            android:multiprocess="false" />
+    </application>
+
+</manifest>

@@ -17,6 +17,9 @@ class ActiveSpan(
 
     fun spanInProgress(): Boolean = span != null
 
+    /** Returns the currently active [Span], or null if none is in progress. */
+    fun currentSpan(): Span? = span
+
     // it's fine to not close the scope here, will be closed in endActiveSpan()
     fun startSpan(spanCreator: () -> Span) {
         // don't start one if there's already one in progress
@@ -36,6 +39,20 @@ class ActiveSpan(
             it.end()
             span = null
         }
+    }
+
+    /**
+     * Closes the OTel [Scope] so this span is no longer the current context, without
+     * ending the span itself. Used when span end must be deferred (e.g. TTID).
+     */
+    fun closeScope() {
+        scope?.close()
+        scope = null
+    }
+
+    /** Clears the span reference after it has been ended externally (e.g. TTID listener). */
+    fun clearSpan() {
+        span = null
     }
 
     fun addEvent(eventName: String) {
