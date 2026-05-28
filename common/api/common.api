@@ -28,6 +28,16 @@ public final class io/opentelemetry/android/common/RumConstants$Events {
 	public static final field INSTANCE Lio/opentelemetry/android/common/RumConstants$Events;
 }
 
+public abstract interface class io/opentelemetry/android/common/StartupTimestampProvider {
+	public abstract fun getAttachBaseContextEpochMs ()J
+	public abstract fun getContentProviderEpochMs ()J
+}
+
+public abstract interface class io/opentelemetry/android/common/UncaughtExceptionHandlerWithDeferredDelegation : java/lang/Thread$UncaughtExceptionHandler {
+	public abstract fun delegateToNext (Ljava/lang/Thread;Ljava/lang/Throwable;)V
+	public abstract fun recordUnhandledException (Ljava/lang/Thread;Ljava/lang/Throwable;)V
+}
+
 public final class io/opentelemetry/android/common/internal/features/networkattributes/CurrentNetworkAttributesExtractor {
 	public fun <init> ()V
 	public final fun extract (Lio/opentelemetry/android/common/internal/features/networkattributes/data/CurrentNetwork;)Lio/opentelemetry/api/common/Attributes;

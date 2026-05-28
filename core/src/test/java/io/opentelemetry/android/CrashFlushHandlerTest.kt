@@ -10,6 +10,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import io.mockk.verifyOrder
+import io.opentelemetry.android.common.UncaughtExceptionHandlerWithDeferredDelegation
 import io.opentelemetry.sdk.OpenTelemetrySdk
 import io.opentelemetry.sdk.common.CompletableResultCode
 import io.opentelemetry.sdk.logs.SdkLoggerProvider
@@ -121,6 +122,34 @@ class CrashFlushHandlerTest {
         verifyOrder {
             existingHandler.uncaughtException(thread, any())
             tracerProvider.forceFlush()
+        }
+    }
+
+    @Test
+    fun `deferred handler records then flushes then delegates`() {
+        val deferred = mockk<UncaughtExceptionHandlerWithDeferredDelegation>(relaxed = true)
+        Thread.setDefaultUncaughtExceptionHandler(deferred)
+
+        val tracerProvider = mockk<SdkTracerProvider>()
+        val loggerProvider = mockk<SdkLoggerProvider>()
+        val meterProvider = mockk<SdkMeterProvider>()
+        val sdk = mockSdk(tracerProvider, loggerProvider, meterProvider)
+
+        every { tracerProvider.forceFlush() } returns CompletableResultCode.ofSuccess()
+        every { loggerProvider.forceFlush() } returns CompletableResultCode.ofSuccess()
+        every { meterProvider.forceFlush() } returns CompletableResultCode.ofSuccess()
+
+        CrashFlushHandler(sdk).install()
+
+        val handler = Thread.getDefaultUncaughtExceptionHandler()!!
+        val thread = Thread.currentThread()
+        val exception = RuntimeException("test")
+        handler.uncaughtException(thread, exception)
+
+        verifyOrder {
+            deferred.recordUnhandledException(thread, exception)
+            tracerProvider.forceFlush()
+            deferred.delegateToNext(thread, exception)
         }
     }
 

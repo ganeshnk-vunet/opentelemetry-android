@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Copyright The OpenTelemetry Authors
+  SPDX-License-Identifier: Apache-2.0
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!--
+          AppAnchorContentProvider runs as early as possible (initOrder = MAX_INT).
+          It captures the wall-clock time immediately after Application.attachBaseContext()
+          completes, storing it in ProcessStartTimestamps.attachBaseContextEpochMs.
+          This timestamp is later emitted as the "app.base_context" event on the AppStart span.
+          Ordering among providers with equal initOrder is not guaranteed.
+
+          The authority uses ${applicationId} to ensure uniqueness across apps that depend on
+          this artifact.
+        -->
+        <provider
+            android:name=".AppAnchorContentProvider"
+            android:authorities="${applicationId}.opentelemetry.startup.anchor"
+            android:exported="false"
+            android:initOrder="2147483647" />
+
+        <!--
+          EarlyStartupContentProvider runs as late as possible (initOrder = MIN_INT).
+          It captures the wall-clock time just before Application.onCreate() is called,
+          storing it in ProcessStartTimestamps.contentProviderEpochMs.
+          This timestamp is later emitted as the "app.init.contentprovider" event on the AppStart span.
+          Ordering among providers with equal initOrder is not guaranteed.
+        -->
+        <provider
+            android:name=".EarlyStartupContentProvider"
+            android:authorities="${applicationId}.opentelemetry.startup.early"
+            android:exported="false"
+            android:initOrder="-2147483648" />
+    </application>
+
+</manifest>

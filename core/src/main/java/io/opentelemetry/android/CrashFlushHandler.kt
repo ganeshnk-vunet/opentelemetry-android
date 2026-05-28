@@ -7,6 +7,7 @@ package io.opentelemetry.android
 
 import android.util.Log
 import io.opentelemetry.android.common.RumConstants
+import io.opentelemetry.android.common.UncaughtExceptionHandlerWithDeferredDelegation
 import io.opentelemetry.sdk.OpenTelemetrySdk
 import io.opentelemetry.sdk.common.CompletableResultCode
 import java.util.concurrent.CountDownLatch
@@ -16,7 +17,12 @@ import kotlin.time.Duration.Companion.seconds
 
 /**
  * Installs a [Thread.UncaughtExceptionHandler] that force-flushes all signal
- * providers (traces, logs, metrics) before delegating to the previously set handler.
+ * providers (traces, logs, metrics) after recording the crash but before delegating to
+ * the runtime handler (which often terminates the process immediately).
+ *
+ * Handlers that implement [UncaughtExceptionHandlerWithDeferredDelegation] (crash
+ * instrumentation) are split so we only call [recordUnhandledException] before flush, then
+ * [delegateToNext] after.
  *
  * This ensures that telemetry emitted during a crash (including the crash event itself)
  * is persisted before the process terminates, without requiring individual instrumentations
@@ -31,10 +37,11 @@ internal class CrashFlushHandler(
     }
 
     fun install() {
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler(
             FlushOnCrashExceptionHandler(
                 sdk,
-                Thread.getDefaultUncaughtExceptionHandler(),
+                previous,
                 flushTimeout
             ),
         )
@@ -49,10 +56,14 @@ internal class CrashFlushHandler(
             thread: Thread,
             throwable: Throwable,
         ) {
-            // Let any previously installed handler run first (e.g. the crash
-            // instrumentation emits the crash log record in its handler).
-            previousHandler?.uncaughtException(thread, throwable)
-
+            // Record-only first: the crash handler chains to the runtime handler, which often
+            // kills the process (SIGKILL) before we return — so we must not call full
+            // uncaughtException until after flush.
+            when (val p = previousHandler) {
+                is UncaughtExceptionHandlerWithDeferredDelegation ->
+                    p.recordUnhandledException(thread, throwable)
+                else -> previousHandler?.uncaughtException(thread, throwable)
+            }
             try {
                 awaitCompletion(
                     flushTimeout,
@@ -62,6 +73,13 @@ internal class CrashFlushHandler(
                 )
             } catch (e: Exception) {
                 Log.w(RumConstants.OTEL_RUM_LOG_TAG, "Failed to flush telemetry on crash", e)
+            }
+            when (val p = previousHandler) {
+                is UncaughtExceptionHandlerWithDeferredDelegation ->
+                    p.delegateToNext(thread, throwable)
+                else -> {
+                    // Already ran full previousHandler above (may have killed the process).
+                }
             }
         }
 

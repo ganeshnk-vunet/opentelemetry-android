@@ -56,6 +56,7 @@ class ActivityLifecycleInstrumentationTest {
             startupSpanBuilder,
         )
         every { startupSpanBuilder.startSpan() }.returns(startupSpan)
+        every { startupSpan.addEvent(any(), any(), any<Long>(), any()) }.returns(startupSpan)
 
         val openTelemetryRum = mockk<OpenTelemetryRum>()
         every { openTelemetryRum.openTelemetry } returns openTelemetry

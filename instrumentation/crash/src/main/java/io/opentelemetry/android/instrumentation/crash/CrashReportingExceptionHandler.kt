@@ -5,17 +5,31 @@
 
 package io.opentelemetry.android.instrumentation.crash
 
+import io.opentelemetry.android.common.UncaughtExceptionHandlerWithDeferredDelegation
+
 internal class CrashReportingExceptionHandler(
     private val crashProcessor: (details: CrashDetails) -> Unit,
     private val existingHandler: Thread.UncaughtExceptionHandler? = Thread.getDefaultUncaughtExceptionHandler(),
-) : Thread.UncaughtExceptionHandler {
+) : UncaughtExceptionHandlerWithDeferredDelegation {
     override fun uncaughtException(
         thread: Thread,
         throwable: Throwable,
     ) {
-        crashProcessor(CrashDetails(thread, throwable))
+        recordUnhandledException(thread, throwable)
+        delegateToNext(thread, throwable)
+    }
 
-        // preserve any existing behavior
+    override fun recordUnhandledException(
+        thread: Thread,
+        throwable: Throwable,
+    ) {
+        crashProcessor(CrashDetails(thread, throwable))
+    }
+
+    override fun delegateToNext(
+        thread: Thread,
+        throwable: Throwable,
+    ) {
         existingHandler?.uncaughtException(thread, throwable)
     }
 }

@@ -9,6 +9,7 @@ import io.opentelemetry.android.common.RumConstants
 import io.opentelemetry.api.trace.Tracer
 import io.opentelemetry.sdk.common.Clock
 import io.opentelemetry.sdk.testing.junit5.OpenTelemetryExtension
+import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertSame
@@ -66,5 +67,15 @@ internal class AppStartupTimerTest {
 
         appStartupTimer.end()
         assertEquals(1, otelTesting.spans.size)
+    }
+
+    @Test
+    fun applicationCreated_event_always_emitted() {
+        val appStartupTimer = AppStartupTimer()
+        appStartupTimer.start(tracer, Clock.getDefault())
+        appStartupTimer.end()
+
+        val eventNames = otelTesting.spans[0].events.map { it.name }
+        assertThat(eventNames).contains(AppStartupTimer.EVENT_APPLICATION_CREATED)
     }
 }

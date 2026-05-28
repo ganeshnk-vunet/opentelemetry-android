@@ -1,3 +1,23 @@
+public final class io/opentelemetry/android/instrumentation/startup/AppAnchorContentProvider : android/content/ContentProvider {
+	public fun <init> ()V
+	public fun delete (Landroid/net/Uri;Ljava/lang/String;[Ljava/lang/String;)I
+	public fun getType (Landroid/net/Uri;)Ljava/lang/String;
+	public fun insert (Landroid/net/Uri;Landroid/content/ContentValues;)Landroid/net/Uri;
+	public fun onCreate ()Z
+	public fun query (Landroid/net/Uri;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;)Landroid/database/Cursor;
+	public fun update (Landroid/net/Uri;Landroid/content/ContentValues;Ljava/lang/String;[Ljava/lang/String;)I
+}
+
+public final class io/opentelemetry/android/instrumentation/startup/EarlyStartupContentProvider : android/content/ContentProvider {
+	public fun <init> ()V
+	public fun delete (Landroid/net/Uri;Ljava/lang/String;[Ljava/lang/String;)I
+	public fun getType (Landroid/net/Uri;)Ljava/lang/String;
+	public fun insert (Landroid/net/Uri;Landroid/content/ContentValues;)Landroid/net/Uri;
+	public fun onCreate ()Z
+	public fun query (Landroid/net/Uri;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;)Landroid/database/Cursor;
+	public fun update (Landroid/net/Uri;Landroid/content/ContentValues;Ljava/lang/String;[Ljava/lang/String;)I
+}
+
 public final class io/opentelemetry/android/instrumentation/startup/SdkInitializationEvents : io/opentelemetry/android/internal/initialization/InitializationEvents {
 	public fun <init> ()V
 	public fun <init> (Ljava/util/function/Supplier;)V
