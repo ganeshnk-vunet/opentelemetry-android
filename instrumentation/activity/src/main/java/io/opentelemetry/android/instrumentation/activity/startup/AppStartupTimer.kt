@@ -16,6 +16,7 @@ import androidx.annotation.RequiresApi
 import io.opentelemetry.android.common.StartupTimestampProvider
 import java.util.ServiceLoader
 import io.opentelemetry.android.common.RumConstants
+import io.opentelemetry.android.common.StartupSpanProvider
 import io.opentelemetry.android.internal.services.visiblescreen.activities.DefaultingActivityLifecycleCallbacks
 import android.view.ViewTreeObserver
 import io.opentelemetry.api.common.Attributes
@@ -92,6 +93,15 @@ internal class AppStartupTimer(
                 .setAttribute(RumConstants.START_TYPE_KEY, "cold")
                 .startSpan()
         this.startupSpan = appStart
+        // Publish the span reference so instrumentations running on background threads
+        // (Glide executor, Coil dispatcher, etc.) can parent their image.load spans under
+        // app.start via an explicit setParent(). We deliberately do NOT call makeCurrent()
+        // here: the OTel Scope contract requires a scope to be closed on the same thread that
+        // opened it, in strict LIFO order. app.start is started during SDK init and ended on
+        // the main thread (out of LIFO order relative to the nested activity.lifecycle scope),
+        // so holding a scope open would corrupt the thread-local context. Explicit parenting
+        // via StartupSpanProvider is thread-safe and achieves the same result.
+        StartupSpanProvider.startupSpan = appStart
 
         if (processStartNanos > 0L) {
             appStart.addEvent(
@@ -313,6 +323,9 @@ internal class AppStartupTimer(
 
     private fun clear() {
         this.startupSpan = null
+        // Stop parenting new image.load spans under app.start once startup ends. Image loads
+        // that begin after this point correctly become their own root spans.
+        StartupSpanProvider.startupSpan = null
         contentProviderEndEventsRecorded = false
     }
 

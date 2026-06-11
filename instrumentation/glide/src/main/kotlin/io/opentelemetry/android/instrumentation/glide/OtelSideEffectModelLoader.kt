@@ -12,6 +12,7 @@ import com.bumptech.glide.load.data.DataFetcher
 import com.bumptech.glide.load.model.ModelLoader
 import com.bumptech.glide.load.model.ModelLoaderFactory
 import com.bumptech.glide.load.model.MultiModelLoaderFactory
+import io.opentelemetry.android.common.StartupSpanProvider
 import io.opentelemetry.api.trace.Tracer
 import io.opentelemetry.context.Context as OtelContext
 import java.io.InputStream
@@ -91,13 +92,20 @@ internal class OtelContextModelLoader<Model : Any>(
                 try { stale.end() } catch (_: Throwable) {}
             }
 
-            val span =
-                tracer
-                    .spanBuilder(IMAGE_LOAD_SPAN_NAME)
-                    .setStartTimestamp(startEpochNanos, TimeUnit.NANOSECONDS)
-                    .setAttribute(ATTR_IMAGE_URL, sanitizeModel(model.toString()))
-                    .setAttribute(ATTR_IMAGE_MODEL_TYPE, model.javaClass.name)
-                    .startSpan()
+            // If app.start is still in flight, use it as the explicit parent so that startup
+            // image loads appear as children of app.start in the trace. buildLoadData runs on
+            // Glide's background executor thread where OtelContext.current() is always root —
+            // StartupSpanProvider bridges the gap by holding the span reference across threads.
+            val startupSpan = StartupSpanProvider.startupSpan
+            val spanBuilder = tracer
+                .spanBuilder(IMAGE_LOAD_SPAN_NAME)
+                .setStartTimestamp(startEpochNanos, TimeUnit.NANOSECONDS)
+                .setAttribute(ATTR_IMAGE_URL, sanitizeModel(model.toString()))
+                .setAttribute(ATTR_IMAGE_MODEL_TYPE, model.javaClass.name)
+            if (startupSpan != null && startupSpan.spanContext.isValid) {
+                spanBuilder.setParent(OtelContext.root().with(startupSpan))
+            }
+            val span = spanBuilder.startSpan()
 
             // Capture the context AFTER starting the span so it contains the span.
             // This context snapshot is handed to OtelContextDataFetcher which restores

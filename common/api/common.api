@@ -28,6 +28,11 @@ public final class io/opentelemetry/android/common/RumConstants$Events {
 	public static final field INSTANCE Lio/opentelemetry/android/common/RumConstants$Events;
 }
 
+public final class io/opentelemetry/android/common/StartupSpanProvider {
+	public static final field INSTANCE Lio/opentelemetry/android/common/StartupSpanProvider;
+	public static field startupSpan Lio/opentelemetry/api/trace/Span;
+}
+
 public abstract interface class io/opentelemetry/android/common/StartupTimestampProvider {
 	public abstract fun getAttachBaseContextEndElapsedRealtime ()J
 	public abstract fun getAttachBaseContextStartElapsedRealtime ()J

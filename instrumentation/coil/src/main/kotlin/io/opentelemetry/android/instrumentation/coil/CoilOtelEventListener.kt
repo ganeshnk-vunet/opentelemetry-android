@@ -11,8 +11,10 @@ import coil.request.ErrorResult
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import io.opentelemetry.android.common.internal.imageload.ImageLoadAttributes
+import io.opentelemetry.android.common.StartupSpanProvider
 import io.opentelemetry.api.trace.StatusCode
 import io.opentelemetry.api.trace.Tracer
+import io.opentelemetry.context.Context as OtelContext
 
 /**
  * A Coil [EventListener] that wraps every image request in an OpenTelemetry "image.load" span.
@@ -66,12 +68,18 @@ internal class CoilOtelEventListener(
 
             val imageUrl = ImageLoadAttributes.sanitizeUrl(request.data.toString())
 
-            val span =
-                tracer
-                    .spanBuilder(IMAGE_LOAD_SPAN_NAME)
-                    .setAttribute(ATTR_IMAGE_URL, imageUrl)
-                    .setAttribute(ATTR_IMAGE_MODEL_TYPE, request.data.javaClass.name)
-                    .startSpan()
+            // If app.start is still in flight, parent this span under it so startup image loads
+            // appear as children of app.start. onStart may run on a background thread where
+            // OtelContext.current() is root; StartupSpanProvider bridges the gap.
+            val startupSpan = StartupSpanProvider.startupSpan
+            val spanBuilder = tracer
+                .spanBuilder(IMAGE_LOAD_SPAN_NAME)
+                .setAttribute(ATTR_IMAGE_URL, imageUrl)
+                .setAttribute(ATTR_IMAGE_MODEL_TYPE, request.data.javaClass.name)
+            if (startupSpan != null && startupSpan.spanContext.isValid) {
+                spanBuilder.setParent(OtelContext.root().with(startupSpan))
+            }
+            val span = spanBuilder.startSpan()
 
             CoilSpanStore.spans[key] = span
         } catch (_: Throwable) {
