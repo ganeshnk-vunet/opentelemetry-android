@@ -30,6 +30,9 @@ class CurrentNetworkAttributesExtractor {
         network.carrierIsoCountryCode.let {
             builder.put(NetworkIncubatingAttributes.NETWORK_CARRIER_ICC, it)
         }
+        network.metered?.let {
+            builder.put(NetworkMonitoringAttributes.NETWORK_CONNECTION_METERED, it)
+        }
         return builder.build()
     }
 }

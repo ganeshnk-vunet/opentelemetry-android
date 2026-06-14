@@ -16,6 +16,7 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import io.opentelemetry.android.OpenTelemetryRum
+import io.opentelemetry.android.common.internal.features.networkattributes.NetworkMonitoringAttributes
 import io.opentelemetry.android.common.internal.features.networkattributes.data.Carrier
 import io.opentelemetry.android.common.internal.features.networkattributes.data.CurrentNetwork
 import io.opentelemetry.android.common.internal.features.networkattributes.data.NetworkState
@@ -65,7 +66,7 @@ class NetworkChangeInstrumentationTest {
         }
         val listener = networkChangeListenerSlot.captured
 
-        listener.onNetworkChange(CurrentNetwork(NetworkState.TRANSPORT_WIFI))
+        listener.onNetworkChange(CurrentNetwork(NetworkState.TRANSPORT_WIFI, metered = false))
 
         val events = otelTesting.logRecords
         assertThat(events).hasSize(1)
@@ -75,6 +76,7 @@ class NetworkChangeInstrumentationTest {
             .hasAttributesSatisfyingExactly(
                 equalTo(NETWORK_STATUS_KEY, "available"),
                 equalTo(NetworkIncubatingAttributes.NETWORK_CONNECTION_TYPE, "wifi"),
+                equalTo(NetworkMonitoringAttributes.NETWORK_CONNECTION_METERED, false),
             )
     }
 
@@ -94,6 +96,7 @@ class NetworkChangeInstrumentationTest {
                 state = NetworkState.TRANSPORT_CELLULAR,
                 subType = "LTE",
                 carrier = Carrier(206, "ShadyTel", "usa", "omg", "US"),
+                metered = true,
             )
 
         listener.onNetworkChange(network)
@@ -111,6 +114,7 @@ class NetworkChangeInstrumentationTest {
                 equalTo(NetworkIncubatingAttributes.NETWORK_CARRIER_ICC, "US"),
                 equalTo(NetworkIncubatingAttributes.NETWORK_CARRIER_MCC, "usa"),
                 equalTo(NetworkIncubatingAttributes.NETWORK_CARRIER_MNC, "omg"),
+                equalTo(NetworkMonitoringAttributes.NETWORK_CONNECTION_METERED, true),
             )
     }
 

@@ -10,9 +10,13 @@ import android.os.SystemClock
 import androidx.annotation.RequiresApi
 import io.opentelemetry.context.Context
 import io.opentelemetry.instrumentation.api.instrumenter.Instrumenter
+import io.opentelemetry.instrumentation.library.httpurlconnection.internal.HttpUrlConnectionSingletons.captureNetworkTiming
 import io.opentelemetry.instrumentation.library.httpurlconnection.internal.HttpUrlConnectionSingletons.instrumenter
 import io.opentelemetry.instrumentation.library.httpurlconnection.internal.HttpUrlConnectionSingletons.openTelemetryInstance
+import io.opentelemetry.instrumentation.library.httpurlconnection.internal.HttpUrlConnectionTiming
+import io.opentelemetry.instrumentation.library.httpurlconnection.internal.HttpUrlTimingSpanEnricher
 import io.opentelemetry.instrumentation.library.httpurlconnection.internal.RequestPropertySetter
+import io.opentelemetry.api.trace.Span
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -41,6 +45,7 @@ object HttpUrlReplacements {
             reportWithResponseCode(connection)
         }
 
+        HttpUrlConnectionTiming.remove(connection)
         connection.disconnect()
     }
 
@@ -309,9 +314,16 @@ object HttpUrlReplacements {
         val info = activeURLConnections[connection]
         if (info != null && !info.reported) {
             val context = info.context
+            if (captureNetworkTiming) {
+                HttpUrlTimingSpanEnricher.enrich(Span.fromContext(context), connection)
+            } else {
+                HttpUrlConnectionTiming.remove(connection)
+            }
             httpURLInstrumenter?.end(context, connection, responseCode, error)
             info.reported = true
             activeURLConnections.remove(connection)
+        } else {
+            HttpUrlConnectionTiming.remove(connection)
         }
     }
 
@@ -326,6 +338,9 @@ object HttpUrlReplacements {
         if (!activeURLConnections.containsKey(connection)) {
             val context = httpURLInstrumenter?.start(parentContext, connection) ?: return
             activeURLConnections[connection] = HttpURLConnectionInfo(context)
+            if (captureNetworkTiming) {
+                HttpUrlConnectionTiming.start(connection)
+            }
             try {
                 injectContextToRequest(connection, context)
             } catch (exception: Exception) {

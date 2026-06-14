@@ -151,7 +151,7 @@ class OpenTelemetryRumBuilderTest {
                 OpenTelemetryAssertions
                     .assertThat(spans[0])
                     .hasName("test span")
-                    .hasResource(resource)
+                    .hasResource(AndroidResource.createMinimal(applicationContext))
                     .hasAttributesSatisfyingExactly(
                         OpenTelemetryAssertions.equalTo(
                             SessionIncubatingAttributes.SESSION_ID,

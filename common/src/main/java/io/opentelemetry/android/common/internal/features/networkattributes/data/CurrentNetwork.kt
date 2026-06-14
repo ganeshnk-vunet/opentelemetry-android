@@ -17,6 +17,7 @@ data class CurrentNetwork
         val state: NetworkState,
         private val carrier: Carrier? = null,
         val subType: String? = null,
+        val metered: Boolean? = null,
     ) {
         val carrierCountryCode: String?
             get() = carrier?.mobileCountryCode

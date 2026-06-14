@@ -20,6 +20,9 @@ This instrumentation produces the following telemetry:
   reaches PostPaused, PostStopped, or PostDestroyed.
 * Attributes:
   * `start.type`: { `cold` | `hot` | `warm` }
+* Resource (trace export): the **first cold** `app.start` span includes the full OTLP resource block
+  (`device.*`, `os.*`, `app.installation.id`, `service.*`, etc.). All other trace spans carry a
+  minimal resource (`service.name` only). Logs and metrics always use the full resource.
 * Span events (cold start): `app.process.creation`, `app.attach_base_context.start`,
   `app.attach_base_context.end` (require [startup-agent](../startup/README.md) and a declared
   `attachBaseContext` override on your `Application` subclass), `app.content_providers.start`,

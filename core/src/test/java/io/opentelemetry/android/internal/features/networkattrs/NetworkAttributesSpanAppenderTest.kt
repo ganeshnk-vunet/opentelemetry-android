@@ -10,6 +10,7 @@ import io.mockk.every
 import io.mockk.impl.annotations.InjectMockKs
 import io.mockk.impl.annotations.MockK
 import io.mockk.verify
+import io.opentelemetry.android.common.internal.features.networkattributes.NetworkMonitoringAttributes
 import io.opentelemetry.android.common.internal.features.networkattributes.data.CurrentNetwork
 import io.opentelemetry.android.common.internal.features.networkattributes.data.NetworkState
 import io.opentelemetry.android.internal.services.network.CurrentNetworkProvider
@@ -39,7 +40,7 @@ internal class NetworkAttributesSpanAppenderTest {
 
     @Test
     fun shouldAppendNetworkAttributes() {
-        val network = CurrentNetwork(state = NetworkState.TRANSPORT_CELLULAR, subType = "LTE")
+        val network = CurrentNetwork(state = NetworkState.TRANSPORT_CELLULAR, subType = "LTE", metered = true)
         every { currentNetworkProvider.currentNetwork } returns network
         assertThat(underTest.isStartRequired).isTrue()
 
@@ -52,6 +53,8 @@ internal class NetworkAttributesSpanAppenderTest {
                     "cell",
                     NetworkIncubatingAttributes.NETWORK_CONNECTION_SUBTYPE,
                     "LTE",
+                    NetworkMonitoringAttributes.NETWORK_CONNECTION_METERED,
+                    true,
                 ),
             )
         }

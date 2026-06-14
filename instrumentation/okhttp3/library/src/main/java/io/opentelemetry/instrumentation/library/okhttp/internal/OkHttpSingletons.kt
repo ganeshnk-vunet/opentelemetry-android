@@ -108,6 +108,8 @@ object OkHttpSingletons {
                         ATTRIBUTES_GETTER,
                         openTelemetry,
                     ),
+                ).addAttributesExtractor(
+                    OkHttpErrorCategoryAttributesExtractor,
                 ).setEmitExperimentalHttpClientTelemetry(
                     instrumentation.emitExperimentalHttpClientTelemetry(),
                 )

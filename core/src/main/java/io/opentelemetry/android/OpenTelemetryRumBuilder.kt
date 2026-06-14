@@ -11,11 +11,13 @@ import android.content.Context
 import android.os.AsyncTask
 import android.util.Log
 import io.opentelemetry.android.AndroidResource.createDefault
+import io.opentelemetry.android.AndroidResource.createMinimal
 import io.opentelemetry.android.common.RumConstants
 import io.opentelemetry.android.config.OtelRumConfig
 import io.opentelemetry.android.export.BufferDelegatingLogExporter
 import io.opentelemetry.android.export.BufferDelegatingMetricExporter
 import io.opentelemetry.android.export.BufferDelegatingSpanExporter
+import io.opentelemetry.android.export.SelectiveResourceSpanExporter
 import io.opentelemetry.android.features.diskbuffering.SignalFromDiskExporter
 import io.opentelemetry.android.features.diskbuffering.SignalFromDiskExporter.Companion.set
 import io.opentelemetry.android.features.diskbuffering.scheduler.DefaultExportScheduleHandler
@@ -118,6 +120,7 @@ class OpenTelemetryRumBuilder internal constructor(
     private var propagatorCustomizer: (TextMapPropagator) -> TextMapPropagator = { it }
 
     private var resource: Resource = createDefault(context)
+    private var minimalTraceResource: Resource = createMinimal(context)
     private var exportScheduleHandler: ExportScheduleHandler? = null
     private var sessionProvider: SessionProvider = SessionProvider.getNoop()
 
@@ -396,6 +399,7 @@ class OpenTelemetryRumBuilder internal constructor(
     ) {
         val diskBufferingConfig = config.getDiskBufferingConfig()
         var spanExporter = buildSpanExporter()
+        spanExporter = SelectiveResourceSpanExporter(spanExporter, resource)
         var logsExporter = buildLogsExporter()
         var metricExporter = buildMetricExporter()
         var signalFromDiskExporter: SignalFromDiskExporter? = null
@@ -547,7 +551,7 @@ class OpenTelemetryRumBuilder internal constructor(
         var tracerProviderBuilder =
             SdkTracerProvider
                 .builder()
-                .setResource(resource)
+                .setResource(minimalTraceResource)
                 .setClock(clock)
                 .addSpanProcessor(SessionIdSpanAppender(sessionProvider))
 

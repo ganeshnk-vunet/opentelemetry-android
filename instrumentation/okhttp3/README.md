@@ -28,7 +28,19 @@ are provided by the OkHttp attributes getter.
   * Captured request/response headers per configuration (`http.request.header.<name>` / `http.response.header.<name>`)
   * Network phase timings (incubating, OkHttp only when enabled): `http.client.timing.dns_ms`, `connect_ms`, `tls_ms`, `ttfb_ms`, `download_ms`, `total_ms`, and related span events (`http.dns`, `http.connect`, `http.secure_connect`, `http.ttfb`, `http.download`, `http.call`)
 
-If a request fails, the span is ended and the error is recorded.
+If a request fails, the span is ended and the error is recorded. Failed spans include a normalized
+`http.error.category` attribute alongside the standard `error.type` attribute:
+
+| `http.error.category` | When |
+|-----------------------|------|
+| `timeout` | Connect/read/write timeout (`SocketTimeoutException`, `InterruptedIOException`) |
+| `dns` | DNS resolution failure (`UnknownHostException`) |
+| `ssl` | TLS or certificate failure (`SSLException`, `CertificateException`) |
+| `io` | Other transport I/O failure (`IOException`) |
+| `http_client` | HTTP 4xx/5xx response with no transport exception |
+| `unknown` | Other failure types |
+
+Use `http.response.status_code` to distinguish 4xx vs 5xx when `http.error.category` is `http_client`.
 
 ### Network phase timing (incubating)
 
