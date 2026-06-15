@@ -5,6 +5,16 @@
 ### Added
 
 - OkHttp network phase timing (incubating): DNS, connect, TLS, TTFB, download, and total durations exported as `http.client.timing.*` span attributes and `http.*` span events when `captureNetworkTimingPhases` is enabled (default).
+- HttpURLConnection total request timing (incubating): `http.client.timing.total_ms` and `http.call` span event when `captureNetworkTiming` is enabled (default); `http.client.timing.phases_supported=false` (use OkHttp for phase breakdown).
+- HTTP error taxonomy: OkHttp and HttpURLConnection failed spans include `http.error.category` (`timeout`, `dns`, `ssl`, `io`, `http_client`, `unknown`) alongside existing `error.type`.
+- Network monitoring: `network.connection.metered` boolean on spans and `network.change` events when the active network is known (replaces legacy `net.host.connection.metered`).
+
+### ⚠️⚠️ Breaking changes
+
+- Trace spans no longer repeat full device/OS resource attributes on every export. Only the first
+  cold `app.start` span includes the full OTLP resource block; other trace spans use a minimal
+  resource (`service.name` + SDK defaults). Logs and metrics are unchanged. Query `device.*` /
+  `os.*` on traces via the cold `app.start` span or from logs/metrics resource.
 
 ### Fixed
 

@@ -5,6 +5,7 @@
 
 package io.opentelemetry.instrumentation.library.okhttp.internal
 
+import io.opentelemetry.api.trace.Span
 import io.opentelemetry.context.Context
 import io.opentelemetry.context.propagation.ContextPropagators
 import io.opentelemetry.context.propagation.TextMapSetter
@@ -16,10 +17,10 @@ import okhttp3.Response
 internal class TimingTracingInterceptor(
     private val instrumenter: Instrumenter<Interceptor.Chain, Response>,
     private val propagators: ContextPropagators,
-    private val spanEnricher: OkHttpTimingSpanEnricher,
 ) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
+        val call = chain.call()
         val parentContext = Context.current()
         if (!instrumenter.shouldStart(parentContext, chain)) {
             return chain.proceed(request)
@@ -27,19 +28,17 @@ internal class TimingTracingInterceptor(
 
         val context = instrumenter.start(parentContext, chain)
         val injectedRequest = injectContextToRequest(request, context)
-        val span = io.opentelemetry.api.trace.Span.fromContext(context)
-        val call = chain.call()
+        val span = Span.fromContext(context)
+        OkHttpCallCompletionCoordinator.registerTraced(call, context, chain, span)
 
-        try {
+        return try {
             context.makeCurrent().use {
                 val response = chain.proceed(injectedRequest)
-                spanEnricher.enrich(span, call)
-                instrumenter.end(context, chain, response, null)
-                return response
+                OkHttpCallCompletionCoordinator.setResponse(call, response)
+                response
             }
         } catch (throwable: Throwable) {
-            spanEnricher.enrich(span, call)
-            instrumenter.end(context, chain, null, throwable)
+            OkHttpCallCompletionCoordinator.setError(call, throwable)
             throw throwable
         }
     }

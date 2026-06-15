@@ -37,38 +37,36 @@ internal class NetworkDetectorImpl(
 
     override fun detectCurrentNetwork(): CurrentNetwork {
         val network = connectivityManager.activeNetwork
-        val capabilities =
-            network?.let {
-                connectivityManager.getNetworkCapabilities(it)
-            }
+        if (network == null) {
+            return CurrentNetworkProvider.NO_NETWORK
+        }
+
+        val metered = connectivityManager.isActiveNetworkMetered
+        val capabilities = connectivityManager.getNetworkCapabilities(network)
 
         return when {
-            network == null -> {
-                CurrentNetworkProvider.NO_NETWORK
-            }
-
             capabilities == null -> {
-                CurrentNetworkProvider.UNKNOWN_NETWORK
+                CurrentNetwork(NetworkState.TRANSPORT_UNKNOWN, metered = metered)
             }
 
             capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> {
-                buildCellularNetwork()
+                buildCellularNetwork(metered)
             }
 
             capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> {
-                buildNetwork(NetworkState.TRANSPORT_WIFI)
+                buildNetwork(NetworkState.TRANSPORT_WIFI, metered)
             }
 
             capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> {
-                buildNetwork(NetworkState.TRANSPORT_VPN)
+                buildNetwork(NetworkState.TRANSPORT_VPN, metered)
             }
 
             capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> {
-                buildNetwork(NetworkState.TRANSPORT_WIRED)
+                buildNetwork(NetworkState.TRANSPORT_WIRED, metered)
             }
 
             else -> {
-                CurrentNetworkProvider.UNKNOWN_NETWORK
+                CurrentNetwork(NetworkState.TRANSPORT_UNKNOWN, metered = metered)
             }
         }
     }
@@ -76,18 +74,22 @@ internal class NetworkDetectorImpl(
     /**
      * Builds a network for non-cellular networks.
      */
-    private fun buildNetwork(networkState: NetworkState) = CurrentNetwork(networkState)
+    private fun buildNetwork(
+        networkState: NetworkState,
+        metered: Boolean,
+    ) = CurrentNetwork(networkState, metered = metered)
 
     /**
      * Builds a cellular network with carrier and subtype information.
      */
-    private fun buildCellularNetwork(): CurrentNetwork {
+    private fun buildCellularNetwork(metered: Boolean): CurrentNetwork {
         val carrier = carrierFinder.get()
         val subType = findSubtype()
         return CurrentNetwork(
             state = TRANSPORT_CELLULAR,
             carrier = carrier,
             subType = subType,
+            metered = metered,
         )
     }
 

@@ -44,7 +44,39 @@ the following occurs: the response stream is fully read, the stream is closed,
   - `network.peer.address` / `network.peer.port` — connection endpoint, when available
   - Request and response headers captured according to configuration: `http.request.header.<name>` / `http.response.header.<name>`
 
-If the request throws an IOException, the span is ended and the exception is recorded.
+If the request throws an IOException, the span is ended and the exception is recorded. Failed spans
+include a normalized `http.error.category` attribute alongside the standard `error.type` attribute:
+
+| `http.error.category` | When |
+|-----------------------|------|
+| `timeout` | Connect/read/write timeout (`SocketTimeoutException`, `InterruptedIOException`) |
+| `dns` | DNS resolution failure (`UnknownHostException`) |
+| `ssl` | TLS or certificate failure (`SSLException`, `CertificateException`) |
+| `io` | Other transport I/O failure (`IOException`) |
+| `http_client` | HTTP 4xx/5xx response with no transport exception |
+| `unknown` | Other failure types |
+
+Use `http.response.status_code` to distinguish 4xx vs 5xx when `http.error.category` is `http_client`.
+
+### Network timing (incubating, best-effort)
+
+When `captureNetworkTiming` is enabled (default `true`), HttpURLConnection spans include total
+request duration only. HttpURLConnection cannot expose DNS/TCP/TLS/TTFB phase breakdown; use
+[`okhttp3-library`](../okhttp3/README.md) instrumentation for full phase timing.
+
+| Signal | Value |
+|--------|-------|
+| `http.client.timing.total_ms` | Wall-clock ms from first traced hook to span end |
+| `http.client.timing.phases_supported` | `false` |
+| Span event `http.call` | `{ duration_ms: <total_ms> }` |
+
+Disable timing capture:
+
+```java
+HttpUrlInstrumentation instrumentation =
+    AndroidInstrumentationLoader.getInstrumentation(HttpUrlInstrumentation.class);
+instrumentation.setCaptureNetworkTiming(false);
+```
 
 ### Configuration impact on telemetry
 

@@ -5,6 +5,8 @@
 
 package io.opentelemetry.instrumentation.library.okhttp.internal
 
+import android.util.Log
+import io.opentelemetry.android.common.RumConstants
 import io.opentelemetry.android.common.RumDiagnostics
 import io.opentelemetry.api.OpenTelemetry
 import io.opentelemetry.context.Context
@@ -17,6 +19,7 @@ import io.opentelemetry.instrumentation.okhttp.v3_0.internal.OkHttpAttributesGet
 import io.opentelemetry.instrumentation.okhttp.v3_0.internal.OkHttpClientInstrumenterBuilderFactory
 import io.opentelemetry.instrumentation.okhttp.v3_0.internal.TracingInterceptor
 import java.lang.reflect.Field
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.function.UnaryOperator
 import okhttp3.EventListener
 import okhttp3.Interceptor
@@ -42,6 +45,8 @@ object OkHttpSingletons {
 
     @JvmField
     var captureNetworkTimingPhases: Boolean = true
+
+    private val eventListenerFactoryWarningLogged = AtomicBoolean(false)
 
     @JvmStatic
     fun wrapEventListenerFactory(delegate: EventListener.Factory): EventListener.Factory =
@@ -77,8 +82,14 @@ object OkHttpSingletons {
             if (wrappedFactory !== existingFactory) {
                 eventListenerFactoryField.set(builder, wrappedFactory)
             }
-        } catch (_: ReflectiveOperationException) {
-            // OkHttp internal field layout changed; skip timing factory wiring.
+        } catch (exception: ReflectiveOperationException) {
+            if (eventListenerFactoryWarningLogged.compareAndSet(false, true)) {
+                Log.w(
+                    RumConstants.OTEL_RUM_LOG_TAG,
+                    "Failed to wire OkHttp timing EventListener factory; network phase timing disabled",
+                    exception,
+                )
+            }
         }
     }
 
@@ -108,6 +119,8 @@ object OkHttpSingletons {
                         ATTRIBUTES_GETTER,
                         openTelemetry,
                     ),
+                ).addAttributesExtractor(
+                    OkHttpErrorCategoryAttributesExtractor,
                 ).setEmitExperimentalHttpClientTelemetry(
                     instrumentation.emitExperimentalHttpClientTelemetry(),
                 )
@@ -121,7 +134,8 @@ object OkHttpSingletons {
         connectionErrorInterceptor = ConnectionErrorSpanInterceptor(instrumenter)
         val tracing =
             if (instrumentation.captureNetworkTimingPhases()) {
-                TimingTracingInterceptor(instrumenter, openTelemetry.propagators, timingSpanEnricher)
+                OkHttpCallCompletionCoordinator.configure(instrumenter, timingSpanEnricher)
+                TimingTracingInterceptor(instrumenter, openTelemetry.propagators)
             } else {
                 TracingInterceptor(instrumenter, openTelemetry.propagators)
             }

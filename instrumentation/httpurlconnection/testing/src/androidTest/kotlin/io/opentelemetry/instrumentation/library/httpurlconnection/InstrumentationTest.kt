@@ -6,6 +6,7 @@
 package io.opentelemetry.instrumentation.library.httpurlconnection
 
 import io.opentelemetry.android.instrumentation.AndroidInstrumentation
+import io.opentelemetry.api.common.AttributeKey
 import java.util.ServiceLoader
 import io.opentelemetry.android.test.common.OpenTelemetryRumRule
 import io.opentelemetry.instrumentation.library.httpurlconnection.HttpUrlConnectionTestUtil.executeGet
@@ -26,6 +27,23 @@ class InstrumentationTest {
     fun testHttpUrlConnectionGetRequest_ShouldBeTraced() {
         executeGet("http://httpbin.org/get")
         assertThat(openTelemetryRumRule.inMemorySpanExporter.finishedSpanItems.size).isEqualTo(1)
+    }
+
+    @Test
+    fun httpUrlConnectionTimingTotalMs() {
+        executeGet("http://httpbin.org/get")
+
+        val span =
+            openTelemetryRumRule.inMemorySpanExporter.finishedSpanItems.firstOrNull {
+                it.attributes.get(AttributeKey.stringKey("http.request.method")) != null
+            }
+
+        assertThat(span).isNotNull()
+        assertThat(span!!.attributes.get(AttributeKey.longKey("http.client.timing.total_ms"))).isNotNull()
+        assertThat(span.attributes.get(AttributeKey.longKey("http.client.timing.total_ms"))).isGreaterThan(0L)
+        assertThat(span.attributes.get(AttributeKey.booleanKey("http.client.timing.phases_supported"))).isFalse()
+        assertThat(span.attributes.get(AttributeKey.longKey("http.client.timing.dns_ms"))).isNull()
+        assertThat(span.events.map { it.name }).contains("http.call")
     }
 
     @Test

@@ -1,6 +1,7 @@
 public final class io/opentelemetry/instrumentation/library/httpurlconnection/HttpUrlInstrumentation : io/opentelemetry/android/instrumentation/AndroidInstrumentation {
 	public fun <init> ()V
 	public final fun addAttributesExtractor (Lio/opentelemetry/instrumentation/api/instrumenter/AttributesExtractor;)V
+	public final fun captureNetworkTiming ()Z
 	public final fun emitExperimentalHttpClientMetrics ()Z
 	public final fun getAdditionalExtractors ()Ljava/util/List;
 	public final fun getCapturedRequestHeaders ()Ljava/util/List;
@@ -10,6 +11,7 @@ public final class io/opentelemetry/instrumentation/library/httpurlconnection/Ht
 	public final fun getReportIdleConnectionInterval ()J
 	public final fun getReportIdleConnectionRunnable ()Ljava/lang/Runnable;
 	public fun install (Landroid/content/Context;Lio/opentelemetry/android/OpenTelemetryRum;)V
+	public final fun setCaptureNetworkTiming (Z)V
 	public final fun setCapturedRequestHeaders (Ljava/util/List;)V
 	public final fun setCapturedResponseHeaders (Ljava/util/List;)V
 	public final fun setConnectionInactivityTimeoutMs (J)V

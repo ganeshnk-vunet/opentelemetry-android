@@ -21,11 +21,15 @@ class OkHttpTimingEventListenerFactoryTest {
     fun setUp() {
         call = mockk(relaxed = true)
         OkHttpSingletons.captureNetworkTimingPhases = true
+        OkHttpCallTimingStore.clear()
+        OkHttpCallCompletionCoordinator.clear()
     }
 
     @AfterEach
     fun tearDown() {
         OkHttpSingletons.captureNetworkTimingPhases = true
+        OkHttpCallTimingStore.clear()
+        OkHttpCallCompletionCoordinator.clear()
     }
 
     @Test

@@ -38,7 +38,24 @@ class CurrentNetworkAttributesExtractorTest {
     }
 
     @Test
-    fun getNetworkAttributes_withoutCarrier() {
+    fun getNetworkAttributes_withMetered() {
+        val currentNetwork =
+            CurrentNetwork(
+                state = NetworkState.TRANSPORT_WIFI,
+                metered = true,
+            )
+
+        val attributes = underTest.extract(currentNetwork).asMap()
+        val expected =
+            mapOf(
+                NetworkIncubatingAttributes.NETWORK_CONNECTION_TYPE to "wifi",
+                NetworkMonitoringAttributes.NETWORK_CONNECTION_METERED to true,
+            )
+        assertEquals(expected, attributes)
+    }
+
+    @Test
+    fun getNetworkAttributes_withoutMetered() {
         val currentNetwork = CurrentNetwork(state = NetworkState.TRANSPORT_CELLULAR, subType = "aaa")
 
         val attributes = underTest.extract(currentNetwork).asMap()

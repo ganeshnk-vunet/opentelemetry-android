@@ -146,42 +146,42 @@ internal class OkHttpTimingEventListener : EventListener() {
     }
 
     override fun responseBodyStart(call: Call) {
-        OkHttpCallTimingStore.stateFor(call).responseBodyStartNanos = System.nanoTime()
+        OkHttpCallTimingStore.updateIfPresent(call) { state ->
+            state.responseBodyStartNanos = System.nanoTime()
+        }
     }
 
     override fun responseBodyEnd(
         call: Call,
         byteCount: Long,
     ) {
-        OkHttpCallTimingStore.stateFor(call).responseBodyEndNanos = System.nanoTime()
+        OkHttpCallTimingStore.updateIfPresent(call) { state ->
+            state.responseBodyEndNanos = System.nanoTime()
+        }
     }
 
     override fun responseFailed(
         call: Call,
         ioe: IOException,
     ) {
-        val state = OkHttpCallTimingStore.stateFor(call)
-        state.failed = true
-        state.phasesComplete = false
+        OkHttpCallTimingStore.updateIfPresent(call) { state ->
+            state.failed = true
+            state.phasesComplete = false
+        }
     }
 
     override fun callEnd(call: Call) {
-        OkHttpCallTimingStore.stateFor(call).callEndNanos = System.nanoTime()
+        OkHttpCallCompletionCoordinator.onCallEnd(call)
     }
 
     override fun callFailed(
         call: Call,
         ioe: IOException,
     ) {
-        val state = OkHttpCallTimingStore.stateFor(call)
-        state.failed = true
-        state.phasesComplete = false
-        state.callEndNanos = System.nanoTime()
+        OkHttpCallCompletionCoordinator.onCallFailed(call, ioe)
     }
 
     override fun canceled(call: Call) {
-        val state = OkHttpCallTimingStore.stateFor(call)
-        state.failed = true
-        state.phasesComplete = false
+        OkHttpCallCompletionCoordinator.onCanceled(call)
     }
 }

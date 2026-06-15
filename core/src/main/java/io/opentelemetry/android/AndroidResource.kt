@@ -49,6 +49,16 @@ object AndroidResource {
             .build()
     }
 
+    /**
+     * Minimal resource for trace spans. Device/OS/installation attrs are exported on the first
+     * cold `app.start` span only via [io.opentelemetry.android.export.SelectiveResourceSpanExporter].
+     */
+    @JvmStatic
+    fun createMinimal(context: Context): Resource =
+        Resource.getDefault().merge(
+            Resource.builder().put(SERVICE_NAME, readAppName(context)).build(),
+        )
+
     @SuppressLint("UseKtx")
     private fun readInstallId(context: Context): String {
         // install ID is persisted using the app.installation.id semconv as its key

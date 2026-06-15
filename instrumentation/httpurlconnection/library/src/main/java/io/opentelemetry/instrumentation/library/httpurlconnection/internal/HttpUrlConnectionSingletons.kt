@@ -23,6 +23,9 @@ internal object HttpUrlConnectionSingletons {
     private lateinit var instrumenter: Instrumenter<URLConnection, Int>
     private lateinit var openTelemetryInstance: OpenTelemetry
 
+    @JvmField
+    var captureNetworkTiming: Boolean = true
+
     fun configure(
         instrumentation: HttpUrlInstrumentation,
         openTelemetry: OpenTelemetry,
@@ -61,6 +64,7 @@ internal object HttpUrlConnectionSingletons {
                     HttpSpanStatusExtractor.create(httpAttributesGetter),
                 ).addAttributesExtractor(httpClientAttributesExtractorBuilder.build())
                 .addAttributesExtractor(httpClientPeerServiceAttributesExtractor)
+                .addAttributesExtractor(HttpUrlErrorCategoryAttributesExtractor)
                 .addOperationMetrics(HttpClientMetrics.get())
 
         for (extractor in instrumentation.getAdditionalExtractors()) {
@@ -74,6 +78,7 @@ internal object HttpUrlConnectionSingletons {
                 ).addOperationMetrics(HttpClientExperimentalMetrics.get())
         }
 
+        captureNetworkTiming = instrumentation.captureNetworkTiming()
         instrumenter = builder.buildClientInstrumenter(RequestPropertySetter)
     }
 

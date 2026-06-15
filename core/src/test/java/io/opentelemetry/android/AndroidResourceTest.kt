@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertNotNull
+import org.assertj.core.api.Assertions.assertThat
 import java.util.UUID
 
 internal class AndroidResourceTest {
@@ -90,6 +91,17 @@ internal class AndroidResourceTest {
     @Test
     fun testFullResource() {
         assertResourceMatches()
+    }
+
+    @Test
+    fun testMinimalResource() {
+        val minimal = AndroidResource.createMinimal(ctx)
+        val expected =
+            Resource.getDefault().merge(
+                Resource.builder().put(ServiceAttributes.SERVICE_NAME, appName).build(),
+            )
+        assertEquals(expected, minimal)
+        assertThat(minimal.getAttribute(DeviceIncubatingAttributes.DEVICE_MODEL_NAME)).isNull()
     }
 
     @Test

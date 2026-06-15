@@ -13,6 +13,17 @@ internal object OkHttpCallTimingStore {
 
     fun stateFor(call: Call): CallTimingState = timings.computeIfAbsent(call) { CallTimingState() }
 
+    fun updateIfPresent(
+        call: Call,
+        block: (CallTimingState) -> Unit,
+    ) {
+        timings[call]?.let(block)
+    }
+
+    fun discard(call: Call) {
+        timings.remove(call)
+    }
+
     fun remove(call: Call): OkHttpTimingResult? {
         val state = timings.remove(call) ?: return null
         return state.finalizeTiming()

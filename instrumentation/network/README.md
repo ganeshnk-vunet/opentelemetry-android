@@ -24,6 +24,7 @@ This instrumentation produces the following telemetry:
 * Attributes:
     * `network.status`: One of `lost` or `available`.
     * `network.connection.type` (semconv) one of `cell`, `wifi`, `wired`, `unavailable`, `unknown`, `vpn`.
+    * `network.connection.metered` (boolean): `true` when the active network is metered (e.g. cellular, capped Wi‑Fi), `false` when unmetered. Omitted when network state is unavailable. Legacy name: `net.host.connection.metered`.
 
 Note: This instrumentation supports additional user-configurable `AttributeExtractors` that
 may set additional attributes when given a `CurrentNetwork` instance.
