@@ -5,6 +5,7 @@
 
 package io.opentelemetry.instrumentation.agent.okhttp.callback
 
+import io.opentelemetry.instrumentation.library.okhttp.callback.OkHttpCallbackAdvice
 import java.io.IOException
 import java.util.regex.Pattern
 import net.bytebuddy.asm.Advice

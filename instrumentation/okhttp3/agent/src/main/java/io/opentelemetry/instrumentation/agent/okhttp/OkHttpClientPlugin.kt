@@ -5,6 +5,7 @@
 
 package io.opentelemetry.instrumentation.agent.okhttp
 
+import io.opentelemetry.instrumentation.library.okhttp.OkHttpClientAdvice
 import java.io.IOException
 import net.bytebuddy.asm.Advice
 import net.bytebuddy.build.Plugin

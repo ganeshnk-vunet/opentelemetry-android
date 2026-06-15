@@ -7,6 +7,7 @@ package io.opentelemetry.instrumentation.library.okhttp
 
 import io.opentelemetry.android.test.common.OpenTelemetryRumRule
 import io.opentelemetry.api.OpenTelemetry
+import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.api.trace.Span
 import io.opentelemetry.exporter.otlp.http.trace.OtlpHttpSpanExporter
 import io.opentelemetry.sdk.OpenTelemetrySdk
@@ -171,6 +172,31 @@ class InstrumentationTest {
         }
 
         assertThat(server.requestCount.toLong()).isEqualTo(1)
+    }
+
+    @Test
+    @Throws(IOException::class)
+    fun okhttpTimingPhases() {
+        server.enqueue(MockResponse.Builder().code(200).body("ok").build())
+
+        val client = OkHttpClient.Builder().build()
+        createCall(client, "/timing/").execute().use { response ->
+            assertThat(response.body?.string()).isEqualTo("ok")
+        }
+
+        val httpSpan =
+            openTelemetryRumRule.inMemorySpanExporter.finishedSpanItems.firstOrNull { span ->
+                span.attributes.get(AttributeKey.stringKey("http.request.method")) == "GET"
+            }
+
+        assertThat(httpSpan).isNotNull()
+        assertThat(httpSpan!!.attributes.get(AttributeKey.longKey("http.client.timing.total_ms")))
+            .isNotNull()
+        assertThat(httpSpan.attributes.get(AttributeKey.longKey("http.client.timing.ttfb_ms")))
+            .isNotNull()
+        assertThat(httpSpan.attributes.get(AttributeKey.booleanKey("http.client.timing.phases_complete")))
+            .isTrue()
+        assertThat(httpSpan.events.map { it.name }).contains("http.call")
     }
 
     private fun createCall(

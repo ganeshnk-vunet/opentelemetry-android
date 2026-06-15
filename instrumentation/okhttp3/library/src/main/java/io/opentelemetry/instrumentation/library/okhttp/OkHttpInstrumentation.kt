@@ -77,6 +77,7 @@ class OkHttpInstrumentation : AndroidInstrumentation {
 
     private var peerServiceMapping: Map<String, String> = mapOf()
     private var emitExperimentalHttpClientTelemetry = false
+    private var captureNetworkTimingPhasesEnabled = true
 
     /**
      * Adds an [AttributesExtractor] that will extract additional attributes.
@@ -104,6 +105,16 @@ class OkHttpInstrumentation : AndroidInstrumentation {
     }
 
     fun emitExperimentalHttpClientTelemetry(): Boolean = emitExperimentalHttpClientTelemetry
+
+    /**
+     * When enabled, captures per-request network phase timings (DNS, connect, TLS, TTFB, download)
+     * as incubating `http.client.timing.*` span attributes and `http.*` span events.
+     */
+    fun setCaptureNetworkTimingPhases(captureNetworkTimingPhases: Boolean) {
+        this.captureNetworkTimingPhasesEnabled = captureNetworkTimingPhases
+    }
+
+    fun captureNetworkTimingPhases(): Boolean = captureNetworkTimingPhasesEnabled
 
     override fun install(context: Context, openTelemetryRum: OpenTelemetryRum) {
         RumDiagnostics.d { "okhttp: interceptor install" }

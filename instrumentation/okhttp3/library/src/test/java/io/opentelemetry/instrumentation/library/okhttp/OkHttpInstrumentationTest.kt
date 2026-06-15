@@ -25,4 +25,10 @@ internal class OkHttpInstrumentationTest {
                 "TRACE",
             )
     }
+
+    @Test
+    fun captureNetworkTimingPhasesEnabledByDefault() {
+        val instrumentation = OkHttpInstrumentation()
+        assertThat(instrumentation.captureNetworkTimingPhases()).isTrue()
+    }
 }

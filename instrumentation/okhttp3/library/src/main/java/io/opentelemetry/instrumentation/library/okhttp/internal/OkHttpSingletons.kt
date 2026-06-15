@@ -16,8 +16,11 @@ import io.opentelemetry.instrumentation.okhttp.v3_0.internal.ConnectionErrorSpan
 import io.opentelemetry.instrumentation.okhttp.v3_0.internal.OkHttpAttributesGetter
 import io.opentelemetry.instrumentation.okhttp.v3_0.internal.OkHttpClientInstrumenterBuilderFactory
 import io.opentelemetry.instrumentation.okhttp.v3_0.internal.TracingInterceptor
+import java.lang.reflect.Field
 import java.util.function.UnaryOperator
+import okhttp3.EventListener
 import okhttp3.Interceptor
+import okhttp3.OkHttpClient
 
 /**
  * This class is internal and is hence not for public use. Its APIs are unstable and can change at
@@ -29,12 +32,55 @@ object OkHttpSingletons {
             chain.proceed(chain.request())
         }
     private val ATTRIBUTES_GETTER = OkHttpAttributesGetter()
+    private val timingSpanEnricher = OkHttpTimingSpanEnricher()
 
     @JvmField
     var connectionErrorInterceptor: Interceptor = NOOP_INTERCEPTOR
 
     @JvmField
     var tracingInterceptor: Interceptor = NOOP_INTERCEPTOR
+
+    @JvmField
+    var captureNetworkTimingPhases: Boolean = true
+
+    @JvmStatic
+    fun wrapEventListenerFactory(delegate: EventListener.Factory): EventListener.Factory =
+        OkHttpTimingEventListenerFactory.wrap(delegate)
+
+    /**
+     * Called from woven [io.opentelemetry.instrumentation.library.okhttp.OkHttpClientAdvice].
+     * Must remain public so OkHttp bytecode can invoke it after Byte Buddy weaving.
+     */
+    @JvmStatic
+    fun applyClientInstrumentation(builder: OkHttpClient.Builder) {
+        if (!builder.interceptors().contains(CALLBACK_CONTEXT_INTERCEPTOR)) {
+            builder.interceptors().add(0, CALLBACK_CONTEXT_INTERCEPTOR)
+            builder.interceptors().add(1, RESEND_COUNT_CONTEXT_INTERCEPTOR)
+            builder.interceptors().add(2, connectionErrorInterceptor)
+        }
+        if (!builder.networkInterceptors().contains(tracingInterceptor)) {
+            builder.addNetworkInterceptor(tracingInterceptor)
+        }
+        if (captureNetworkTimingPhases) {
+            wrapEventListenerFactoryOnBuilder(builder)
+        }
+    }
+
+    @JvmStatic
+    private fun wrapEventListenerFactoryOnBuilder(builder: OkHttpClient.Builder) {
+        try {
+            val eventListenerFactoryField: Field =
+                builder.javaClass.getDeclaredField("eventListenerFactory")
+            eventListenerFactoryField.isAccessible = true
+            val existingFactory = eventListenerFactoryField.get(builder) as EventListener.Factory
+            val wrappedFactory = wrapEventListenerFactory(existingFactory)
+            if (wrappedFactory !== existingFactory) {
+                eventListenerFactoryField.set(builder, wrappedFactory)
+            }
+        } catch (_: ReflectiveOperationException) {
+            // OkHttp internal field layout changed; skip timing factory wiring.
+        }
+    }
 
     fun configure(
         instrumentation: OkHttpInstrumentation,
@@ -73,7 +119,13 @@ object OkHttpSingletons {
         val instrumenter = instrumenterBuilder.build()
 
         connectionErrorInterceptor = ConnectionErrorSpanInterceptor(instrumenter)
-        val tracing = TracingInterceptor(instrumenter, openTelemetry.propagators)
+        val tracing =
+            if (instrumentation.captureNetworkTimingPhases()) {
+                TimingTracingInterceptor(instrumenter, openTelemetry.propagators, timingSpanEnricher)
+            } else {
+                TracingInterceptor(instrumenter, openTelemetry.propagators)
+            }
+        captureNetworkTimingPhases = instrumentation.captureNetworkTimingPhases()
         tracingInterceptor =
             Interceptor { chain ->
                 val request = chain.request()

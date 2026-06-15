@@ -26,8 +26,23 @@ are provided by the OkHttp attributes getter.
   * `server.port` — logical server port
   * `network.peer.address` / `network.peer.port` — connection endpoint, when available
   * Captured request/response headers per configuration (`http.request.header.<name>` / `http.response.header.<name>`)
+  * Network phase timings (incubating, OkHttp only when enabled): `http.client.timing.dns_ms`, `connect_ms`, `tls_ms`, `ttfb_ms`, `download_ms`, `total_ms`, and related span events (`http.dns`, `http.connect`, `http.secure_connect`, `http.ttfb`, `http.download`, `http.call`)
 
 If a request fails, the span is ended and the error is recorded.
+
+### Network phase timing (incubating)
+
+When `captureNetworkTimingPhases` is enabled (default `true`), OkHttp `EventListener` callbacks capture per-request phase durations as both span attributes (`http.client.timing.*`) and span events (`http.*` with `duration_ms`). Attribute names follow incubating OpenTelemetry client timing conventions and may change.
+
+Disable timing capture:
+
+```java
+OkHttpInstrumentation instrumentation = AndroidInstrumentationLoader.getInstrumentation(OkHttpInstrumentation.class);
+instrumentation.setCaptureNetworkTimingPhases(false);
+```
+
+> [!NOTE]
+> Phase breakdown requires OkHttp Byte Buddy instrumentation (`okhttp3-agent`). `download_ms` may be absent when the response body is not consumed before the span ends.
 
 ## Quickstart
 

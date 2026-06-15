@@ -2,12 +2,14 @@ public final class io/opentelemetry/instrumentation/library/okhttp/OkHttpInstrum
 	public final field additionalExtractors Ljava/util/List;
 	public fun <init> ()V
 	public final fun addAttributesExtractor (Lio/opentelemetry/instrumentation/api/instrumenter/AttributesExtractor;)V
+	public final fun captureNetworkTimingPhases ()Z
 	public final fun emitExperimentalHttpClientTelemetry ()Z
 	public final fun getCapturedRequestHeaders ()Ljava/util/List;
 	public final fun getCapturedResponseHeaders ()Ljava/util/List;
 	public final fun getKnownMethods ()Ljava/util/Set;
 	public fun getName ()Ljava/lang/String;
 	public fun install (Landroid/content/Context;Lio/opentelemetry/android/OpenTelemetryRum;)V
+	public final fun setCaptureNetworkTimingPhases (Z)V
 	public final fun setCapturedRequestHeaders (Ljava/util/List;)V
 	public final fun setCapturedResponseHeaders (Ljava/util/List;)V
 	public final fun setEmitExperimentalHttpClientTelemetry (Z)V
@@ -19,8 +21,11 @@ public final class io/opentelemetry/instrumentation/library/okhttp/internal/OkHt
 	public static final field CALLBACK_CONTEXT_INTERCEPTOR Lokhttp3/Interceptor;
 	public static final field INSTANCE Lio/opentelemetry/instrumentation/library/okhttp/internal/OkHttpSingletons;
 	public static final field RESEND_COUNT_CONTEXT_INTERCEPTOR Lokhttp3/Interceptor;
+	public static field captureNetworkTimingPhases Z
 	public static field connectionErrorInterceptor Lokhttp3/Interceptor;
 	public static field tracingInterceptor Lokhttp3/Interceptor;
+	public static final fun applyClientInstrumentation (Lokhttp3/OkHttpClient$Builder;)V
 	public final fun configure (Lio/opentelemetry/instrumentation/library/okhttp/OkHttpInstrumentation;Lio/opentelemetry/api/OpenTelemetry;)V
+	public static final fun wrapEventListenerFactory (Lokhttp3/EventListener$Factory;)Lokhttp3/EventListener$Factory;
 }
 
