@@ -191,17 +191,63 @@ This prevents double-detection — the Compose detector has already handled anyt
 
 Every qualified tap produces one `ui.click` span with these attributes:
 
-| Attribute                     | Source                                  | Example              |
-|-------------------------------|-----------------------------------------|----------------------|
-| `app.widget.id`               | Node hashCode (Compose) or View ID      | `"2131231045"`       |
-| `app.widget.name`             | Semantic label or resource entry name    | `"btn_pay"`          |
-| `app.screen.coordinate.x`     | Tap X position in window                | `250`                |
-| `app.screen.coordinate.y`     | Tap Y position in window                | `480`                |
-| `view.label`                  | Best-effort display label               | `"Pay now"`          |
-| `view.source`                 | UI framework: `"compose"` or `"view"`   | `"compose"`          |
+| Attribute                     | Source                                       | Example              |
+|-------------------------------|----------------------------------------------|----------------------|
+| `app.widget.id`               | Node hashCode (Compose) or View ID           | `"2131231045"`       |
+| `app.widget.name`             | Best-effort display label                    | `"Pay now"`          |
+| `app.screen.coordinate.x`     | Tap X position in window                     | `250`                |
+| `app.screen.coordinate.y`     | Tap Y position in window                     | `480`                |
+| `app.widget.source`           | UI framework: `"compose"` or `"view"`        | `"compose"`          |
+| `app.widget.checked`          | Toggle state — **toggle widgets only**       | `true`               |
 
 The span is kept active for 500ms (configurable via `setActiveContextWindowMillis`) to allow
 downstream async work to correlate with the click.
+
+### `app.widget.checked`
+
+Emitted only when the tapped target is a genuine toggle — an `android.widget.CompoundButton`
+(`Switch`, `MaterialSwitch`, `CheckBox`, `RadioButton`, `ToggleButton`) or a `CheckedTextView`. It
+is **not** keyed off the `Checkable` interface, because `MaterialButton` implements `Checkable`
+while being an ordinary button (that would tag every Material button, e.g. a dialog's "OK", with
+`checked=false`).
+
+The state is read on a deferred main-loop tick rather than inline: a `CompoundButton` flips in
+`PerformClick`, which `View.onTouchEvent` *posts* on `ACTION_UP`, so the resulting (post-tap) state
+is only observable after that runnable runs. The span end is scheduled after the read so the
+attribute is always recorded before the span closes.
+
+**View only.** Compose toggles currently do not emit `app.widget.checked` — Compose state updates on
+recomposition (asynchronously), so a reliable post-tap read isn't available through this path.
+
+---
+
+## Window Tracking
+
+A tap is only seen if the window it lands in has its `Window.Callback` wrapped. `hybrid-click`
+tracks multiple windows simultaneously (the Activity window plus any dialogs stacked on it); each
+tracked window keeps its own `TapGestureClassifier`, keyed by `Window` in a `WeakHashMap`.
+
+Windows are discovered two ways:
+
+1. **Activity windows** — `ClickActivityCallback` wraps `activity.window` on resume / unwraps on
+   pause.
+2. **DialogFragment windows** — `DialogFragmentClickCallback` (a `FragmentManager
+   .FragmentLifecycleCallbacks` registered per Activity) wraps `dialog.window` on fragment resume.
+   `androidx.fragment` is a `compileOnly` dependency; registration is guarded and lazily initialized
+   so apps without fragments neither crash nor pay for it.
+
+Both mechanisms use only public SDK APIs, which keeps the module safe for security-sensitive
+deployments (no reflection into framework internals).
+
+### Not covered
+
+- **Raw dialogs** shown directly via `AlertDialog.Builder(...).show()` (i.e. not hosted in a
+  `DialogFragment`). They own a separate `Window`, but Android exposes no public, lifecycle-based
+  hook to discover them — the only known mechanisms reach into hidden framework internals
+  (`WindowManagerGlobal`/`DecorView`), which is intentionally avoided here. Apps that need these
+  captured should host them in a `DialogFragment`.
+- **`PopupWindow`-based surfaces** (overflow/`PopupMenu`, `Spinner` dropdowns). Their root views are
+  not decor views and have no `Window`/`Window.Callback` to wrap.
 
 ---
 
