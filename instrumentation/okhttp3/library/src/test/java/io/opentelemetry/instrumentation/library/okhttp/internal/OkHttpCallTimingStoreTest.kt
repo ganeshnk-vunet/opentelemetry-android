@@ -30,4 +30,22 @@ class OkHttpCallTimingStoreTest {
         assertThat(timing?.totalMs).isEqualTo(5L)
         assertThat(OkHttpCallTimingStore.remove(call)).isNull()
     }
+
+    @Test
+    fun `discard removes stored call without finalizing`() {
+        OkHttpCallTimingStore.stateFor(call).callStartNanos = 0L
+
+        OkHttpCallTimingStore.discard(call)
+
+        assertThat(OkHttpCallTimingStore.remove(call)).isNull()
+    }
+
+    @Test
+    fun `updateIfPresent does not create missing call state`() {
+        OkHttpCallTimingStore.updateIfPresent(call) { state ->
+            state.callEndNanos = 5_000_000L
+        }
+
+        assertThat(OkHttpCallTimingStore.remove(call)).isNull()
+    }
 }

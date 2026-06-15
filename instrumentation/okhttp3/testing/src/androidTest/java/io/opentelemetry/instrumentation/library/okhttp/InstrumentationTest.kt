@@ -194,9 +194,11 @@ class InstrumentationTest {
             .isNotNull()
         assertThat(httpSpan.attributes.get(AttributeKey.longKey("http.client.timing.ttfb_ms")))
             .isNotNull()
+        assertThat(httpSpan.attributes.get(AttributeKey.longKey("http.client.timing.download_ms")))
+            .isNotNull()
         assertThat(httpSpan.attributes.get(AttributeKey.booleanKey("http.client.timing.phases_complete")))
             .isTrue()
-        assertThat(httpSpan.events.map { it.name }).contains("http.call")
+        assertThat(httpSpan.events.map { it.name }).contains("http.call", "http.download")
     }
 
     private fun createCall(
