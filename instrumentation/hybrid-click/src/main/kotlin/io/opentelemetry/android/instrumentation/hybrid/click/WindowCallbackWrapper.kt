@@ -11,15 +11,17 @@ import android.view.KeyboardShortcutGroup
 import android.view.Menu
 import android.view.MotionEvent
 import android.view.SearchEvent
+import android.view.Window
 import android.view.Window.Callback
 import androidx.annotation.RequiresApi
 
 internal class WindowCallbackWrapper(
     private val callback: Callback,
+    private val window: Window,
     private val clickEventGenerator: ClickEventGenerator,
 ) : Callback by callback {
     override fun dispatchTouchEvent(event: MotionEvent?): Boolean {
-        clickEventGenerator.generateClick(event)
+        clickEventGenerator.generateClick(window, event)
         return callback.dispatchTouchEvent(event)
     }
 

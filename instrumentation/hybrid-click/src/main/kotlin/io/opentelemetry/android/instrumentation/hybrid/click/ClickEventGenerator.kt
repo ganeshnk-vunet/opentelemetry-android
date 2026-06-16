@@ -8,10 +8,11 @@ package io.opentelemetry.android.instrumentation.hybrid.click
 import android.os.Handler
 import android.os.Looper
 import android.view.MotionEvent
-import android.view.ViewConfiguration
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.Window
 import io.opentelemetry.android.common.RumDiagnostics
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_WIDGET_CHECKED
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_WIDGET_SOURCE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.SOURCE_COMPOSE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.TapGestureClassifier
@@ -21,7 +22,7 @@ import io.opentelemetry.android.instrumentation.hybrid.click.view.ViewTapTargetD
 import io.opentelemetry.api.trace.Tracer
 import io.opentelemetry.semconv.incubating.AppIncubatingAttributes
 import java.lang.reflect.Method
-import java.lang.ref.WeakReference
+import java.util.WeakHashMap
 
 /**
  * Generates `ui.click` spans for qualified tap gestures in hybrid View/Compose screens.
@@ -40,9 +41,14 @@ internal class ClickEventGenerator(
     private val viewTapTargetDetector: ViewTapTargetDetector = ViewTapTargetDetector(),
     private val activeContextWindowMillis: Long = DEFAULT_ACTIVE_CONTEXT_WINDOW_MILLIS,
 ) {
-    private var windowRef: WeakReference<Window>? = null
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val tapGestureClassifier = TapGestureClassifier()
+
+    /**
+     * Per-window gesture state. Hybrid-click tracks several windows at once (the Activity window
+     * plus any dialog windows on top of it), so each gets its own classifier keyed by [Window];
+     * weak keys let a window's entry drop if tracking is ever left unbalanced.
+     */
+    private val tapGestureClassifiers = WeakHashMap<Window, TapGestureClassifier>()
 
     private val composeTapTargetDetector: ComposeDetectorBridge? by lazy {
         loadComposeDetector()
@@ -122,26 +128,36 @@ internal class ClickEventGenerator(
         } ?: throw NoSuchMethodException("$methodBaseName([${parameterType.name}])")
 
     /**
-     * Installs the wrapped window callback and initializes gesture thresholds.
+     * Installs the wrapped window callback and initializes gesture thresholds for [window].
+     *
+     * Safe to call repeatedly and for multiple windows at once (e.g. an Activity window plus any
+     * dialog windows stacked on top); each tracked window keeps its own gesture state.
      */
     fun startTracking(window: Window) {
-        windowRef = WeakReference(window)
-        tapGestureClassifier.touchSlopPx =
-            ViewConfiguration.get(window.decorView.context).scaledTouchSlop.toFloat()
-        val currentCallback = window.callback
+        val currentCallback = window.callback ?: return
         if (currentCallback is WindowCallbackWrapper) {
             return
         }
-        window.callback = WindowCallbackWrapper(currentCallback, this)
+        tapGestureClassifiers[window] =
+            TapGestureClassifier().apply {
+                touchSlopPx =
+                    ViewConfiguration.get(window.decorView.context).scaledTouchSlop.toFloat()
+            }
+        window.callback = WindowCallbackWrapper(currentCallback, window, this)
         RumDiagnostics.d { "hybridClick: window callback attached" }
     }
 
     /**
-     * Consumes motion events, qualifies tap gestures, resolves a tap target, and emits `ui.click`.
+     * Consumes motion events for [window], qualifies tap gestures, resolves a tap target, and emits
+     * `ui.click`. The target is always resolved against the decorView of the window that received
+     * the touch, keeping multi-window tracking correct.
      */
-    fun generateClick(motionEvent: MotionEvent?) {
-        val window = windowRef?.get() ?: return
+    fun generateClick(
+        window: Window,
+        motionEvent: MotionEvent?,
+    ) {
         val event = motionEvent ?: return
+        val tapGestureClassifier = tapGestureClassifiers[window] ?: return
         if (!tapGestureClassifier.shouldEmitClick(event)) {
             return
         }
@@ -165,13 +181,30 @@ internal class ClickEventGenerator(
                 .startSpan()
 
         val scope = span.makeCurrent()
-        mainHandler.postDelayed(
-            {
+        val endSpan =
+            Runnable {
                 scope.close()
                 span.end()
-            },
-            activeContextWindowMillis,
-        )
+            }
+
+        val checkedStateProvider = target.checkedStateProvider
+        if (checkedStateProvider == null) {
+            mainHandler.postDelayed(endSpan, activeContextWindowMillis)
+        } else {
+            // A CompoundButton flips in PerformClick, which View.onTouchEvent *posts* on ACTION_UP
+            // rather than running inline. Re-posting from inside a posted runnable (a double post)
+            // guarantees the read runs after that flip; reading inline would observe the pre-tap
+            // state. The span end is scheduled only after the read, so the attribute is always
+            // recorded before the span closes regardless of activeContextWindowMillis.
+            mainHandler.post {
+                mainHandler.post {
+                    checkedStateProvider()?.let { checked ->
+                        span.setAttribute(ATTR_WIDGET_CHECKED, checked)
+                    }
+                    mainHandler.postDelayed(endSpan, activeContextWindowMillis)
+                }
+            }
+        }
     }
 
     /**
@@ -184,16 +217,15 @@ internal class ClickEventGenerator(
     ): TapTarget? = composeTapTargetDetector?.findTapTarget(rootView, x, y)
 
     /**
-     * Restores original window callback and clears tracking state.
+     * Restores [window]'s original callback and clears its gesture state, detaching tap tracking
+     * for that specific window.
      */
-    fun stopTracking() {
-        windowRef?.get()?.run {
-            if (callback is WindowCallbackWrapper) {
-                callback = (callback as WindowCallbackWrapper).unwrap()
-            }
+    fun stopTracking(window: Window) {
+        val callback = window.callback
+        if (callback is WindowCallbackWrapper) {
+            window.callback = callback.unwrap()
         }
-        tapGestureClassifier.reset()
-        windowRef = null
+        tapGestureClassifiers.remove(window)?.reset()
     }
 
     private companion object {
