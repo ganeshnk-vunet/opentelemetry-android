@@ -233,8 +233,11 @@ Tapping a text field is captured as a `ui.click`, identified by its **label** �
   merged `ContentDescription` (usually a decorative leading icon such as "Phone"/"Lock").
 
 **Privacy guarantee.** The entered value is never emitted. On the Compose path the typed value
-(`SemanticsProperties.EditableText`) is read *only* to exclude any label candidate equal to it, and
-fields flagged `SemanticsProperties.Password` fall back to a constant label. Note that
+(`SemanticsProperties.EditableText`) is read *only* to exclude matching candidates, and — because a
+`VisualTransformation` (card/phone/currency masking) makes the displayed `Text` differ from the raw
+value and bypass that check — the field's `Text` is used as a label **only when the field is empty**
+(when it is the label/placeholder, never input). Fields flagged `SemanticsProperties.Password` fall
+back to a constant label. Note that
 `app.widget.name` is still derived from visible labels/text generally, which in some apps can be
 dynamic data; deployments with strict data-handling requirements should review what their labels
 contain.

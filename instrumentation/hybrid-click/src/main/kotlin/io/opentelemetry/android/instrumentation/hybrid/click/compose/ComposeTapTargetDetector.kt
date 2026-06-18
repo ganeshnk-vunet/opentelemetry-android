@@ -257,17 +257,28 @@ internal class ComposeTapTargetDetector(
             } catch (_: Throwable) {
                 false
             }
+        val hasContent = !typedValue.isNullOrEmpty()
 
         // A candidate is only usable if it is non-blank and is not the field's current value.
         fun safe(candidate: String?): String? =
             candidate?.takeIf { it.isNotBlank() && it != typedValue }
 
-        val labelText = fieldConfig.getOrNull(SemanticsProperties.Text)?.firstOrNull()?.text
+        // `Text` on a TextField can carry the *displayed* value, which under a VisualTransformation
+        // (card / phone / currency masks) differs character-for-character from the raw EditableText
+        // and would slip past the equality guard above. So only trust `Text` when the field is empty
+        // — then it is the label/placeholder, never user input. contentDescription is the field's
+        // own accessibility label or a decorative icon ("Phone"/"Lock"), never the typed value.
+        val labelText = if (hasContent) null else fieldConfig.getOrNull(SemanticsProperties.Text)?.firstOrNull()?.text
         val contentDescription = fieldConfig.getOrNull(SemanticsProperties.ContentDescription)?.firstOrNull()
-        val resolved = safe(labelText) ?: safe(contentDescription)
 
-        return resolved
-            ?: if (isPassword) PASSWORD_FIELD_LABEL else (getModifierClassName(node) ?: nodeId(node))
+        if (isPassword) {
+            // Never let a password field surface anything but its static label.
+            return safe(labelText) ?: PASSWORD_FIELD_LABEL
+        }
+
+        return safe(labelText)
+            ?: safe(contentDescription)
+            ?: (getModifierClassName(node) ?: nodeId(node))
     }
 
     /**
