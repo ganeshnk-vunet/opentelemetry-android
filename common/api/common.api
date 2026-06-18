@@ -50,6 +50,13 @@ public abstract interface class io/opentelemetry/android/common/UncaughtExceptio
 	public abstract fun recordUnhandledException (Ljava/lang/Thread;Ljava/lang/Throwable;)V
 }
 
+public final class io/opentelemetry/android/common/interaction/ActiveInteractionHolder {
+	public static final field INSTANCE Lio/opentelemetry/android/common/interaction/ActiveInteractionHolder;
+	public final fun clear (Lio/opentelemetry/context/Context;)V
+	public final fun current ()Lio/opentelemetry/context/Context;
+	public final fun set (Lio/opentelemetry/context/Context;J)V
+}
+
 public final class io/opentelemetry/android/common/internal/features/networkattributes/CurrentNetworkAttributesExtractor {
 	public fun <init> ()V
 	public final fun extract (Lio/opentelemetry/android/common/internal/features/networkattributes/data/CurrentNetwork;)Lio/opentelemetry/api/common/Attributes;

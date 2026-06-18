@@ -111,6 +111,7 @@ public final class io/opentelemetry/android/agent/dsl/instrumentation/GlideConfi
 public final class io/opentelemetry/android/agent/dsl/instrumentation/HybridClickConfiguration : io/opentelemetry/android/agent/dsl/instrumentation/CanBeEnabledAndDisabled {
 	public final fun activeContextWindowMillis (J)V
 	public fun enabled (Z)V
+	public final fun interactionFallbackTtlMillis (J)V
 }
 
 public final class io/opentelemetry/android/agent/dsl/instrumentation/InstrumentationConfiguration {

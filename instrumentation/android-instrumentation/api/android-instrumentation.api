@@ -6,6 +6,7 @@ public abstract interface class io/opentelemetry/android/instrumentation/Android
 
 public abstract interface class io/opentelemetry/android/instrumentation/ConfigurableHybridClickInstrumentation {
 	public abstract fun setActiveContextWindowMillis (J)V
+	public abstract fun setInteractionFallbackTtlMillis (J)V
 }
 
 public abstract interface class io/opentelemetry/android/instrumentation/ConfigurableSystemMetricsInstrumentation {

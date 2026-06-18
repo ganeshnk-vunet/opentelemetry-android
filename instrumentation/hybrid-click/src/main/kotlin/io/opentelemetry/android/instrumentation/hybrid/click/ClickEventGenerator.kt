@@ -12,6 +12,7 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.view.Window
 import io.opentelemetry.android.common.RumDiagnostics
+import io.opentelemetry.android.common.interaction.ActiveInteractionHolder
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_WIDGET_CHECKED
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_WIDGET_SOURCE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.SOURCE_COMPOSE
@@ -20,6 +21,7 @@ import io.opentelemetry.android.instrumentation.hybrid.click.shared.TapTarget
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.UI_CLICK_SPAN_NAME
 import io.opentelemetry.android.instrumentation.hybrid.click.view.ViewTapTargetDetector
 import io.opentelemetry.api.trace.Tracer
+import io.opentelemetry.context.Context
 import io.opentelemetry.semconv.incubating.AppIncubatingAttributes
 import java.lang.reflect.Method
 import java.util.WeakHashMap
@@ -40,6 +42,7 @@ internal class ClickEventGenerator(
     private val tracer: Tracer,
     private val viewTapTargetDetector: ViewTapTargetDetector = ViewTapTargetDetector(),
     private val activeContextWindowMillis: Long = DEFAULT_ACTIVE_CONTEXT_WINDOW_MILLIS,
+    private val interactionFallbackTtlMillis: Long = DEFAULT_INTERACTION_FALLBACK_TTL_MILLIS,
 ) {
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -181,8 +184,16 @@ internal class ClickEventGenerator(
                 .startSpan()
 
         val scope = span.makeCurrent()
+        // Publish the click context as the active interaction so downstream work that runs on other
+        // threads (coroutine dispatchers, OkHttp's pool) can adopt it as a parent even though the
+        // thread-local context does not cross those boundaries. This lets a click-triggered network
+        // call and the navigation that follows its response attach to the click. See
+        // [ActiveInteractionHolder].
+        val clickContext = Context.current()
+        ActiveInteractionHolder.set(clickContext, interactionFallbackTtlMillis)
         val endSpan =
             Runnable {
+                ActiveInteractionHolder.clear(clickContext)
                 scope.close()
                 span.end()
             }
@@ -230,6 +241,13 @@ internal class ClickEventGenerator(
 
     private companion object {
         const val DEFAULT_ACTIVE_CONTEXT_WINDOW_MILLIS = 500L
+
+        /**
+         * Fallback window during which a finished/finishing click can still parent cross-thread
+         * work (network requests, navigation) that runs without its own context, even after the
+         * click span's main-thread scope closes.
+         */
+        const val DEFAULT_INTERACTION_FALLBACK_TTL_MILLIS = 500L
     }
 
 }

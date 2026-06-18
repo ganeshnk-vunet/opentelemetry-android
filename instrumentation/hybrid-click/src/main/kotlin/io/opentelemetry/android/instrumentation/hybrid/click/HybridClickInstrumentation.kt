@@ -23,6 +23,7 @@ import io.opentelemetry.android.instrumentation.ConfigurableHybridClickInstrumen
 class HybridClickInstrumentation : AndroidInstrumentation, ConfigurableHybridClickInstrumentation {
     override val name: String = "hybrid.click"
     private var activeContextWindowMillis: Long = DEFAULT_ACTIVE_CONTEXT_WINDOW_MILLIS
+    private var interactionFallbackTtlMillis: Long = DEFAULT_INTERACTION_FALLBACK_TTL_MILLIS
     private var activityLifecycleCallback: Application.ActivityLifecycleCallbacks? = null
 
     /**
@@ -50,6 +51,7 @@ class HybridClickInstrumentation : AndroidInstrumentation, ConfigurableHybridCli
                     ClickEventGenerator(
                         tracer = tracer,
                         activeContextWindowMillis = activeContextWindowMillis,
+                        interactionFallbackTtlMillis = interactionFallbackTtlMillis,
                     ),
                 )
             activityLifecycleCallback = callback
@@ -74,7 +76,15 @@ class HybridClickInstrumentation : AndroidInstrumentation, ConfigurableHybridCli
         activeContextWindowMillis = value
     }
 
+    /**
+     * Configures the fallback TTL for cross-thread interaction correlation.
+     */
+    override fun setInteractionFallbackTtlMillis(value: Long) {
+        interactionFallbackTtlMillis = value
+    }
+
     private companion object {
         const val DEFAULT_ACTIVE_CONTEXT_WINDOW_MILLIS = 500L
+        const val DEFAULT_INTERACTION_FALLBACK_TTL_MILLIS = 500L
     }
 }

@@ -1,9 +1,11 @@
 public final class io/opentelemetry/android/instrumentation/hybrid/click/HybridClickInstrumentation : io/opentelemetry/android/instrumentation/AndroidInstrumentation, io/opentelemetry/android/instrumentation/ConfigurableHybridClickInstrumentation {
 	public static final field DEFAULT_ACTIVE_CONTEXT_WINDOW_MILLIS J
+	public static final field DEFAULT_INTERACTION_FALLBACK_TTL_MILLIS J
 	public fun <init> ()V
 	public fun getName ()Ljava/lang/String;
 	public fun install (Landroid/content/Context;Lio/opentelemetry/android/OpenTelemetryRum;)V
 	public fun setActiveContextWindowMillis (J)V
+	public fun setInteractionFallbackTtlMillis (J)V
 	public fun uninstall (Landroid/content/Context;Lio/opentelemetry/android/OpenTelemetryRum;)V
 }
 

@@ -46,6 +46,34 @@ internal class HybridClickConfigurationTest {
     }
 
     @Test
+    fun `interactionFallbackTtlMillis sets value when instrumentation is present`() {
+        val instrumentation = FakeHybridClickInstrumentation()
+        val loader = FakeInstrumentationLoader().apply { register(instrumentation) }
+        val configuration = OpenTelemetryConfiguration(clock = FakeClock(), instrumentationLoader = loader)
+
+        configuration.instrumentations {
+            hybridClick {
+                interactionFallbackTtlMillis(2_000L)
+            }
+        }
+
+        assertEquals(2_000L, instrumentation.interactionFallbackTtlMillis)
+    }
+
+    @Test
+    fun `interactionFallbackTtlMillis rejects non-positive values`() {
+        val configuration = OpenTelemetryConfiguration(clock = FakeClock(), instrumentationLoader = FakeInstrumentationLoader())
+
+        assertThrows(IllegalArgumentException::class.java) {
+            configuration.instrumentations {
+                hybridClick {
+                    interactionFallbackTtlMillis(0L)
+                }
+            }
+        }
+    }
+
+    @Test
     fun `activeContextWindowMillis rejects non-positive values`() {
         val configuration = OpenTelemetryConfiguration(clock = FakeClock(), instrumentationLoader = FakeInstrumentationLoader())
 
@@ -88,6 +116,7 @@ internal class HybridClickConfigurationTest {
 
 private class FakeHybridClickInstrumentation : AndroidInstrumentation, ConfigurableHybridClickInstrumentation {
     var activeContextWindowMillis: Long? = null
+    var interactionFallbackTtlMillis: Long? = null
 
     override val name: String = "hybrid.click"
 
@@ -98,5 +127,9 @@ private class FakeHybridClickInstrumentation : AndroidInstrumentation, Configura
 
     override fun setActiveContextWindowMillis(value: Long) {
         activeContextWindowMillis = value
+    }
+
+    override fun setInteractionFallbackTtlMillis(value: Long) {
+        interactionFallbackTtlMillis = value
     }
 }

@@ -7,6 +7,7 @@ package io.opentelemetry.android.instrumentation.navigation.common
 
 import io.opentelemetry.android.common.RumConstants.SCREEN_NAME_KEY
 import io.opentelemetry.android.common.RumDiagnostics
+import io.opentelemetry.android.common.interaction.ActiveInteractionHolder
 import io.opentelemetry.android.instrumentation.navigation.common.NavigationConstants.NAVIGATION_DESTINATION_NAME_KEY
 import io.opentelemetry.android.instrumentation.navigation.common.NavigationConstants.NAVIGATION_DESTINATION_TYPE_KEY
 import io.opentelemetry.android.instrumentation.navigation.common.NavigationConstants.NAVIGATION_ENTRY_TYPE_KEY
@@ -18,6 +19,7 @@ import io.opentelemetry.android.instrumentation.navigation.common.NavigationCons
 import io.opentelemetry.android.instrumentation.navigation.common.NavigationConstants.SPAN_NAME
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTransitionCandidate
 import io.opentelemetry.api.trace.Tracer
+import io.opentelemetry.context.Context
 
 class NavigationSpanEmitter(
     private val tracer: Tracer,
@@ -48,6 +50,13 @@ class NavigationSpanEmitter(
                 .setAttribute(NAVIGATION_SOURCE_TYPE_KEY, it.type.name.lowercase())
                 .setAttribute(NAVIGATION_SOURCE_NAME_KEY, it.name)
         }
+
+        // When navigation has no active context of its own, attach it to the active user
+        // interaction (e.g. the click that triggered this navigation, directly or via a network
+        // response) so the click -> navigation chain stays in a single trace.
+        ActiveInteractionHolder.current()
+            ?.takeIf { Context.current() == Context.root() }
+            ?.let { spanBuilder.setParent(it) }
 
         val span = spanBuilder.startSpan()
         // Set screen.name after start so it wins over default attribute appenders.

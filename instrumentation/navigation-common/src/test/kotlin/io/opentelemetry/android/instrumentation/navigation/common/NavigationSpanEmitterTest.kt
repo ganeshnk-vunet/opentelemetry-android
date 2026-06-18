@@ -6,19 +6,60 @@
 package io.opentelemetry.android.instrumentation.navigation.common
 
 import io.opentelemetry.android.common.RumConstants.SCREEN_NAME_KEY
+import io.opentelemetry.android.common.interaction.ActiveInteractionHolder
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationEntryType
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationNode
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationNodeType
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTransitionCandidate
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTransitionType
+import io.opentelemetry.context.Context
 import io.opentelemetry.sdk.OpenTelemetrySdk
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
 import io.opentelemetry.sdk.trace.SdkTracerProvider
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor
 import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 
 class NavigationSpanEmitterTest {
+    @AfterEach
+    fun resetActiveInteraction() {
+        // Holder is process-global; expire any entry left by a test.
+        ActiveInteractionHolder.set(Context.root(), 0)
+        ActiveInteractionHolder.current()
+    }
+
+    @Test
+    fun attaches_to_active_interaction_when_no_current_context() {
+        val exporter = InMemorySpanExporter.create()
+        val tracerProvider =
+            SdkTracerProvider
+                .builder()
+                .addSpanProcessor(SimpleSpanProcessor.create(exporter))
+                .build()
+        val openTelemetry = OpenTelemetrySdk.builder().setTracerProvider(tracerProvider).build()
+        val tracer = openTelemetry.getTracer("test-navigation-common")
+
+        val interactionSpan = tracer.spanBuilder("ui.click").startSpan()
+        val interactionContext = Context.root().with(interactionSpan)
+        ActiveInteractionHolder.set(interactionContext, 5_000)
+
+        NavigationSpanEmitter(tracer).emit(
+            NavigationTransitionCandidate(
+                source = NavigationNode(type = NavigationNodeType.COMPOSE_ROUTE, name = "login"),
+                destination = NavigationNode(type = NavigationNodeType.COMPOSE_ROUTE, name = "otp"),
+                transitionType = NavigationTransitionType.PUSH,
+                entryType = NavigationEntryType.INTERNAL,
+                timestampNanos = 7L,
+            ),
+        )
+        interactionSpan.end()
+
+        val navSpan = exporter.finishedSpanItems.single { it.name == NavigationConstants.SPAN_NAME }
+        assertThat(navSpan.traceId).isEqualTo(interactionSpan.spanContext.traceId)
+        assertThat(navSpan.parentSpanId).isEqualTo(interactionSpan.spanContext.spanId)
+    }
+
     @Test
     fun emits_navigation_span_with_expected_attributes() {
         val exporter = InMemorySpanExporter.create()

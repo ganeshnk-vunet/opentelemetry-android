@@ -8,6 +8,7 @@ package io.opentelemetry.instrumentation.library.okhttp.internal
 import android.util.Log
 import io.opentelemetry.android.common.RumConstants
 import io.opentelemetry.android.common.RumDiagnostics
+import io.opentelemetry.android.common.interaction.ActiveInteractionHolder
 import io.opentelemetry.api.OpenTelemetry
 import io.opentelemetry.context.Context
 import io.opentelemetry.instrumentation.api.incubator.semconv.http.HttpClientServicePeerAttributesExtractor
@@ -156,7 +157,13 @@ object OkHttpSingletons {
     val CALLBACK_CONTEXT_INTERCEPTOR: Interceptor =
         Interceptor { chain: Interceptor.Chain ->
             val request = chain.request()
-            val context = OkHttpCallbackAdviceHelper.tryRecoverPropagatedContextFromCallback(request)
+            // Prefer context explicitly propagated through an async callback; otherwise, when this
+            // call runs with no active context of its own (e.g. a Retrofit `suspend` call dispatched
+            // onto Dispatchers.IO without manual context propagation), fall back to the active user
+            // interaction so the resulting client span still attaches to the originating click.
+            val context =
+                OkHttpCallbackAdviceHelper.tryRecoverPropagatedContextFromCallback(request)
+                    ?: ActiveInteractionHolder.current()?.takeIf { Context.current() == Context.root() }
             context?.makeCurrent()?.use {
                 return@Interceptor chain.proceed(request)
             }

@@ -33,6 +33,15 @@ class HybridClickConfiguration internal constructor(
         hybridClickInstrumentation?.setActiveContextWindowMillis(value)
     }
 
+    /**
+     * Sets how long (in milliseconds) a click can still parent cross-thread work (network requests,
+     * navigation) that runs without its own context.
+     */
+    fun interactionFallbackTtlMillis(value: Long) {
+        require(value > 0) { "interactionFallbackTtlMillis must be > 0, but was $value." }
+        hybridClickInstrumentation?.setInteractionFallbackTtlMillis(value)
+    }
+
     override fun enabled(enabled: Boolean) {
         if (enabled) {
             config.allowInstrumentation(HYBRID_CLICK_INSTRUMENTATION_NAME)
