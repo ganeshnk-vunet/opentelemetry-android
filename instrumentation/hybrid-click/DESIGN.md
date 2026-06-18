@@ -221,6 +221,26 @@ recomposition (asynchronously), so a reliable post-tap read isn't available thro
 
 ---
 
+## Text fields
+
+Tapping a text field is captured as a `ui.click`, identified by its **label** — never its contents.
+
+- **View** (`EditText`): already clickable, so the View detector finds it. Its label resolves as
+  `contentDescription → hint → class name`; the typed `text` is **never** used.
+- **Compose** (`TextField`/`OutlinedTextField`): these expose no `OnClick` and, in modern Compose,
+  no legacy `SemanticsModifier`, so they are detected via the **semantics tree** — a node carrying a
+  `SemanticsActions.SetText` action. The label prefers the field's `Text` (its label) over any
+  merged `ContentDescription` (usually a decorative leading icon such as "Phone"/"Lock").
+
+**Privacy guarantee.** The entered value is never emitted. On the Compose path the typed value
+(`SemanticsProperties.EditableText`) is read *only* to exclude any label candidate equal to it, and
+fields flagged `SemanticsProperties.Password` fall back to a constant label. Note that
+`app.widget.name` is still derived from visible labels/text generally, which in some apps can be
+dynamic data; deployments with strict data-handling requirements should review what their labels
+contain.
+
+---
+
 ## Window Tracking
 
 A tap is only seen if the window it lands in has its `Window.Callback` wrapped. `hybrid-click`

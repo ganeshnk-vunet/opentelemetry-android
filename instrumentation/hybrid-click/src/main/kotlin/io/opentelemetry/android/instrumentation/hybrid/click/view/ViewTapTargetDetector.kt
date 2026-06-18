@@ -9,6 +9,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.CheckedTextView
 import android.widget.CompoundButton
+import android.widget.EditText
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.LabelResolver
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.SOURCE_VIEW
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.TapTarget
@@ -110,6 +111,18 @@ internal class ViewTapTargetDetector : TapTargetDetector {
 
     private fun viewToLabel(view: View): String {
         val contentDescription = view.contentDescription?.toString()
+
+        // Editable text fields must never expose their typed content (it may be PII or a password).
+        // Resolve from the accessibility label, then the hint, then the class name.
+        if (view is EditText) {
+            return LabelResolver.resolve(
+                contentDescription = contentDescription,
+                text = view.hint?.toString(),
+                className = view.javaClass.simpleName,
+                fallback = view.id.toString(),
+            )
+        }
+
         val text = (view as? android.widget.TextView)?.text?.toString()
 
         val resolvedLabel =

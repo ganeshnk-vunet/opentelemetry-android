@@ -198,9 +198,14 @@ internal class ClickEventGenerator(
             // recorded before the span closes regardless of activeContextWindowMillis.
             mainHandler.post {
                 mainHandler.post {
-                    checkedStateProvider()?.let { checked ->
-                        span.setAttribute(ATTR_WIDGET_CHECKED, checked)
+                    try {
+                        checkedStateProvider()?.let { checked ->
+                            span.setAttribute(ATTR_WIDGET_CHECKED, checked)
+                        }
+                    } catch (throwable: Throwable) {
+                        RumDiagnostics.d { "hybridClick: swallowed error reading toggle state: ${throwable.message}" }
                     }
+                    // Always schedule the end, even if the read above failed, so the span never leaks.
                     mainHandler.postDelayed(endSpan, activeContextWindowMillis)
                 }
             }

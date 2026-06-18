@@ -14,6 +14,7 @@ import android.view.SearchEvent
 import android.view.Window
 import android.view.Window.Callback
 import androidx.annotation.RequiresApi
+import io.opentelemetry.android.common.RumDiagnostics
 
 internal class WindowCallbackWrapper(
     private val callback: Callback,
@@ -21,7 +22,14 @@ internal class WindowCallbackWrapper(
     private val clickEventGenerator: ClickEventGenerator,
 ) : Callback by callback {
     override fun dispatchTouchEvent(event: MotionEvent?): Boolean {
-        clickEventGenerator.generateClick(window, event)
+        // Instrumentation must never affect the host app: any failure while deriving telemetry is
+        // swallowed so the touch is always delivered to the real callback. Critical for the apps
+        // this ships into (e.g. banking), where a dropped touch or crash is unacceptable.
+        try {
+            clickEventGenerator.generateClick(window, event)
+        } catch (throwable: Throwable) {
+            RumDiagnostics.d { "hybridClick: swallowed error during click handling: ${throwable.message}" }
+        }
         return callback.dispatchTouchEvent(event)
     }
 

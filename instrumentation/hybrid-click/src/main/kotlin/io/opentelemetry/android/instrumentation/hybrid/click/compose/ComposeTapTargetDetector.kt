@@ -14,6 +14,7 @@ import androidx.compose.ui.node.Owner
 import androidx.compose.ui.semantics.SemanticsConfiguration
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsModifier
+import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getAllSemanticsNodes
 import androidx.compose.ui.semantics.getOrNull
@@ -29,6 +30,25 @@ import java.util.LinkedList
 internal class ComposeTapTargetDetector(
     private val composeLayoutNodeUtil: ComposeLayoutNodeUtil = ComposeLayoutNodeUtil(),
 ) {
+    // Single-tap memo for the merged semantics tree. Resolving one tap reads it several times
+    // (tappable-id collection, the target's own config, ancestor label ranking); building it is the
+    // expensive part. Invalidated at the start of each tap so it never serves a stale tree.
+    // Confined to the main thread, like all touch handling.
+    private var cachedOwner: Owner? = null
+    private var cachedSemanticsNodes: List<SemanticsNode>? = null
+
+    private fun semanticsNodesOf(owner: Owner): List<SemanticsNode> {
+        cachedSemanticsNodes?.let { if (cachedOwner === owner) return it }
+        val nodes =
+            try {
+                owner.semanticsOwner.getAllSemanticsNodes(mergingEnabled = true)
+            } catch (_: Throwable) {
+                emptyList()
+            }
+        cachedOwner = owner
+        cachedSemanticsNodes = nodes
+        return nodes
+    }
     /**
      * Finds the deepest eligible [LayoutNode] at the provided window coordinates.
      */
@@ -98,13 +118,24 @@ internal class ComposeTapTargetDetector(
         x: Float,
         y: Float,
     ): LayoutNode? {
+        // Invalidate the per-tap semantics memo so this tap rebuilds the tree exactly once.
+        cachedOwner = null
+        cachedSemanticsNodes = null
+
+        // Semantics ids of nodes that are tappable but carry no foundation clickable element — most
+        // importantly editable text fields (SetText). In modern Compose, semantics are applied via
+        // the Modifier.Node system and are no longer instances of the legacy SemanticsModifier
+        // interface, so they can't be detected through getModifierInfo(); the semantics tree is the
+        // stable way to find them.
+        val tappableSemanticsIds = collectTappableSemanticsIds(owner)
+
         val queue = LinkedList<LayoutNode>()
         queue.addFirst(owner.root)
         var target: LayoutNode? = null
 
         while (queue.isNotEmpty()) {
             val node = queue.removeFirst()
-            if (node.isPlaced && hitTest(node, x, y)) {
+            if (node.isPlaced && hitTest(node, x, y, tappableSemanticsIds)) {
                 target = node
             }
             queue.addAll(node.zSortedChildren.asMutableList())
@@ -113,30 +144,52 @@ internal class ComposeTapTargetDetector(
     }
 
     /**
+     * Collects semantics ids of nodes exposing an `OnClick` or `SetText` action (clickables and
+     * editable text fields). Empty if the semantics tree can't be read.
+     */
+    private fun collectTappableSemanticsIds(owner: Owner): Set<Int> =
+        try {
+            semanticsNodesOf(owner)
+                .filter { node ->
+                    node.config.contains(SemanticsActions.OnClick) ||
+                        node.config.contains(SemanticsActions.SetText)
+                }.map { it.id }
+                .toSet()
+        } catch (_: Throwable) {
+            emptySet()
+        }
+
+    /**
      * Checks coordinate bounds and clickability constraints.
      */
     private fun hitTest(
         node: LayoutNode,
         x: Float,
         y: Float,
+        tappableSemanticsIds: Set<Int>,
     ): Boolean {
         val bounded =
             composeLayoutNodeUtil.getLayoutNodeBoundsInWindow(node)?.let { bounds ->
                 x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom
             } == true
 
-        return bounded && isValidClickTarget(node)
+        return bounded && (isValidClickTarget(node) || node.semanticsId in tappableSemanticsIds)
     }
 
     /**
-     * Determines whether node semantics/modifiers represent a clickable element.
+     * Determines whether node semantics/modifiers represent a tappable element.
+     *
+     * Besides clickable elements, this also matches editable text fields (nodes exposing
+     * [SemanticsActions.SetText]). Tapping a `TextField` is a focus/edit gesture, not an `OnClick`,
+     * so without this check field taps would never produce a span. Only the field's label is later
+     * used for telemetry — the typed value ([SemanticsProperties.EditableText]) is never read.
      */
     private fun isValidClickTarget(node: LayoutNode): Boolean {
         for (info in node.getModifierInfo()) {
             val modifier = info.modifier
             if (modifier is SemanticsModifier) {
                 with(modifier.semanticsConfiguration) {
-                    if (contains(SemanticsActions.OnClick)) {
+                    if (contains(SemanticsActions.OnClick) || contains(SemanticsActions.SetText)) {
                         return true
                     }
                 }
@@ -164,6 +217,10 @@ internal class ComposeTapTargetDetector(
      */
     @Suppress("unused") // Used reflectively by ClickEventGenerator
     private fun nodeToLabel(node: LayoutNode): String {
+        mergedConfigFor(node)?.takeIf { it.contains(SemanticsActions.SetText) }?.let { fieldConfig ->
+            return editableFieldLabel(node, fieldConfig)
+        }
+
         val semanticsLabel = getMergedSemanticsLabel(node) ?: getNodeName(node)
         val childText = extractTextFromChildren(node)
         val className = getModifierClassName(node)
@@ -174,6 +231,58 @@ internal class ComposeTapTargetDetector(
             fallback = nodeId(node),
         )
     }
+
+    /**
+     * Resolves a privacy-safe label for an editable text field.
+     *
+     * The field's label (its `Text`) is preferred over the merged ContentDescription, which is
+     * usually a decorative leading/trailing icon ("Phone"/"Lock"). The typed value
+     * ([SemanticsProperties.EditableText]) is **never emitted**: it is read only to exclude any
+     * candidate that equals it, and password-flagged fields fall back to a constant rather than risk
+     * surfacing entered text. This is a hard guarantee for the apps this ships into (e.g. banking).
+     */
+    private fun editableFieldLabel(
+        node: LayoutNode,
+        fieldConfig: SemanticsConfiguration,
+    ): String {
+        val typedValue =
+            try {
+                fieldConfig.getOrNull(SemanticsProperties.EditableText)?.text
+            } catch (_: Throwable) {
+                null
+            }
+        val isPassword =
+            try {
+                fieldConfig.contains(SemanticsProperties.Password)
+            } catch (_: Throwable) {
+                false
+            }
+
+        // A candidate is only usable if it is non-blank and is not the field's current value.
+        fun safe(candidate: String?): String? =
+            candidate?.takeIf { it.isNotBlank() && it != typedValue }
+
+        val labelText = fieldConfig.getOrNull(SemanticsProperties.Text)?.firstOrNull()?.text
+        val contentDescription = fieldConfig.getOrNull(SemanticsProperties.ContentDescription)?.firstOrNull()
+        val resolved = safe(labelText) ?: safe(contentDescription)
+
+        return resolved
+            ?: if (isPassword) PASSWORD_FIELD_LABEL else (getModifierClassName(node) ?: nodeId(node))
+    }
+
+    /**
+     * Returns the merged [SemanticsConfiguration] for [node] from the semantics tree, or `null` if
+     * unavailable. Used to inspect a node's own semantics (e.g. whether it is an editable field).
+     */
+    private fun mergedConfigFor(node: LayoutNode): SemanticsConfiguration? =
+        try {
+            val owner = node.owner ?: return null
+            semanticsNodesOf(owner)
+                .firstOrNull { it.id == node.semanticsId }
+                ?.config
+        } catch (_: Throwable) {
+            null
+        }
 
     /**
      * Extracts text from child Text composables (e.g., "Go to API Test Screen" from Button { Text(...) }).
@@ -231,7 +340,7 @@ internal class ComposeTapTargetDetector(
 
             var bestRank = Int.MAX_VALUE
             var bestLabel: String? = null
-            for (semanticsNode in owner.semanticsOwner.getAllSemanticsNodes(mergingEnabled = true)) {
+            for (semanticsNode in semanticsNodesOf(owner)) {
                 val rank = rankBySemanticsId[semanticsNode.id]
                 if (rank != null) {
                     val semanticsLabel = semanticsLabelFrom(semanticsNode.config)
@@ -335,5 +444,8 @@ internal class ComposeTapTargetDetector(
             "androidx.compose.foundation.CombinedClickableElement"
         private const val CLASS_NAME_TOGGLEABLE_ELEMENT =
             "androidx.compose.foundation.selection.ToggleableElement"
+
+        /** Safe placeholder used when a password field has no usable non-value label. */
+        private const val PASSWORD_FIELD_LABEL = "password field"
     }
 }
