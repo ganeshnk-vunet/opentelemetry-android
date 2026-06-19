@@ -31,6 +31,7 @@ class ViewNavigationInstrumentation : AndroidInstrumentation {
         val tracer = openTelemetryRum.openTelemetry.getTracer(INSTRUMENTATION_SCOPE)
         val callback = ViewNavigationCollector(NavigationSpanEmitter(tracer), openTelemetryRum.clock)
         activityLifecycleCallbacks = callback
+        ViewNavigationCollectorHolder.set(callback)
         (context as? Application)?.registerActivityLifecycleCallbacks(callback)
     }
 
@@ -41,6 +42,7 @@ class ViewNavigationInstrumentation : AndroidInstrumentation {
         val callback = activityLifecycleCallbacks ?: return
         (context as? Application)?.unregisterActivityLifecycleCallbacks(callback)
         (callback as? ViewNavigationCollector)?.cleanup()
+        ViewNavigationCollectorHolder.clear()
         activityLifecycleCallbacks = null
         NavigationSpanEmitter.clearActiveContext()
     }

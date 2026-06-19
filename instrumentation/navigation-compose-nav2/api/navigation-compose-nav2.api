@@ -8,5 +8,6 @@ public final class io/opentelemetry/android/instrumentation/navigation/compose/n
 
 public final class io/opentelemetry/android/instrumentation/navigation/compose/nav2/VunetNav2ObserverKt {
 	public static final fun VunetNav2Observer (Landroidx/navigation/NavController;Landroidx/compose/runtime/Composer;I)V
+	public static final fun rememberVunetOnBack (Landroidx/navigation/NavController;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)Lkotlin/jvm/functions/Function0;
 }
 

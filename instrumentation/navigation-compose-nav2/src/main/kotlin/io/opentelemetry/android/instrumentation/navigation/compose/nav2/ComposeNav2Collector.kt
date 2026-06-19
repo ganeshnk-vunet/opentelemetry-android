@@ -21,13 +21,29 @@ internal class ComposeNav2Collector(
     openTelemetryRum: OpenTelemetryRum,
     private val destinationFilter: (NavDestination) -> Boolean = ComposeNav2DestinationFilter::shouldIgnore,
     private val destinationNameExtractor: (NavDestination) -> String = ComposeNav2DestinationNameExtractor::extract,
-    private val backStackSizeProvider: (NavController) -> Int? = ::readBackStackSize,
+    private val previousEntryIdProvider: (NavController) -> Int? = ::readPreviousEntryId,
 ) : NavController.OnDestinationChangedListener {
     private val emitter: NavigationSpanEmitter =
         NavigationSpanEmitter(openTelemetryRum.openTelemetry.getTracer(INSTRUMENTATION_SCOPE))
     private val clock = openTelemetryRum.clock
     private var currentVisibleNode: NavigationNode? = null
-    private var previousBackStackSize: Int? = null
+
+    /**
+     * Our own view of the destination back stack, keyed by [NavDestination.id]. Maintained from the
+     * sequence of destination-changed callbacks instead of reading the (version-specific, R8-fragile)
+     * private `backQueue` field, so push/pop/replace inference works regardless of the Navigation
+     * library version the host app resolves.
+     */
+    private val destinationIdStack: ArrayDeque<Int> = ArrayDeque()
+    private var pendingBackPressTimestampNanos: Long? = null
+
+    /**
+     * Records that a back press just occurred so the next [NavigationTransitionType.POP] can be
+     * attributed to [NavigationTrigger.BACK_PRESS]. Wire this through [rememberVunetOnBack].
+     */
+    fun recordBackPress() {
+        pendingBackPressTimestampNanos = clock.now()
+    }
 
     override fun onDestinationChanged(
         controller: NavController,
@@ -38,56 +54,130 @@ internal class ComposeNav2Collector(
             return
         }
 
+        val destinationId = destination.id
+        if (destinationIdStack.lastOrNull() == destinationId) {
+            // Same destination re-dispatched (e.g. recomposition); nothing navigational changed.
+            return
+        }
+
+        val transitionType = inferTransitionType(controller, destinationId)
+        applyTransition(transitionType, destinationId)
+
         val destinationNode =
             NavigationNode(
                 type = NavigationNodeType.COMPOSE_ROUTE,
                 name = destinationNameExtractor(destination),
             )
-        val source = currentVisibleNode
-        if (source != null && source == destinationNode) {
-            previousBackStackSize = backStackSizeProvider(controller)
-            return
-        }
-
-        val currentBackStackSize = backStackSizeProvider(controller)
-        val transitionType = inferTransitionType(previousBackStackSize, currentBackStackSize, source != null)
+        val navigationTrigger = resolveTrigger(transitionType)
 
         emitter.emit(
             NavigationTransitionCandidate(
-                source = source,
+                source = currentVisibleNode,
                 destination = destinationNode,
                 transitionType = transitionType,
                 entryType = NavigationEntryType.INTERNAL,
                 timestampNanos = clock.now(),
             ),
+            navigationTrigger = navigationTrigger.value,
         )
 
         currentVisibleNode = destinationNode
-        previousBackStackSize = currentBackStackSize
     }
 
+    /**
+     * Classifies the transition into [destinationId] using our tracked stack:
+     * - the first destination is a [NavigationTransitionType.PUSH];
+     * - returning to a destination already on the stack is a [NavigationTransitionType.POP];
+     * - a new destination is a [NavigationTransitionType.PUSH] when the previous top is still
+     *   beneath it (live [NavController.previousBackStackEntry]), otherwise a
+     *   [NavigationTransitionType.REPLACE].
+     */
     private fun inferTransitionType(
-        oldSize: Int?,
-        newSize: Int?,
-        hasSource: Boolean,
+        controller: NavController,
+        destinationId: Int,
     ): NavigationTransitionType {
-        if (oldSize != null && newSize != null) {
-            return when {
-                newSize > oldSize -> NavigationTransitionType.PUSH
-                newSize < oldSize -> NavigationTransitionType.POP
-                else -> NavigationTransitionType.REPLACE
+        if (destinationIdStack.isEmpty()) {
+            return NavigationTransitionType.PUSH
+        }
+        if (destinationIdStack.contains(destinationId)) {
+            return NavigationTransitionType.POP
+        }
+        val liveEntryBelowTopId = previousEntryIdProvider(controller)
+        return if (liveEntryBelowTopId != null && liveEntryBelowTopId == destinationIdStack.last()) {
+            NavigationTransitionType.PUSH
+        } else {
+            NavigationTransitionType.REPLACE
+        }
+    }
+
+    private fun applyTransition(
+        transitionType: NavigationTransitionType,
+        destinationId: Int,
+    ) {
+        when (transitionType) {
+            NavigationTransitionType.PUSH -> destinationIdStack.addLast(destinationId)
+            NavigationTransitionType.POP -> {
+                while (destinationIdStack.isNotEmpty() && destinationIdStack.last() != destinationId) {
+                    destinationIdStack.removeLast()
+                }
+            }
+
+            NavigationTransitionType.REPLACE -> {
+                if (destinationIdStack.isNotEmpty()) {
+                    destinationIdStack.removeLast()
+                }
+                destinationIdStack.addLast(destinationId)
             }
         }
-        return if (hasSource) NavigationTransitionType.REPLACE else NavigationTransitionType.PUSH
+    }
+
+    /**
+     * Attributes a transition to a [NavigationTrigger]. Only a [NavigationTransitionType.POP]
+     * that follows a recent [recordBackPress] is reported as [NavigationTrigger.BACK_PRESS];
+     * other pops are [NavigationTrigger.PROGRAMMATIC] and forward transitions are
+     * [NavigationTrigger.UNKNOWN].
+     */
+    private fun resolveTrigger(transitionType: NavigationTransitionType): NavigationTrigger =
+        when (transitionType) {
+            NavigationTransitionType.POP -> {
+                if (consumeBackPressSignal()) {
+                    NavigationTrigger.BACK_PRESS
+                } else {
+                    NavigationTrigger.PROGRAMMATIC
+                }
+            }
+
+            NavigationTransitionType.PUSH,
+            NavigationTransitionType.REPLACE,
+            -> {
+                pendingBackPressTimestampNanos = null
+                NavigationTrigger.UNKNOWN
+            }
+        }
+
+    private fun consumeBackPressSignal(): Boolean {
+        val backPressTimestampNanos = pendingBackPressTimestampNanos ?: return false
+        pendingBackPressTimestampNanos = null
+        return clock.now() - backPressTimestampNanos <= BACK_PRESS_SIGNAL_TTL_NANOS
+    }
+
+    private enum class NavigationTrigger(
+        val value: String,
+    ) {
+        BACK_PRESS("back_press"),
+        PROGRAMMATIC("programmatic"),
+        UNKNOWN("unknown"),
     }
 
     companion object {
-        private fun readBackStackSize(controller: NavController): Int? =
-            runCatching {
-                val field = controller::class.java.getDeclaredField("backQueue")
-                field.isAccessible = true
-                val value = field.get(controller)
-                (value as? Collection<*>)?.size
-            }.getOrNull()
+        private const val BACK_PRESS_SIGNAL_TTL_NANOS: Long = 1_000_000_000L
+
+        /**
+         * Reads the id of the destination directly beneath the current top using the public,
+         * version-stable [NavController.previousBackStackEntry] (which reflects the live back stack
+         * at destination-changed time). Returns `null` when there is no entry below the top.
+         */
+        private fun readPreviousEntryId(controller: NavController): Int? =
+            controller.previousBackStackEntry?.destination?.id
     }
 }

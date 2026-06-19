@@ -1,3 +1,8 @@
+public final class io/opentelemetry/android/instrumentation/navigation/view/ViewNavigationBackPress {
+	public static final field INSTANCE Lio/opentelemetry/android/instrumentation/navigation/view/ViewNavigationBackPress;
+	public final fun record ()V
+}
+
 public final class io/opentelemetry/android/instrumentation/navigation/view/ViewNavigationInstrumentation : io/opentelemetry/android/instrumentation/AndroidInstrumentation {
 	public fun <init> ()V
 	public fun getName ()Ljava/lang/String;
