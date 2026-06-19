@@ -60,9 +60,15 @@ internal class ComposeTapTargetDetector(
 
     /**
      * Resolves a stable display name for telemetry from node semantics/modifier metadata.
+     *
+     * Editable fields are routed through the same privacy-safe path as [nodeToLabel] so this can
+     * never surface typed content, even though only the label currently reaches a span attribute.
      */
     internal fun nodeToName(node: LayoutNode): String =
         try {
+            mergedConfigFor(node)?.takeIf { it.contains(SemanticsActions.SetText) }?.let { fieldConfig ->
+                return editableFieldLabel(node, fieldConfig)
+            }
             getMergedSemanticsLabel(node)
                 ?: getNodeName(node)
                 ?: getModifierClassName(node)
@@ -241,7 +247,7 @@ internal class ComposeTapTargetDetector(
      * candidate that equals it, and password-flagged fields fall back to a constant rather than risk
      * surfacing entered text. This is a hard guarantee for the apps this ships into (e.g. banking).
      */
-    private fun editableFieldLabel(
+    internal fun editableFieldLabel(
         node: LayoutNode,
         fieldConfig: SemanticsConfiguration,
     ): String {
