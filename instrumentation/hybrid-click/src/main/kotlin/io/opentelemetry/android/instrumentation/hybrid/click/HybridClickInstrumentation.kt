@@ -10,6 +10,7 @@ import android.content.Context
 import com.google.auto.service.AutoService
 import io.opentelemetry.android.OpenTelemetryRum
 import io.opentelemetry.android.common.RumDiagnostics
+import io.opentelemetry.android.common.internal.instrumentation.ActiveInteractionContext
 import io.opentelemetry.android.instrumentation.AndroidInstrumentation
 import io.opentelemetry.android.instrumentation.ConfigurableHybridClickInstrumentation
 
@@ -65,6 +66,7 @@ class HybridClickInstrumentation : AndroidInstrumentation, ConfigurableHybridCli
             (context as? Application)?.unregisterActivityLifecycleCallbacks(callback)
         }
         activityLifecycleCallback = null
+        ActiveInteractionContext.clear()
     }
 
     /**

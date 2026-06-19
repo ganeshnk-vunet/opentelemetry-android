@@ -7,6 +7,7 @@ package io.opentelemetry.android.instrumentation.navigation.common
 
 import io.opentelemetry.android.common.RumConstants.SCREEN_NAME_KEY
 import io.opentelemetry.android.common.RumDiagnostics
+import io.opentelemetry.android.common.internal.instrumentation.ActiveInteractionContext
 import io.opentelemetry.android.instrumentation.navigation.common.NavigationConstants.NAVIGATION_DESTINATION_NAME_KEY
 import io.opentelemetry.android.instrumentation.navigation.common.NavigationConstants.NAVIGATION_DESTINATION_TYPE_KEY
 import io.opentelemetry.android.instrumentation.navigation.common.NavigationConstants.NAVIGATION_ENTRY_TYPE_KEY
@@ -48,6 +49,8 @@ class NavigationSpanEmitter(
                 .setAttribute(NAVIGATION_SOURCE_TYPE_KEY, it.type.name.lowercase())
                 .setAttribute(NAVIGATION_SOURCE_NAME_KEY, it.name)
         }
+
+        ActiveInteractionContext.rootContext()?.let { spanBuilder.setParent(it) }
 
         val span = spanBuilder.startSpan()
         // Set screen.name after start so it wins over default attribute appenders.

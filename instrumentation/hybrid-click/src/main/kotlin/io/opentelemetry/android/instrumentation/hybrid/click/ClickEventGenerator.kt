@@ -163,6 +163,8 @@ internal class ClickEventGenerator(
             return
         }
 
+        ActiveInteractionContext.clear()
+
         val target =
             findComposeTarget(window.decorView, event.x, event.y)
                 ?: viewTapTargetDetector.findTapTarget(window.decorView, event.x, event.y)
@@ -171,8 +173,6 @@ internal class ClickEventGenerator(
         RumDiagnostics.d {
             "hybridClick: tap -> Click span target=${target.widgetId} source=${target.source}"
         }
-
-        ActiveInteractionContext.clear()
 
         val span =
             tracer.spanBuilder(UI_CLICK_SPAN_NAME)
@@ -184,10 +184,10 @@ internal class ClickEventGenerator(
                 .setAttribute(ATTR_WIDGET_SOURCE, target.source)
                 .startSpan()
 
-        val scope = span.makeCurrent()
+        val token = ActiveInteractionContext.begin(span)
         val endSpan =
             Runnable {
-                scope.close()
+                ActiveInteractionContext.end(token)
                 span.end()
             }
 
@@ -202,9 +202,14 @@ internal class ClickEventGenerator(
             // recorded before the span closes regardless of activeContextWindowMillis.
             mainHandler.post {
                 mainHandler.post {
-                    checkedStateProvider()?.let { checked ->
-                        span.setAttribute(ATTR_WIDGET_CHECKED, checked)
+                    try {
+                        checkedStateProvider()?.let { checked ->
+                            span.setAttribute(ATTR_WIDGET_CHECKED, checked)
+                        }
+                    } catch (throwable: Throwable) {
+                        RumDiagnostics.d { "hybridClick: swallowed error reading toggle state: ${throwable.message}" }
                     }
+                    // Always schedule the end, even if the read above failed, so the span never leaks.
                     mainHandler.postDelayed(endSpan, activeContextWindowMillis)
                 }
             }

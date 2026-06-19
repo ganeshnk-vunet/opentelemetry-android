@@ -155,7 +155,10 @@ public final class io/opentelemetry/android/common/internal/imageload/ImageLoadA
 public final class io/opentelemetry/android/common/internal/instrumentation/ActiveInteractionContext {
 	public static final field INSTANCE Lio/opentelemetry/android/common/internal/instrumentation/ActiveInteractionContext;
 	public final fun activate (Lio/opentelemetry/api/trace/Span;)V
+	public final fun begin (Lio/opentelemetry/api/trace/Span;)J
 	public final fun clear ()V
+	public final fun end (J)V
+	public final fun rootContext ()Lio/opentelemetry/context/Context;
 }
 
 public abstract interface class io/opentelemetry/android/common/internal/tools/time/SystemTime {
