@@ -152,6 +152,12 @@ public final class io/opentelemetry/android/common/internal/imageload/ImageLoadA
 	public final fun sanitizeUrl (Ljava/lang/String;)Ljava/lang/String;
 }
 
+public final class io/opentelemetry/android/common/internal/instrumentation/ActiveInteractionContext {
+	public static final field INSTANCE Lio/opentelemetry/android/common/internal/instrumentation/ActiveInteractionContext;
+	public final fun activate (Lio/opentelemetry/api/trace/Span;)V
+	public final fun clear ()V
+}
+
 public abstract interface class io/opentelemetry/android/common/internal/tools/time/SystemTime {
 	public static final field Companion Lio/opentelemetry/android/common/internal/tools/time/SystemTime$Companion;
 	public abstract fun getCurrentTimeMillis ()J

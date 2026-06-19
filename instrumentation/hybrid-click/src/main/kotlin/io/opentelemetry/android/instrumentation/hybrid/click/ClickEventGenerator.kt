@@ -12,6 +12,7 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.view.Window
 import io.opentelemetry.android.common.RumDiagnostics
+import io.opentelemetry.android.common.internal.instrumentation.ActiveInteractionContext
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_WIDGET_CHECKED
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_WIDGET_SOURCE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.SOURCE_COMPOSE
@@ -171,8 +172,11 @@ internal class ClickEventGenerator(
             "hybridClick: tap -> Click span target=${target.widgetId} source=${target.source}"
         }
 
+        ActiveInteractionContext.clear()
+
         val span =
             tracer.spanBuilder(UI_CLICK_SPAN_NAME)
+                .setNoParent()
                 .setAttribute(AppIncubatingAttributes.APP_WIDGET_ID, target.widgetId)
                 .setAttribute(AppIncubatingAttributes.APP_WIDGET_NAME, target.label)
                 .setAttribute(AppIncubatingAttributes.APP_SCREEN_COORDINATE_X, target.x)

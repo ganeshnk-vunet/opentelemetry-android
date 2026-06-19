@@ -12,9 +12,15 @@ public final class io/opentelemetry/android/instrumentation/navigation/common/Na
 }
 
 public final class io/opentelemetry/android/instrumentation/navigation/common/NavigationSpanEmitter {
+	public static final field Companion Lio/opentelemetry/android/instrumentation/navigation/common/NavigationSpanEmitter$Companion;
 	public fun <init> (Lio/opentelemetry/api/trace/Tracer;)V
+	public static final fun clearActiveContext ()V
 	public final fun emit (Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTransitionCandidate;)V
 	public final fun emit (Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTransitionCandidate;Ljava/lang/String;)V
+}
+
+public final class io/opentelemetry/android/instrumentation/navigation/common/NavigationSpanEmitter$Companion {
+	public final fun clearActiveContext ()V
 }
 
 public final class io/opentelemetry/android/instrumentation/navigation/common/models/NavigationEntryType : java/lang/Enum {

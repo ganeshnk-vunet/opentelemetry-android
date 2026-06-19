@@ -1,0 +1,3 @@
+io.opentelemetry.instrumentation.agent.concurrency.coroutines.CoroutineContextPlugin
+io.opentelemetry.instrumentation.agent.concurrency.executors.ThreadPoolExecutorPlugin
+io.opentelemetry.instrumentation.agent.concurrency.handlers.HandlerPostPlugin

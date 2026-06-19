@@ -53,8 +53,17 @@ class NavigationSpanEmitter(
         // Set screen.name after start so it wins over default attribute appenders.
         span.setAttribute(SCREEN_NAME_KEY, candidate.destination.name)
         span.end()
+        NavigationActiveContext.activate(span)
         RumDiagnostics.d {
             "navigation: span dest=${candidate.destination.name} type=${candidate.destination.type.name.lowercase()}"
+        }
+    }
+
+    companion object {
+        /** Clears the active navigation context; call from navigation instrumentation [uninstall]. */
+        @JvmStatic
+        fun clearActiveContext() {
+            NavigationActiveContext.clear()
         }
     }
 }

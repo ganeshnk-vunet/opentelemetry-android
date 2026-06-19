@@ -16,9 +16,15 @@ import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
 import io.opentelemetry.sdk.trace.SdkTracerProvider
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor
 import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 
 class NavigationSpanEmitterTest {
+    @AfterEach
+    fun tearDown() {
+        NavigationSpanEmitter.clearActiveContext()
+    }
+
     @Test
     fun emits_navigation_span_with_expected_attributes() {
         val exporter = InMemorySpanExporter.create()

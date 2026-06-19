@@ -16,7 +16,9 @@ Data produced by this instrumentation uses instrumentation scope name
 
 * Type: Span
 * Name: `ui.click`
-* Description: Span emitted when a clickable view or composable is tapped.
+* Description: Span emitted when a clickable view or composable is tapped. Each tap starts a **new interaction trace** so downstream async work (for example HTTP requests on background threads, when concurrency instrumentation is enabled) correlates with that click only — not with `app.start` or prior clicks.
+
+The span is kept active for a configurable window (default 500 ms) so work triggered by the tap can inherit the click context. A new tap clears any stale navigation context from a prior interaction before starting its trace.
 
 ## Installation
 
