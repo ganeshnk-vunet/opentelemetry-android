@@ -55,15 +55,17 @@ class ViewNavigationCollectorTest {
             .addSpanProcessor(SimpleSpanProcessor.create(exporter))
             .build()
     private val openTelemetry: OpenTelemetry = OpenTelemetrySdk.builder().setTracerProvider(tracerProvider).build()
+    private var nowNanos: Long = 1234L
     private val testClock = object : Clock {
-        override fun now(): Long = 1234L
+        override fun now(): Long = nowNanos
 
-        override fun nanoTime(): Long = 1234L
+        override fun nanoTime(): Long = nowNanos
     }
 
     @BeforeEach
     fun setUp() {
         MockKAnnotations.init(this, relaxed = true)
+        nowNanos = 1234L
     }
 
     @Test
@@ -82,6 +84,7 @@ class ViewNavigationCollectorTest {
         assertThat(spans).hasSize(2)
         assertThat(spans[1].attributes.get(SCREEN_NAME_KEY)).isEqualTo("DetailsActivity")
         assertThat(spans[1].attributes.get(NavigationConstants.NAVIGATION_TRANSITION_TYPE_KEY)).isEqualTo("push")
+        assertThat(spans[1].attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("unknown")
     }
 
     @Test
@@ -149,6 +152,46 @@ class ViewNavigationCollectorTest {
         val spans = exporter.finishedSpanItems
         assertThat(spans).hasSize(2)
         assertThat(spans[1].attributes.get(NavigationConstants.NAVIGATION_TRANSITION_TYPE_KEY)).isEqualTo("pop")
+        assertThat(spans[1].attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("programmatic")
+    }
+
+    @Test
+    fun emits_back_press_trigger_when_activity_pop_follows_record() {
+        val first = mockActivity()
+        val second = mockActivity()
+        every { first.isFinishing } returns true
+
+        val collector = createCollector(mapOf(first to "HomeActivity", second to "DetailsActivity"))
+
+        collector.onActivityResumed(first)
+        collector.recordBackPress()
+        nowNanos += 100L
+        collector.onActivityPaused(first)
+        collector.onActivityResumed(second)
+
+        val spans = exporter.finishedSpanItems
+        assertThat(spans).hasSize(2)
+        assertThat(spans[1].attributes.get(NavigationConstants.NAVIGATION_TRANSITION_TYPE_KEY)).isEqualTo("pop")
+        assertThat(spans[1].attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("back_press")
+    }
+
+    @Test
+    fun stale_back_press_signal_falls_back_to_programmatic_for_activity_pop() {
+        val first = mockActivity()
+        val second = mockActivity()
+        every { first.isFinishing } returns true
+
+        val collector = createCollector(mapOf(first to "HomeActivity", second to "DetailsActivity"))
+
+        collector.onActivityResumed(first)
+        collector.recordBackPress()
+        nowNanos += 1_000_000_001L
+        collector.onActivityPaused(first)
+        collector.onActivityResumed(second)
+
+        val spans = exporter.finishedSpanItems
+        assertThat(spans).hasSize(2)
+        assertThat(spans[1].attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("programmatic")
     }
 
     @Test
@@ -217,6 +260,33 @@ class ViewNavigationCollectorTest {
         val spans = exporter.finishedSpanItems
         assertThat(spans).hasSize(4)
         assertThat(spans[3].attributes.get(NavigationConstants.NAVIGATION_TRANSITION_TYPE_KEY)).isEqualTo("pop")
+        assertThat(spans[3].attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("programmatic")
+    }
+
+    @Test
+    fun back_press_record_routes_through_holder_to_active_collector() {
+        // No active collector: record() is a safe no-op and the holder stays empty.
+        ViewNavigationCollectorHolder.clear()
+        ViewNavigationBackPress.record()
+        assertThat(ViewNavigationCollectorHolder.current()).isNull()
+
+        val instrumentation = ViewNavigationInstrumentation()
+        val openTelemetryRum =
+            mockk<OpenTelemetryRum> {
+                every { openTelemetry } returns this@ViewNavigationCollectorTest.openTelemetry
+                every { clock } returns testClock
+            }
+        val callbackSlot = slot<Application.ActivityLifecycleCallbacks>()
+        every { application.registerActivityLifecycleCallbacks(capture(callbackSlot)) } just Runs
+        every { application.unregisterActivityLifecycleCallbacks(any()) } just Runs
+
+        instrumentation.install(application, openTelemetryRum)
+
+        // Install publishes the active collector so the public hook can reach it.
+        assertThat(ViewNavigationCollectorHolder.current()).isSameAs(callbackSlot.captured)
+
+        instrumentation.uninstall(application, openTelemetryRum)
+        assertThat(ViewNavigationCollectorHolder.current()).isNull()
     }
 
     @Test
