@@ -26,7 +26,8 @@ implementation("io.opentelemetry.android.instrumentation:hybrid-click:1.2.0-alph
 
 ## Configuration
 
-When using `android-agent`, you can configure the active click context window:
+When using `android-agent`, you can configure how long the click interaction context stays
+active for downstream span parenting:
 
 ```kotlin
 OpenTelemetryRumInitializer.initialize(
@@ -39,3 +40,7 @@ OpenTelemetryRumInitializer.initialize(
     }
 }
 ```
+
+This controls the parenting window for async work triggered by a click (for example network
+requests or navigation), not the `ui.click` span duration. The span itself ends immediately
+after the tap.

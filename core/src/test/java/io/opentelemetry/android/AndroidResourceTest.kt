@@ -33,7 +33,6 @@ import java.util.UUID
 internal class AndroidResourceTest {
     private val appName: String = "robotron"
     private val prefsName: String = "opentelemetry-android"
-    private val rumSdkVersion: String = BuildConfig.OTEL_ANDROID_VERSION
     private val installId: String = "install-id"
     private val osDescription: String =
         "Android Version " +
@@ -74,7 +73,6 @@ internal class AndroidResourceTest {
             Resource
                 .builder()
                 .put(ServiceAttributes.SERVICE_NAME, appName)
-                .put(TelemetryAttributes.TELEMETRY_SDK_VERSION, rumSdkVersion)
                 .put(DeviceIncubatingAttributes.DEVICE_MODEL_NAME, Build.MODEL)
                 .put(DeviceIncubatingAttributes.DEVICE_MODEL_IDENTIFIER, Build.MODEL)
                 .put(DeviceIncubatingAttributes.DEVICE_MANUFACTURER, Build.MANUFACTURER)
@@ -91,17 +89,17 @@ internal class AndroidResourceTest {
     @Test
     fun testFullResource() {
         assertResourceMatches()
+        assertTelemetrySdkAttributesAbsent(AndroidResource.createDefault(ctx))
     }
 
     @Test
     fun testMinimalResource() {
         val minimal = AndroidResource.createMinimal(ctx)
         val expected =
-            Resource.getDefault().merge(
-                Resource.builder().put(ServiceAttributes.SERVICE_NAME, appName).build(),
-            )
+            Resource.builder().put(ServiceAttributes.SERVICE_NAME, appName).build()
         assertEquals(expected, minimal)
         assertThat(minimal.getAttribute(DeviceIncubatingAttributes.DEVICE_MODEL_NAME)).isNull()
+        assertTelemetrySdkAttributesAbsent(minimal)
     }
 
     @Test
@@ -165,7 +163,13 @@ internal class AndroidResourceTest {
         extraAttributes.forEach { entry ->
             expectedResourceBuilder.put(entry.key.key, entry.value)
         }
-        val expected = Resource.getDefault().merge(expectedResourceBuilder.build())
+        val expected = expectedResourceBuilder.build()
         assertEquals(expected, resource)
+    }
+
+    private fun assertTelemetrySdkAttributesAbsent(resource: Resource) {
+        assertThat(resource.getAttribute(TelemetryAttributes.TELEMETRY_SDK_LANGUAGE)).isNull()
+        assertThat(resource.getAttribute(TelemetryAttributes.TELEMETRY_SDK_NAME)).isNull()
+        assertThat(resource.getAttribute(TelemetryAttributes.TELEMETRY_SDK_VERSION)).isNull()
     }
 }

@@ -185,21 +185,17 @@ internal class ClickEventGenerator(
                 .startSpan()
 
         val token = ActiveInteractionContext.begin(span)
-        val endSpan =
-            Runnable {
-                ActiveInteractionContext.end(token)
-                span.end()
-            }
+        scheduleContextEnd(token)
 
         val checkedStateProvider = target.checkedStateProvider
         if (checkedStateProvider == null) {
-            mainHandler.postDelayed(endSpan, activeContextWindowMillis)
+            span.end()
         } else {
             // A CompoundButton flips in PerformClick, which View.onTouchEvent *posts* on ACTION_UP
             // rather than running inline. Re-posting from inside a posted runnable (a double post)
             // guarantees the read runs after that flip; reading inline would observe the pre-tap
-            // state. The span end is scheduled only after the read, so the attribute is always
-            // recorded before the span closes regardless of activeContextWindowMillis.
+            // state. The span ends after the read; ActiveInteractionContext stays current for
+            // activeContextWindowMillis independently.
             mainHandler.post {
                 mainHandler.post {
                     try {
@@ -209,11 +205,15 @@ internal class ClickEventGenerator(
                     } catch (throwable: Throwable) {
                         RumDiagnostics.d { "hybridClick: swallowed error reading toggle state: ${throwable.message}" }
                     }
-                    // Always schedule the end, even if the read above failed, so the span never leaks.
-                    mainHandler.postDelayed(endSpan, activeContextWindowMillis)
+                    // Always end the span, even if the read above failed, so it never leaks.
+                    span.end()
                 }
             }
         }
+    }
+
+    private fun scheduleContextEnd(token: Long) {
+        mainHandler.postDelayed({ ActiveInteractionContext.end(token) }, activeContextWindowMillis)
     }
 
     /**

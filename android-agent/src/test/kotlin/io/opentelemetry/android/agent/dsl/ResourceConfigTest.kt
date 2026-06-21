@@ -24,7 +24,7 @@ import io.opentelemetry.semconv.incubating.OsIncubatingAttributes.OS_NAME
 import io.opentelemetry.semconv.incubating.OsIncubatingAttributes.OS_TYPE
 import io.opentelemetry.semconv.incubating.OsIncubatingAttributes.OS_VERSION
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -78,8 +78,8 @@ class ResourceConfigTest {
         assertEquals("linux", attrs[OS_TYPE])
         assertEquals("6.0.1", attrs[OS_VERSION])
         assertEquals("Android Version 6.0.1 (Build MMB29M API level 23)", attrs[OS_DESCRIPTION])
-        assertEquals("java", attrs[TELEMETRY_SDK_LANGUAGE])
-        assertEquals("opentelemetry", attrs[TELEMETRY_SDK_NAME])
-        assertNotNull(attrs[TELEMETRY_SDK_VERSION])
+        assertNull(attrs[TELEMETRY_SDK_LANGUAGE])
+        assertNull(attrs[TELEMETRY_SDK_NAME])
+        assertNull(attrs[TELEMETRY_SDK_VERSION])
     }
 }

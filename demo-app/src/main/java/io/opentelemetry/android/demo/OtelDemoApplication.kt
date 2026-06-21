@@ -27,7 +27,7 @@ class OtelDemoApplication : Application() {
     override fun onCreate() {
         super.onCreate()
 
-        Log.i(TAG, "Initializing the opentelemetry-android-agent")
+        Log.i(TAG, "Initializing the opentelemetry-terandroid-agent")
 
         // 10.0.2.2 is a special binding to the host running the emulator
         try {

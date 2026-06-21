@@ -200,8 +200,10 @@ Every qualified tap produces one `ui.click` span with these attributes:
 | `app.widget.source`           | UI framework: `"compose"` or `"view"`        | `"compose"`          |
 | `app.widget.checked`          | Toggle state — **toggle widgets only**       | `true`               |
 
-The span is kept active for 500ms (configurable via `setActiveContextWindowMillis`) to allow
-downstream async work to correlate with the click.
+The span ends immediately after the tap (or after the toggle-state read for `CompoundButton`).
+`ActiveInteractionContext` separately remains current for `activeContextWindowMillis`
+(configurable via `setActiveContextWindowMillis`) so downstream async work can still parent
+to the click. The configured window controls the parenting window, not the span duration.
 
 ### `app.widget.checked`
 
@@ -213,8 +215,9 @@ while being an ordinary button (that would tag every Material button, e.g. a dia
 
 The state is read on a deferred main-loop tick rather than inline: a `CompoundButton` flips in
 `PerformClick`, which `View.onTouchEvent` *posts* on `ACTION_UP`, so the resulting (post-tap) state
-is only observable after that runnable runs. The span end is scheduled after the read so the
-attribute is always recorded before the span closes.
+is only observable after that runnable runs. The span ends after the read so the attribute is
+always recorded before the span closes; `ActiveInteractionContext` stays current independently
+for `activeContextWindowMillis`.
 
 **View only.** Compose toggles currently do not emit `app.widget.checked` — Compose state updates on
 recomposition (asynchronously), so a reliable post-tap read isn't available through this path.

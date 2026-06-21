@@ -11,7 +11,6 @@ import android.os.Build
 import io.opentelemetry.sdk.resources.Resource
 import io.opentelemetry.semconv.ServiceAttributes.SERVICE_NAME
 import io.opentelemetry.semconv.ServiceAttributes.SERVICE_VERSION
-import io.opentelemetry.semconv.TelemetryAttributes.TELEMETRY_SDK_VERSION
 import io.opentelemetry.semconv.incubating.AndroidIncubatingAttributes.ANDROID_OS_API_LEVEL
 import io.opentelemetry.semconv.incubating.AppIncubatingAttributes.APP_INSTALLATION_ID
 import io.opentelemetry.semconv.incubating.DeviceIncubatingAttributes.DEVICE_MANUFACTURER
@@ -30,13 +29,11 @@ object AndroidResource {
     @JvmStatic
     fun createDefault(context: Context): Resource {
         val appName = readAppName(context)
-        val resourceBuilder =
-            Resource.getDefault().toBuilder().put(SERVICE_NAME, appName)
+        val resourceBuilder = Resource.builder().put(SERVICE_NAME, appName)
         val appVersion = readAppVersion(context)
         appVersion?.let { resourceBuilder.put(SERVICE_VERSION, it) }
 
         return resourceBuilder
-            .put(TELEMETRY_SDK_VERSION, BuildConfig.OTEL_ANDROID_VERSION)
             .put(DEVICE_MODEL_NAME, Build.MODEL)
             .put(DEVICE_MODEL_IDENTIFIER, Build.MODEL)
             .put(DEVICE_MANUFACTURER, Build.MANUFACTURER)
@@ -55,9 +52,7 @@ object AndroidResource {
      */
     @JvmStatic
     fun createMinimal(context: Context): Resource =
-        Resource.getDefault().merge(
-            Resource.builder().put(SERVICE_NAME, readAppName(context)).build(),
-        )
+        Resource.builder().put(SERVICE_NAME, readAppName(context)).build()
 
     @SuppressLint("UseKtx")
     private fun readInstallId(context: Context): String {
