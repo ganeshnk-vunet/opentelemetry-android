@@ -5,10 +5,8 @@
 
 package io.opentelemetry.android.common.internal.instrumentation
 
-import io.opentelemetry.android.common.RumDiagnostics
 import io.opentelemetry.api.trace.Span
 import io.opentelemetry.context.Context
-import io.opentelemetry.context.Scope
 
 /**
  * Holds the active OpenTelemetry context for a single user interaction (for example a navigation
@@ -17,28 +15,22 @@ import io.opentelemetry.context.Scope
  */
 object ActiveInteractionContext {
     private val lock = Any()
-    private var scope: Scope? = null
+    private var activeSpan: Span? = null
     private var rootContext: Context? = null
     private var generation: Long = 0
-    private var ownerThread: Thread? = null
 
     /** Starts a new interaction rooted at [root] (for example `ui.click`). Clears any stale interaction. */
     fun begin(root: Span): Long =
         synchronized(lock) {
-            warnIfForeignThread()
-            scope?.close()
-            ownerThread = Thread.currentThread()
-            scope = root.makeCurrent()
-            rootContext = Context.current()
+            activeSpan = root
+            rootContext = Context.current().with(root)
             ++generation
         }
 
     /** Replaces the active parent within the current interaction (for example `ui.navigation`). */
     fun activate(span: Span) {
         synchronized(lock) {
-            warnIfForeignThread()
-            scope?.close()
-            scope = span.makeCurrent()
+            activeSpan = span
         }
     }
 
@@ -61,19 +53,34 @@ object ActiveInteractionContext {
     }
 
     private fun clearLocked() {
-        warnIfForeignThread()
-        scope?.close()
-        scope = null
+        activeSpan = null
         rootContext = null
-        ownerThread = null
     }
 
-    private fun warnIfForeignThread() {
-        val owner = ownerThread
-        if (owner != null && Thread.currentThread() !== owner) {
-            RumDiagnostics.d {
-                "ActiveInteractionContext: cross-thread access; scope semantics may be unreliable"
-            }
+    /**
+     * Resolves the parent context for an HTTP span.
+     * If the current context is marked as an exporter context, returns the current context.
+     * If there is an active interaction span and the current context has no valid span, parents to the active span.
+     * If the current context has a valid span, only overrides it if it belongs to the same trace.
+     */
+    @JvmStatic
+    fun parentContextOr(current: Context): Context {
+        if (ExporterMarker.isExporterContext(current)) {
+            return current
         }
+        val active = synchronized(lock) { activeSpan } ?: return current
+        val currentSpan = Span.fromContext(current)
+        val activeSpanContext = active.spanContext
+        if (!activeSpanContext.isValid) {
+            return current
+        }
+        val currentSpanContext = currentSpan.spanContext
+        if (!currentSpanContext.isValid) {
+            return current.with(active)
+        }
+        if (currentSpanContext.traceId == activeSpanContext.traceId) {
+            return current.with(active)
+        }
+        return current
     }
 }

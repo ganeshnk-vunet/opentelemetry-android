@@ -93,6 +93,23 @@ class ViewEditTextClickTest {
         assertThat(name).doesNotContain("hunter2")
     }
 
+    @Test
+    fun `default edit text without explicit clickable is still detected`() {
+        // Real-world EditText defaults to focusable, not clickable; the detector must still find it.
+        val window =
+            windowOf(
+                EditText(context).apply {
+                    hint = "Mobile Number"
+                    setText("9876543210")
+                },
+            )
+        generator.startTracking(window)
+
+        tap(window)
+
+        assertThat(widgetName(singleSpan())).isEqualTo("Mobile Number")
+    }
+
     private fun windowOf(field: View): Window {
         val root = FrameLayout(context).apply { addView(field, FrameLayout.LayoutParams(VIEW_SIZE, VIEW_SIZE)) }
         val spec = View.MeasureSpec.makeMeasureSpec(VIEW_SIZE, View.MeasureSpec.EXACTLY)

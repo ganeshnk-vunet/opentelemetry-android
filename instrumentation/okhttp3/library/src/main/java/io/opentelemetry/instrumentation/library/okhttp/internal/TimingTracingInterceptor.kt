@@ -6,6 +6,7 @@
 package io.opentelemetry.instrumentation.library.okhttp.internal
 
 import io.opentelemetry.api.trace.Span
+import io.opentelemetry.android.common.internal.instrumentation.ActiveInteractionContext
 import io.opentelemetry.context.Context
 import io.opentelemetry.context.propagation.ContextPropagators
 import io.opentelemetry.context.propagation.TextMapSetter
@@ -21,7 +22,7 @@ internal class TimingTracingInterceptor(
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
         val call = chain.call()
-        val parentContext = Context.current()
+        val parentContext = ActiveInteractionContext.parentContextOr(Context.current())
         if (!instrumenter.shouldStart(parentContext, chain)) {
             return chain.proceed(request)
         }

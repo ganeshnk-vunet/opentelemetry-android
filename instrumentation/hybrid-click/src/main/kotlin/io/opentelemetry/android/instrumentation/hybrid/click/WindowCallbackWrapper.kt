@@ -15,6 +15,7 @@ import android.view.Window
 import android.view.Window.Callback
 import androidx.annotation.RequiresApi
 import io.opentelemetry.android.common.RumDiagnostics
+import io.opentelemetry.android.common.internal.instrumentation.ActiveInteractionContext
 
 internal class WindowCallbackWrapper(
     private val callback: Callback,
@@ -30,7 +31,14 @@ internal class WindowCallbackWrapper(
         } catch (throwable: Throwable) {
             RumDiagnostics.d { "hybridClick: swallowed error during click handling: ${throwable.message}" }
         }
-        return callback.dispatchTouchEvent(event)
+        val ctx = ActiveInteractionContext.rootContext()
+        return if (ctx != null) {
+            ctx.makeCurrent().use {
+                callback.dispatchTouchEvent(event)
+            }
+        } else {
+            callback.dispatchTouchEvent(event)
+        }
     }
 
     @RequiresApi(api = VERSION_CODES.O)

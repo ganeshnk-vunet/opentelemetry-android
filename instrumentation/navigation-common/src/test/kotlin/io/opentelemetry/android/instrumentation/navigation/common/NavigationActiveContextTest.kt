@@ -11,7 +11,7 @@ import io.opentelemetry.android.instrumentation.navigation.common.models.Navigat
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationNodeType
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTransitionCandidate
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTransitionType
-import io.opentelemetry.api.trace.Span
+import io.opentelemetry.context.Context
 import io.opentelemetry.sdk.OpenTelemetrySdk
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
 import io.opentelemetry.sdk.trace.SdkTracerProvider
@@ -44,7 +44,8 @@ class NavigationActiveContextTest {
         ActiveInteractionContext.begin(clickSpan)
         emitter.emit(candidate(destinationName = "account_selection"))
 
-        val child = tracer.spanBuilder("POST").startSpan()
+        val parentContext = ActiveInteractionContext.parentContextOr(Context.current())
+        val child = tracer.spanBuilder("POST").setParent(parentContext).startSpan()
         child.end()
         clickSpan.end()
         ActiveInteractionContext.clear()
@@ -60,7 +61,8 @@ class NavigationActiveContextTest {
         emitter.emit(candidate(destinationName = "login"))
         emitter.emit(candidate(destinationName = "account_selection"))
 
-        val child = tracer.spanBuilder("POST").startSpan()
+        val parentContext = ActiveInteractionContext.parentContextOr(Context.current())
+        val child = tracer.spanBuilder("POST").setParent(parentContext).startSpan()
         child.end()
 
         val navSpans = exporter.finishedSpanItems.filter { it.name == NavigationConstants.SPAN_NAME }
@@ -71,17 +73,17 @@ class NavigationActiveContextTest {
     }
 
     @Test
-    fun clearActiveContext_closes_navigation_scope() {
+    fun clearActiveContext_resets_active_navigation() {
         emitter.emit(candidate(destinationName = "home"))
 
         NavigationSpanEmitter.clearActiveContext()
 
-        val child = tracer.spanBuilder("POST").startSpan()
+        val parentContext = ActiveInteractionContext.parentContextOr(Context.current())
+        val child = tracer.spanBuilder("POST").setParent(parentContext).startSpan()
         child.end()
 
         val childSpan = exporter.finishedSpanItems.first { it.name == "POST" }
         assertThat(childSpan.parentSpanId).isNotEqualTo(navigationSpan().spanContext.spanId)
-        assertThat(Span.current().spanContext.isValid).isFalse()
     }
 
     @Test
@@ -90,7 +92,8 @@ class NavigationActiveContextTest {
         ActiveInteractionContext.begin(clickSpan)
         emitter.emit(candidate(destinationName = "account_selection"))
 
-        val post = tracer.spanBuilder("POST account").startSpan()
+        val parentContext = ActiveInteractionContext.parentContextOr(Context.current())
+        val post = tracer.spanBuilder("POST account").setParent(parentContext).startSpan()
         post.end()
         clickSpan.end()
         ActiveInteractionContext.clear()
@@ -110,7 +113,8 @@ class NavigationActiveContextTest {
         emitter.emit(candidate(destinationName = "login"))
         emitter.emit(candidate(destinationName = "account_selection"))
 
-        val post = tracer.spanBuilder("POST account").startSpan()
+        val parentContext = ActiveInteractionContext.parentContextOr(Context.current())
+        val post = tracer.spanBuilder("POST account").setParent(parentContext).startSpan()
         post.end()
         clickSpan.end()
         ActiveInteractionContext.clear()

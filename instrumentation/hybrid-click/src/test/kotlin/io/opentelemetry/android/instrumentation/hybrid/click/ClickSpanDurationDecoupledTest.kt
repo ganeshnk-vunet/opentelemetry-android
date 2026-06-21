@@ -90,7 +90,8 @@ class ClickSpanDurationDecoupledTest {
         shadowOf(Looper.getMainLooper()).idleFor(50, TimeUnit.MILLISECONDS)
 
         val clickSpan = exporter.finishedSpanItems.single { it.name == "ui.click" }
-        val child = tracer.spanBuilder("POST").startSpan()
+        val parentContext = ActiveInteractionContext.parentContextOr(io.opentelemetry.context.Context.current())
+        val child = tracer.spanBuilder("POST").setParent(parentContext).startSpan()
         child.end()
 
         val childSpan = exporter.finishedSpanItems.single { it.name == "POST" }
@@ -107,7 +108,8 @@ class ClickSpanDurationDecoupledTest {
         shadowOf(Looper.getMainLooper()).idleFor(ACTIVE_CONTEXT_WINDOW_MILLIS + 50, TimeUnit.MILLISECONDS)
 
         val clickSpan = exporter.finishedSpanItems.single { it.name == "ui.click" }
-        val child = tracer.spanBuilder("POST").startSpan()
+        val parentContext = ActiveInteractionContext.parentContextOr(io.opentelemetry.context.Context.current())
+        val child = tracer.spanBuilder("POST").setParent(parentContext).startSpan()
         child.end()
 
         val childSpan = exporter.finishedSpanItems.single { it.name == "POST" }

@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.SystemClock
 import androidx.annotation.RequiresApi
 import io.opentelemetry.context.Context
+import io.opentelemetry.android.common.internal.instrumentation.ActiveInteractionContext
 import io.opentelemetry.instrumentation.api.instrumenter.Instrumenter
 import io.opentelemetry.instrumentation.library.httpurlconnection.internal.HttpUrlConnectionSingletons.captureNetworkTiming
 import io.opentelemetry.instrumentation.library.httpurlconnection.internal.HttpUrlConnectionSingletons.instrumenter
@@ -328,7 +329,7 @@ object HttpUrlReplacements {
     }
 
     private fun startTracingAtFirstConnection(connection: URLConnection) {
-        val parentContext = Context.current()
+        val parentContext = ActiveInteractionContext.parentContextOr(Context.current())
         val instrument = instrumenter()
         httpURLInstrumenter = instrument
         if (!instrument.shouldStart(parentContext, connection)) {

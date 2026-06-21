@@ -228,8 +228,10 @@ recomposition (asynchronously), so a reliable post-tap read isn't available thro
 
 Tapping a text field is captured as a `ui.click`, identified by its **label** — never its contents.
 
-- **View** (`EditText`): already clickable, so the View detector finds it. Its label resolves as
-  `contentDescription → hint → class name`; the typed `text` is **never** used.
+- **View** (`EditText`): a stock `EditText` is focusable but **not** clickable, so the detector
+  treats `EditText` itself as a valid tap target (alongside `isClickable` views). Its label resolves
+  as `contentDescription → hint → class name`; the typed `text` is **never** used, and password
+  `inputType` fields fall back to a constant.
 - **Compose** (`TextField`/`OutlinedTextField`): these expose no `OnClick` and, in modern Compose,
   no legacy `SemanticsModifier`, so they are detected via the **semantics tree** — a node carrying a
   `SemanticsActions.SetText` action. The label prefers the field's `Text` (its label) over any

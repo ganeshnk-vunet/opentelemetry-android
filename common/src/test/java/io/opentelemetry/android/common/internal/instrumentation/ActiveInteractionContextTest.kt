@@ -6,6 +6,7 @@
 package io.opentelemetry.android.common.internal.instrumentation
 
 import io.opentelemetry.api.trace.Span
+import io.opentelemetry.context.Context
 import io.opentelemetry.sdk.OpenTelemetrySdk
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
 import io.opentelemetry.sdk.trace.SdkTracerProvider
@@ -31,12 +32,13 @@ class ActiveInteractionContextTest {
     }
 
     @Test
-    fun activate_makes_span_current_for_downstream_spans() {
+    fun activate_updates_active_span_for_parentContextOr() {
         val parent = tracer.spanBuilder("ui.navigation").startSpan()
         parent.end()
         ActiveInteractionContext.activate(parent)
 
-        val child = tracer.spanBuilder("POST").startSpan()
+        val parentContext = ActiveInteractionContext.parentContextOr(Context.current())
+        val child = tracer.spanBuilder("POST").setParent(parentContext).startSpan()
         child.end()
 
         val childSpan = exporter.finishedSpanItems.first { it.name == "POST" }
@@ -44,23 +46,23 @@ class ActiveInteractionContextTest {
     }
 
     @Test
-    fun clear_closes_active_scope() {
+    fun clear_resets_active_span() {
         val parent = tracer.spanBuilder("ui.navigation").startSpan()
         parent.end()
         ActiveInteractionContext.activate(parent)
 
         ActiveInteractionContext.clear()
 
-        val child = tracer.spanBuilder("POST").startSpan()
+        val parentContext = ActiveInteractionContext.parentContextOr(Context.current())
+        val child = tracer.spanBuilder("POST").setParent(parentContext).startSpan()
         child.end()
 
         val childSpan = exporter.finishedSpanItems.first { it.name == "POST" }
         assertThat(childSpan.parentSpanId).isNotEqualTo(parent.spanContext.spanId)
-        assertThat(Span.current().spanContext.isValid).isFalse()
     }
 
     @Test
-    fun second_activate_replaces_previous_scope() {
+    fun second_activate_replaces_previous_active_span() {
         val first = tracer.spanBuilder("ui.navigation").setAttribute("screen", "login").startSpan()
         first.end()
         ActiveInteractionContext.activate(first)
@@ -69,7 +71,8 @@ class ActiveInteractionContextTest {
         second.end()
         ActiveInteractionContext.activate(second)
 
-        val child = tracer.spanBuilder("POST").startSpan()
+        val parentContext = ActiveInteractionContext.parentContextOr(Context.current())
+        val child = tracer.spanBuilder("POST").setParent(parentContext).startSpan()
         child.end()
 
         val childSpan = exporter.finishedSpanItems.first { it.name == "POST" }
@@ -77,7 +80,7 @@ class ActiveInteractionContextTest {
     }
 
     @Test
-    fun begin_makes_click_current_and_sets_root_context() {
+    fun begin_sets_active_span_and_root_context() {
         val click = tracer.spanBuilder("ui.click").setNoParent().startSpan()
         val token = ActiveInteractionContext.begin(click)
         click.end()
@@ -85,7 +88,8 @@ class ActiveInteractionContextTest {
         assertThat(token).isGreaterThan(0)
         assertThat(ActiveInteractionContext.rootContext()).isNotNull()
 
-        val child = tracer.spanBuilder("POST").startSpan()
+        val parentContext = ActiveInteractionContext.parentContextOr(Context.current())
+        val child = tracer.spanBuilder("POST").setParent(parentContext).startSpan()
         child.end()
 
         val childSpan = exporter.finishedSpanItems.first { it.name == "POST" }
@@ -100,12 +104,12 @@ class ActiveInteractionContextTest {
 
         ActiveInteractionContext.end(token)
 
-        val child = tracer.spanBuilder("POST").startSpan()
+        val parentContext = ActiveInteractionContext.parentContextOr(Context.current())
+        val child = tracer.spanBuilder("POST").setParent(parentContext).startSpan()
         child.end()
 
         val childSpan = exporter.finishedSpanItems.first { it.name == "POST" }
         assertThat(childSpan.parentSpanId).isNotEqualTo(click.spanContext.spanId)
-        assertThat(Span.current().spanContext.isValid).isFalse()
     }
 
     @Test
@@ -120,7 +124,8 @@ class ActiveInteractionContextTest {
 
         ActiveInteractionContext.end(token - 1)
 
-        val child = tracer.spanBuilder("POST").startSpan()
+        val parentContext = ActiveInteractionContext.parentContextOr(Context.current())
+        val child = tracer.spanBuilder("POST").setParent(parentContext).startSpan()
         child.end()
 
         val childSpan = exporter.finishedSpanItems.first { it.name == "POST" }
@@ -156,11 +161,50 @@ class ActiveInteractionContextTest {
 
         ActiveInteractionContext.end(token)
 
-        val orphan = tracer.spanBuilder("POST").startSpan()
+        val parentContext = ActiveInteractionContext.parentContextOr(Context.current())
+        val orphan = tracer.spanBuilder("POST").setParent(parentContext).startSpan()
         orphan.end()
 
         val orphanSpan = exporter.finishedSpanItems.first { it.name == "POST" }
         assertThat(orphanSpan.parentSpanId).isNotEqualTo(nav.spanContext.spanId)
         assertThat(orphanSpan.parentSpanId).isNotEqualTo(click.spanContext.spanId)
+    }
+
+    @Test
+    fun parentContextOr_returns_current_when_exporter_context() {
+        val active = tracer.spanBuilder("ui.click").startSpan()
+        ActiveInteractionContext.activate(active)
+
+        val current = Context.root()
+        val exporterContext = ExporterMarker.markExporter(current)
+
+        val result = ActiveInteractionContext.parentContextOr(exporterContext)
+        assertThat(result).isEqualTo(exporterContext)
+    }
+
+    @Test
+    fun parentContextOr_upgrades_same_trace() {
+        val click = tracer.spanBuilder("ui.click").startSpan()
+        val nav = tracer.spanBuilder("ui.navigation").setParent(Context.current().with(click)).startSpan()
+        ActiveInteractionContext.activate(nav)
+
+        val current = Context.current().with(click)
+        val result = ActiveInteractionContext.parentContextOr(current)
+
+        val resultSpan = Span.fromContext(result)
+        assertThat(resultSpan.spanContext.spanId).isEqualTo(nav.spanContext.spanId)
+    }
+
+    @Test
+    fun parentContextOr_does_not_override_different_trace() {
+        val click = tracer.spanBuilder("ui.click").startSpan()
+        val nav = tracer.spanBuilder("ui.navigation").startSpan() // different trace
+        ActiveInteractionContext.activate(nav)
+
+        val current = Context.current().with(click)
+        val result = ActiveInteractionContext.parentContextOr(current)
+
+        val resultSpan = Span.fromContext(result)
+        assertThat(resultSpan.spanContext.spanId).isEqualTo(click.spanContext.spanId)
     }
 }

@@ -18,6 +18,9 @@ import io.opentelemetry.android.export.BufferDelegatingLogExporter
 import io.opentelemetry.android.export.BufferDelegatingMetricExporter
 import io.opentelemetry.android.export.BufferDelegatingSpanExporter
 import io.opentelemetry.android.export.SelectiveResourceSpanExporter
+import io.opentelemetry.android.common.internal.instrumentation.MarkerSpanExporter
+import io.opentelemetry.android.common.internal.instrumentation.MarkerLogRecordExporter
+import io.opentelemetry.android.common.internal.instrumentation.MarkerMetricExporter
 import io.opentelemetry.android.features.diskbuffering.SignalFromDiskExporter
 import io.opentelemetry.android.features.diskbuffering.SignalFromDiskExporter.Companion.set
 import io.opentelemetry.android.features.diskbuffering.scheduler.DefaultExportScheduleHandler
@@ -400,8 +403,9 @@ class OpenTelemetryRumBuilder internal constructor(
         val diskBufferingConfig = config.getDiskBufferingConfig()
         var spanExporter = buildSpanExporter()
         spanExporter = SelectiveResourceSpanExporter(spanExporter, resource)
-        var logsExporter = buildLogsExporter()
-        var metricExporter = buildMetricExporter()
+        spanExporter = MarkerSpanExporter(spanExporter)
+        var logsExporter: LogRecordExporter = MarkerLogRecordExporter(buildLogsExporter())
+        var metricExporter: MetricExporter = MarkerMetricExporter(buildMetricExporter())
         var signalFromDiskExporter: SignalFromDiskExporter? = null
 
         if (diskBufferingConfig.enabled) {
