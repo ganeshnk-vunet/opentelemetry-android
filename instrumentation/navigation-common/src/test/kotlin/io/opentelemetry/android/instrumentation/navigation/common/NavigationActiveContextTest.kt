@@ -57,19 +57,35 @@ class NavigationActiveContextTest {
     }
 
     @Test
-    fun second_emit_replaces_active_navigation_parent() {
+    fun second_emit_replaces_active_navigation_parent_within_click() {
+        val clickSpan = tracer.spanBuilder("ui.click").setNoParent().startSpan()
+        ActiveInteractionContext.begin(clickSpan)
         emitter.emit(candidate(destinationName = "login"))
         emitter.emit(candidate(destinationName = "account_selection"))
 
         val parentContext = ActiveInteractionContext.parentContextOr(Context.current())
         val child = tracer.spanBuilder("POST").setParent(parentContext).startSpan()
         child.end()
+        clickSpan.end()
+        ActiveInteractionContext.clear()
 
         val navSpans = exporter.finishedSpanItems.filter { it.name == NavigationConstants.SPAN_NAME }
         assertThat(navSpans).hasSize(2)
         val secondNav = navSpans[1]
         val childSpan = exporter.finishedSpanItems.first { it.name == "POST" }
         assertThat(childSpan.parentSpanId).isEqualTo(secondNav.spanContext.spanId)
+    }
+
+    @Test
+    fun emit_without_click_does_not_activate_navigation_parent() {
+        emitter.emit(candidate(destinationName = "home"))
+
+        val parentContext = ActiveInteractionContext.parentContextOr(Context.current())
+        val child = tracer.spanBuilder("POST").setParent(parentContext).startSpan()
+        child.end()
+
+        val childSpan = exporter.finishedSpanItems.first { it.name == "POST" }
+        assertThat(childSpan.parentSpanId).isNotEqualTo(navigationSpan().spanContext.spanId)
     }
 
     @Test

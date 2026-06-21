@@ -50,13 +50,16 @@ class NavigationSpanEmitter(
                 .setAttribute(NAVIGATION_SOURCE_NAME_KEY, it.name)
         }
 
-        ActiveInteractionContext.rootContext()?.let { spanBuilder.setParent(it) }
+        val interactionContext = ActiveInteractionContext.rootContext()
+        interactionContext?.let { spanBuilder.setParent(it) }
 
         val span = spanBuilder.startSpan()
         // Set screen.name after start so it wins over default attribute appenders.
         span.setAttribute(SCREEN_NAME_KEY, candidate.destination.name)
         span.end()
-        NavigationActiveContext.activate(span)
+        if (interactionContext != null) {
+            NavigationActiveContext.activate(span)
+        }
         RumDiagnostics.d {
             "navigation: span dest=${candidate.destination.name} type=${candidate.destination.type.name.lowercase()}"
         }
