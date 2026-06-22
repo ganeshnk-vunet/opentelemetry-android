@@ -175,10 +175,17 @@ internal class ComposeNav2Collector(
     private fun consumeBackPressSignal(): Boolean {
         val backPressTimestampNanos = pendingBackPressTimestampNanos ?: return false
         pendingBackPressTimestampNanos = null
-        return clock.now() - backPressTimestampNanos <= NavigationTrigger.BACK_PRESS_SIGNAL_TTL_NANOS
+        return clock.now() - backPressTimestampNanos <= BACK_PRESS_SIGNAL_TTL_NANOS
     }
 
     companion object {
+        /**
+         * How long a recorded back press stays eligible to be attributed to the next pop. A pop that
+         * arrives later is treated as programmatic, guarding against a stale back-press signal being
+         * misattributed. Implementation detail, intentionally not part of the published API.
+         */
+        private const val BACK_PRESS_SIGNAL_TTL_NANOS: Long = 1_000_000_000L
+
         /**
          * Reads the id of the destination directly beneath the current top using the public,
          * version-stable [NavController.previousBackStackEntry] (which reflects the live back stack

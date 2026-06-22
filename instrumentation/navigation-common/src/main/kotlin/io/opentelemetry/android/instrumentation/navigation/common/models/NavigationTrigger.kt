@@ -25,14 +25,4 @@ enum class NavigationTrigger(
 
     /** A forward transition ([NavigationTransitionType.PUSH]/[NavigationTransitionType.REPLACE]). */
     UNKNOWN("unknown"),
-    ;
-
-    companion object {
-        /**
-         * How long a recorded back press stays eligible to be attributed to the next pop. A pop
-         * that arrives later than this is treated as [PROGRAMMATIC], guarding against a stale signal
-         * (e.g. a back press that did not actually move the back stack) being misattributed.
-         */
-        const val BACK_PRESS_SIGNAL_TTL_NANOS: Long = 1_000_000_000L
-    }
 }
