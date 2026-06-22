@@ -14,6 +14,18 @@ This module contains shared navigation telemetry internals used by:
 
 - `ui.navigation` span name and attribute keys (`NavigationConstants`)
 - span emission logic (`NavigationSpanEmitter`)
+- active navigation context for downstream span parenting within the current click interaction (`ActiveInteractionContext` via `NavigationActiveContext`, cleared on the next click or via `NavigationSpanEmitter.clearActiveContext()` on uninstall)
+
+When a click triggers navigation and a later API call runs on another thread, the expected trace shape within that single interaction is:
+
+```
+ui.click
+├── POST (immediate async work)
+└── ui.navigation
+      └── POST (work after screen transition)
+```
+
+Each new click starts a fresh interaction trace. Navigation active context is not session-wide correlation.
 - shared navigation models (`NavigationNode`, `NavigationTransitionCandidate`, etc.)
 
 This keeps View and Compose navigation instrumentations aligned on one schema and avoids duplicated logic.

@@ -30,6 +30,7 @@ dependencies {
     implementation(project(":instrumentation:sessions"))
     implementation(project(":instrumentation:screen-orientation"))
     implementation(project(":instrumentation:hybrid-click"))
+    implementation(project(":instrumentation:concurrency:library"))
 
     // Opt-in image-loading instrumentations (compileOnly — only active when consumer depends on them):
     compileOnly(project(":instrumentation:glide"))

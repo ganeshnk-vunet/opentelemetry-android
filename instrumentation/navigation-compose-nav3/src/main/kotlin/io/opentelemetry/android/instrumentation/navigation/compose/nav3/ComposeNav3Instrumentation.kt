@@ -10,6 +10,7 @@ import com.google.auto.service.AutoService
 import io.opentelemetry.android.OpenTelemetryRum
 import io.opentelemetry.android.common.RumDiagnostics
 import io.opentelemetry.android.instrumentation.AndroidInstrumentation
+import io.opentelemetry.android.instrumentation.navigation.common.NavigationSpanEmitter
 
 @AutoService(AndroidInstrumentation::class)
 class ComposeNav3Instrumentation : AndroidInstrumentation {
@@ -29,5 +30,6 @@ class ComposeNav3Instrumentation : AndroidInstrumentation {
     ) {
         NavObserverCollectorHolder.clear()
         NavObserverRumHolder.clear()
+        NavigationSpanEmitter.clearActiveContext()
     }
 }

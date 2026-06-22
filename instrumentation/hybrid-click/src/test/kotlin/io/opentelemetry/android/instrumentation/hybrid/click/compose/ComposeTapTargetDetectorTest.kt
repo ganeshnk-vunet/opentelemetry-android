@@ -19,6 +19,7 @@ import androidx.compose.ui.semantics.SemanticsConfiguration
 import androidx.compose.ui.semantics.SemanticsModifier
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.text.AnnotatedString
 import io.mockk.MockKAnnotations
 import io.mockk.every
 import io.mockk.impl.annotations.MockK
@@ -81,6 +82,81 @@ internal class ComposeTapTargetDetectorTest {
         assertThat(name).isNotBlank()
     }
 
+    @Test
+    fun `editable field uses its label when empty`() {
+        val label =
+            detector.editableFieldLabel(
+                fieldNode(),
+                fieldConfig(editable = "", text = "Mobile Number"),
+            )
+        assertThat(label).isEqualTo("Mobile Number")
+    }
+
+    @Test
+    fun `editable field with masked content never emits the displayed value`() {
+        val raw = "4111111111111111"
+        val masked = "4111 1111 1111 1111"
+        val label =
+            detector.editableFieldLabel(
+                fieldNode(),
+                fieldConfig(editable = raw, text = masked),
+            )
+        assertThat(label).isNotEqualTo(masked)
+        assertThat(label).isNotEqualTo(raw)
+    }
+
+    @Test
+    fun `editable field excludes a content description equal to the typed value`() {
+        val value = "john@example.com"
+        val label =
+            detector.editableFieldLabel(
+                fieldNode(),
+                fieldConfig(editable = value, contentDescription = value),
+            )
+        assertThat(label).isNotEqualTo(value)
+    }
+
+    @Test
+    fun `empty password field uses its label`() {
+        val label =
+            detector.editableFieldLabel(
+                fieldNode(),
+                fieldConfig(editable = "", text = "Password", password = true),
+            )
+        assertThat(label).isEqualTo("Password")
+    }
+
+    @Test
+    fun `password field with content falls back to a constant`() {
+        val secret = "s3cr3t"
+        val label =
+            detector.editableFieldLabel(
+                fieldNode(),
+                fieldConfig(editable = secret, text = "••••••", contentDescription = "Lock", password = true),
+            )
+        assertThat(label).isEqualTo("password field")
+        assertThat(label).isNotEqualTo(secret)
+    }
+
+    /** A LayoutNode whose only role is the class-name/hashCode fallback path. */
+    private fun fieldNode(): LayoutNode =
+        mockkClass(LayoutNode::class).also { every { it.getModifierInfo() } returns listOf() }
+
+    private fun fieldConfig(
+        editable: String,
+        text: String? = null,
+        contentDescription: String? = null,
+        password: Boolean = false,
+    ): SemanticsConfiguration {
+        every { semanticsConfiguration.getOrNull(SemanticsProperties.EditableText) } returns AnnotatedString(editable)
+        every { semanticsConfiguration.contains(SemanticsProperties.Password) } returns password
+        every { semanticsConfiguration.getOrNull(SemanticsProperties.Text) } returns
+            text?.let { listOf(AnnotatedString(it)) }
+        every { semanticsConfiguration.getOrNull(SemanticsProperties.ContentDescription) } returns
+            contentDescription?.let { listOf(it) }
+        return semanticsConfiguration
+    }
+
     private fun createMockLayoutNode(
         targetX: Float = 0f,
         targetY: Float = 0f,
@@ -114,14 +190,14 @@ internal class ComposeTapTargetDetectorTest {
         if (clickable) {
             every { mockModifierInfo.modifier } returns semanticsModifier
             every { semanticsModifier.semanticsConfiguration } returns semanticsConfiguration
-            every { semanticsConfiguration.contains(eq(SemanticsActions.OnClick)) } returns true
+            every { semanticsConfiguration.contains(SemanticsActions.OnClick) } returns true
 
             if (useDescription) {
-                every { semanticsConfiguration.getOrNull(eq(SemanticsActions.OnClick)) } returns null
-                every { semanticsConfiguration.getOrNull(eq(SemanticsProperties.ContentDescription)) } returns
+                every { semanticsConfiguration.getOrNull(SemanticsActions.OnClick) } returns null
+                every { semanticsConfiguration.getOrNull(SemanticsProperties.ContentDescription) } returns
                     listOf("clickMe")
             } else {
-                every { semanticsConfiguration.getOrNull(eq(SemanticsActions.OnClick)) } returns
+                every { semanticsConfiguration.getOrNull(SemanticsActions.OnClick) } returns
                     AccessibilityAction<() -> Boolean>("click") { true }
             }
         } else {

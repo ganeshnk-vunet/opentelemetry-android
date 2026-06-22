@@ -49,6 +49,50 @@ Release build: publish with `-Pfinal=true` → **`0.0.1`** for all modules.
 2. Merge to `develop` for snapshots, or `release/*` for releases.
 3. Update the matching BOM version in vuTelemetry-android.
 
+### Resource version attributes (VuNet integration)
+
+This fork no longer exports the standard OpenTelemetry `telemetry.sdk.language`,
+`telemetry.sdk.name`, or `telemetry.sdk.version` resource attributes. `AndroidResource`
+builds resources without merging `Resource.getDefault()`, which is where those attributes
+originate. Instead, the
+[vuTelemetry-android](https://github.com/vunetsystems/vutelemetry-android) Gradle plugin and SDK
+contribute the following **resource** attributes via the existing `resource { }` DSL in
+`OpenTelemetryRumInitializer.initialize`:
+
+| Resource attribute | Source |
+|--------------------|--------|
+| `vunet.opentelemetry.version` | Resolved `opentelemetry-android-bom` version on the consumer classpath |
+| `vunet.gradle.plugin.version` | `vunet.telemetry.android` Gradle plugin version |
+| `vunet.sdk.version` | vuTelemetry SDK artifact version |
+
+These attributes flow to logs and metrics on every export, and to the first cold `app.start`
+trace span via `SelectiveResourceSpanExporter`.
+
+#### vuTelemetry-android implementation contract
+
+The Gradle plugin should generate a Kotlin source file (e.g. `VunetBuildInfo.kt`) into the SDK
+module's generated sources:
+
+```kotlin
+internal object VunetBuildInfo {
+    const val OPENTELEMETRY_VERSION = "<resolved BOM version>"
+    const val GRADLE_PLUGIN_VERSION = "<plugin version>"
+    const val SDK_VERSION = "<sdk version>"
+}
+```
+
+`VunetAutoInitProvider` should contribute the attributes at init time:
+
+```kotlin
+OpenTelemetryRumInitializer.initialize(ctx) {
+    resource {
+        put("vunet.opentelemetry.version", VunetBuildInfo.OPENTELEMETRY_VERSION)
+        put("vunet.gradle.plugin.version", VunetBuildInfo.GRADLE_PLUGIN_VERSION)
+        put("vunet.sdk.version", VunetBuildInfo.SDK_VERSION)
+    }
+}
+```
+
 ## Versioning scheme
 
 This codebase uses [Semantic Versioning](https://semver.org/) (semver) for its version numbers.

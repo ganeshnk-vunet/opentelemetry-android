@@ -52,6 +52,8 @@ fun AppNavigation(backStack: NavBackStack) {
 
 This module uses shared constants/emitter/models from `instrumentation/navigation-common`, matching `navigation-view` so backends can query both with the same `ui.navigation` attribute shape.
 
+After each `ui.navigation` span is emitted, `navigation-common` keeps that span as the **active OpenTelemetry context** until the next navigation (or instrumentation uninstall). Downstream work on the new screen—such as OkHttp requests or coroutines with context propagation—parents under the latest `ui.navigation` span instead of an earlier `ui.click` span.
+
 ## License
 
 SPDX-License-Identifier: Apache-2.0

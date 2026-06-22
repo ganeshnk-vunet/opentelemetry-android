@@ -12,6 +12,7 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.view.Window
 import io.opentelemetry.android.common.RumDiagnostics
+import io.opentelemetry.android.common.internal.instrumentation.ActiveInteractionContext
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_WIDGET_CHECKED
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_WIDGET_SOURCE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.SOURCE_COMPOSE
@@ -162,6 +163,8 @@ internal class ClickEventGenerator(
             return
         }
 
+        ActiveInteractionContext.clear()
+
         val target =
             findComposeTarget(window.decorView, event.x, event.y)
                 ?: viewTapTargetDetector.findTapTarget(window.decorView, event.x, event.y)
@@ -173,6 +176,7 @@ internal class ClickEventGenerator(
 
         val span =
             tracer.spanBuilder(UI_CLICK_SPAN_NAME)
+                .setNoParent()
                 .setAttribute(AppIncubatingAttributes.APP_WIDGET_ID, target.widgetId)
                 .setAttribute(AppIncubatingAttributes.APP_WIDGET_NAME, target.label)
                 .setAttribute(AppIncubatingAttributes.APP_SCREEN_COORDINATE_X, target.x)
@@ -180,31 +184,36 @@ internal class ClickEventGenerator(
                 .setAttribute(ATTR_WIDGET_SOURCE, target.source)
                 .startSpan()
 
-        val scope = span.makeCurrent()
-        val endSpan =
-            Runnable {
-                scope.close()
-                span.end()
-            }
+        val token = ActiveInteractionContext.begin(span)
+        scheduleContextEnd(token)
 
         val checkedStateProvider = target.checkedStateProvider
         if (checkedStateProvider == null) {
-            mainHandler.postDelayed(endSpan, activeContextWindowMillis)
+            span.end()
         } else {
             // A CompoundButton flips in PerformClick, which View.onTouchEvent *posts* on ACTION_UP
             // rather than running inline. Re-posting from inside a posted runnable (a double post)
             // guarantees the read runs after that flip; reading inline would observe the pre-tap
-            // state. The span end is scheduled only after the read, so the attribute is always
-            // recorded before the span closes regardless of activeContextWindowMillis.
+            // state. The span ends after the read; ActiveInteractionContext stays current for
+            // activeContextWindowMillis independently.
             mainHandler.post {
                 mainHandler.post {
-                    checkedStateProvider()?.let { checked ->
-                        span.setAttribute(ATTR_WIDGET_CHECKED, checked)
+                    try {
+                        checkedStateProvider()?.let { checked ->
+                            span.setAttribute(ATTR_WIDGET_CHECKED, checked)
+                        }
+                    } catch (throwable: Throwable) {
+                        RumDiagnostics.d { "hybridClick: swallowed error reading toggle state: ${throwable.message}" }
                     }
-                    mainHandler.postDelayed(endSpan, activeContextWindowMillis)
+                    // Always end the span, even if the read above failed, so it never leaks.
+                    span.end()
                 }
             }
         }
+    }
+
+    private fun scheduleContextEnd(token: Long) {
+        mainHandler.postDelayed({ ActiveInteractionContext.end(token) }, activeContextWindowMillis)
     }
 
     /**

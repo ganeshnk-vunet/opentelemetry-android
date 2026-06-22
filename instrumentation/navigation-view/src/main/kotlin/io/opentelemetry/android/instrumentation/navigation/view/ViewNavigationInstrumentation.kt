@@ -42,5 +42,6 @@ class ViewNavigationInstrumentation : AndroidInstrumentation {
         (context as? Application)?.unregisterActivityLifecycleCallbacks(callback)
         (callback as? ViewNavigationCollector)?.cleanup()
         activityLifecycleCallbacks = null
+        NavigationSpanEmitter.clearActiveContext()
     }
 }

@@ -32,5 +32,9 @@ includeBuild("..") {
             .using(project(":instrumentation:okhttp3:library"))
         substitute(module("io.opentelemetry.android.instrumentation:okhttp3-agent"))
             .using(project(":instrumentation:okhttp3:agent"))
+        substitute(module("io.opentelemetry.android.instrumentation:concurrency-library"))
+            .using(project(":instrumentation:concurrency:library"))
+        substitute(module("io.opentelemetry.android.instrumentation:concurrency-agent"))
+            .using(project(":instrumentation:concurrency:agent"))
     }
 }

@@ -45,7 +45,8 @@ Key points:
   under `instrumentation/*` are **opt-in** unless added there explicitly — for example
   **`instrumentation/navigation-view`**, **`instrumentation/navigation-compose-nav2`**, **`instrumentation/navigation-compose-nav3`** (navigation spans),
   **`instrumentation/view-click`**, **`instrumentation/compose/click`**, **`instrumentation/hybrid-click`**, and the separate **agent**
-  artifacts for okhttp3, httpurlconnection, and android-log. Add the dependency you need when
+  artifacts for okhttp3, httpurlconnection, android-log, and **concurrency** (coroutine/executor/Handler
+  context propagation). Add the dependency you need when
   integrating with `core` only, or when extending the agent’s classpath.
 - **`core`** configures the OTel Java SDK (TracerProvider, MeterProvider, LoggerProvider).
   It uses `OpenTelemetryRumBuilder` and `SdkPreconfiguredRumBuilder` for two initialization paths.

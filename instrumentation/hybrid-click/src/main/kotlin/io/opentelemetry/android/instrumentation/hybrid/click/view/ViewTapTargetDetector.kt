@@ -5,10 +5,12 @@
 
 package io.opentelemetry.android.instrumentation.hybrid.click.view
 
+import android.text.InputType
 import android.view.View
 import android.view.ViewGroup
 import android.widget.CheckedTextView
 import android.widget.CompoundButton
+import android.widget.EditText
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.LabelResolver
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.SOURCE_VIEW
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.TapTarget
@@ -69,7 +71,16 @@ internal class ViewTapTargetDetector : TapTargetDetector {
 
     private fun isToggle(view: View): Boolean = view is CompoundButton || view is CheckedTextView
 
-    private fun isValidClickTarget(view: View): Boolean = view.isClickable && view.isVisible
+    private fun isValidClickTarget(view: View): Boolean =
+        view.isVisible && (view.isClickable || view is EditText)
+
+    private fun isPasswordField(view: EditText): Boolean {
+        val variation = view.inputType and InputType.TYPE_MASK_VARIATION
+        return variation == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
+            variation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD ||
+            variation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD ||
+            variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD
+    }
 
     private fun handleViewGroup(
         view: ViewGroup,
@@ -110,6 +121,24 @@ internal class ViewTapTargetDetector : TapTargetDetector {
 
     private fun viewToLabel(view: View): String {
         val contentDescription = view.contentDescription?.toString()
+
+        // Editable text fields must never expose their typed content (it may be PII or a password).
+        // Resolve from the accessibility label, then the hint, then the class name. Password fields
+        // fall back to a constant rather than the class name, mirroring the Compose path.
+        if (view is EditText) {
+            if (isPasswordField(view)) {
+                return contentDescription?.takeIf { it.isNotBlank() }
+                    ?: view.hint?.toString()?.takeIf { it.isNotBlank() }
+                    ?: PASSWORD_FIELD_LABEL
+            }
+            return LabelResolver.resolve(
+                contentDescription = contentDescription,
+                text = view.hint?.toString(),
+                className = view.javaClass.simpleName,
+                fallback = view.id.toString(),
+            )
+        }
+
         val text = (view as? android.widget.TextView)?.text?.toString()
 
         val resolvedLabel =
@@ -203,5 +232,8 @@ internal class ViewTapTargetDetector : TapTargetDetector {
     private companion object {
         /** Upper bound on nodes scanned when resolving a label, to keep traversal cheap. */
         const val MAX_LABEL_SEARCH_NODES = 100
+
+        /** Safe placeholder used when a password field has no usable non-value label. */
+        const val PASSWORD_FIELD_LABEL = "password field"
     }
 }

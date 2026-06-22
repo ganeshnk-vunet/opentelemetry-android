@@ -25,9 +25,7 @@ internal class SelectiveResourceSpanExporterTest {
     fun setUp() {
         delegate = InMemorySpanExporter.create()
         minimalResource =
-            Resource.getDefault().merge(
-                Resource.builder().put(ServiceAttributes.SERVICE_NAME, "test-app").build(),
-            )
+            Resource.builder().put(ServiceAttributes.SERVICE_NAME, "test-app").build()
         fullResource =
             minimalResource.merge(
                 Resource.builder().put(DeviceIncubatingAttributes.DEVICE_MODEL_NAME, "Pixel").build(),

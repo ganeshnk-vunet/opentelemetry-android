@@ -200,8 +200,10 @@ Every qualified tap produces one `ui.click` span with these attributes:
 | `app.widget.source`           | UI framework: `"compose"` or `"view"`        | `"compose"`          |
 | `app.widget.checked`          | Toggle state — **toggle widgets only**       | `true`               |
 
-The span is kept active for 500ms (configurable via `setActiveContextWindowMillis`) to allow
-downstream async work to correlate with the click.
+The span ends immediately after the tap (or after the toggle-state read for `CompoundButton`).
+`ActiveInteractionContext` separately remains current for `activeContextWindowMillis`
+(configurable via `setActiveContextWindowMillis`) so downstream async work can still parent
+to the click. The configured window controls the parenting window, not the span duration.
 
 ### `app.widget.checked`
 
@@ -213,11 +215,37 @@ while being an ordinary button (that would tag every Material button, e.g. a dia
 
 The state is read on a deferred main-loop tick rather than inline: a `CompoundButton` flips in
 `PerformClick`, which `View.onTouchEvent` *posts* on `ACTION_UP`, so the resulting (post-tap) state
-is only observable after that runnable runs. The span end is scheduled after the read so the
-attribute is always recorded before the span closes.
+is only observable after that runnable runs. The span ends after the read so the attribute is
+always recorded before the span closes; `ActiveInteractionContext` stays current independently
+for `activeContextWindowMillis`.
 
 **View only.** Compose toggles currently do not emit `app.widget.checked` — Compose state updates on
 recomposition (asynchronously), so a reliable post-tap read isn't available through this path.
+
+---
+
+## Text fields
+
+Tapping a text field is captured as a `ui.click`, identified by its **label** — never its contents.
+
+- **View** (`EditText`): a stock `EditText` is focusable but **not** clickable, so the detector
+  treats `EditText` itself as a valid tap target (alongside `isClickable` views). Its label resolves
+  as `contentDescription → hint → class name`; the typed `text` is **never** used, and password
+  `inputType` fields fall back to a constant.
+- **Compose** (`TextField`/`OutlinedTextField`): these expose no `OnClick` and, in modern Compose,
+  no legacy `SemanticsModifier`, so they are detected via the **semantics tree** — a node carrying a
+  `SemanticsActions.SetText` action. The label prefers the field's `Text` (its label) over any
+  merged `ContentDescription` (usually a decorative leading icon such as "Phone"/"Lock").
+
+**Privacy guarantee.** The entered value is never emitted. On the Compose path the typed value
+(`SemanticsProperties.EditableText`) is read *only* to exclude matching candidates, and — because a
+`VisualTransformation` (card/phone/currency masking) makes the displayed `Text` differ from the raw
+value and bypass that check — the field's `Text` is used as a label **only when the field is empty**
+(when it is the label/placeholder, never input). Fields flagged `SemanticsProperties.Password` fall
+back to a constant label. Note that
+`app.widget.name` is still derived from visible labels/text generally, which in some apps can be
+dynamic data; deployments with strict data-handling requirements should review what their labels
+contain.
 
 ---
 

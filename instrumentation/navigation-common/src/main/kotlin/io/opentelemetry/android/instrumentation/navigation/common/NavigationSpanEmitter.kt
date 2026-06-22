@@ -7,6 +7,7 @@ package io.opentelemetry.android.instrumentation.navigation.common
 
 import io.opentelemetry.android.common.RumConstants.SCREEN_NAME_KEY
 import io.opentelemetry.android.common.RumDiagnostics
+import io.opentelemetry.android.common.internal.instrumentation.ActiveInteractionContext
 import io.opentelemetry.android.instrumentation.navigation.common.NavigationConstants.NAVIGATION_DESTINATION_NAME_KEY
 import io.opentelemetry.android.instrumentation.navigation.common.NavigationConstants.NAVIGATION_DESTINATION_TYPE_KEY
 import io.opentelemetry.android.instrumentation.navigation.common.NavigationConstants.NAVIGATION_ENTRY_TYPE_KEY
@@ -49,12 +50,26 @@ class NavigationSpanEmitter(
                 .setAttribute(NAVIGATION_SOURCE_NAME_KEY, it.name)
         }
 
+        val interactionContext = ActiveInteractionContext.rootContext()
+        interactionContext?.let { spanBuilder.setParent(it) }
+
         val span = spanBuilder.startSpan()
         // Set screen.name after start so it wins over default attribute appenders.
         span.setAttribute(SCREEN_NAME_KEY, candidate.destination.name)
         span.end()
+        if (interactionContext != null) {
+            NavigationActiveContext.activate(span)
+        }
         RumDiagnostics.d {
             "navigation: span dest=${candidate.destination.name} type=${candidate.destination.type.name.lowercase()}"
+        }
+    }
+
+    companion object {
+        /** Clears the active navigation context; call from navigation instrumentation [uninstall]. */
+        @JvmStatic
+        fun clearActiveContext() {
+            NavigationActiveContext.clear()
         }
     }
 }
