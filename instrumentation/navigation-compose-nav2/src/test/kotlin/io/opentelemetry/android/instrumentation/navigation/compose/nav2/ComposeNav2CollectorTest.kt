@@ -133,6 +133,36 @@ class ComposeNav2CollectorTest {
     }
 
     @Test
+    fun same_destination_redispatch_does_not_emit_a_second_span() {
+        val collector = createCollector()
+        collector.onDestinationChanged(navController, destination("home", id = 1), null)
+        // Re-dispatch of the same top destination (e.g. recomposition); nothing navigational changed.
+        collector.onDestinationChanged(navController, destination("home", id = 1), null)
+
+        val spans = exporter.finishedSpanItems
+        assertThat(spans).hasSize(1)
+        assertThat(spans[0].attributes.get(NavigationConstants.NAVIGATION_TRANSITION_TYPE_KEY)).isEqualTo("push")
+    }
+
+    @Test
+    fun repushing_a_destination_already_on_the_stack_is_a_push_not_a_pop() {
+        val collector = createCollector()
+        collector.onDestinationChanged(navController, destination("home", id = 1), null)
+        entryBelowTopId = 1
+        collector.onDestinationChanged(navController, destination("details/{id}", id = 2), null)
+        // Navigate forward to home again (home → details → home). The live entry beneath the new
+        // top is details (id 2), so this must be classified as a PUSH even though home (id 1) is
+        // already on the stack — not a POP.
+        entryBelowTopId = 2
+        collector.onDestinationChanged(navController, destination("home", id = 1), null)
+
+        val spans = exporter.finishedSpanItems
+        assertThat(spans).hasSize(3)
+        assertThat(spans[2].attributes.get(NavigationConstants.NAVIGATION_TRANSITION_TYPE_KEY)).isEqualTo("push")
+        assertThat(spans[2].attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("unknown")
+    }
+
+    @Test
     fun dialog_destination_is_filtered() {
         val collector = createCollector(destinationFilter = { it.route == "dialog" })
         collector.onDestinationChanged(navController, destination("home", id = 1), null)

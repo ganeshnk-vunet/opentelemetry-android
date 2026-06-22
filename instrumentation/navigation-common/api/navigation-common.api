@@ -84,3 +84,18 @@ public final class io/opentelemetry/android/instrumentation/navigation/common/mo
 	public static fun values ()[Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTransitionType;
 }
 
+public final class io/opentelemetry/android/instrumentation/navigation/common/models/NavigationTrigger : java/lang/Enum {
+	public static final field BACK_PRESS Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTrigger;
+	public static final field BACK_PRESS_SIGNAL_TTL_NANOS J
+	public static final field Companion Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTrigger$Companion;
+	public static final field PROGRAMMATIC Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTrigger;
+	public static final field UNKNOWN Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTrigger;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getValue ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTrigger;
+	public static fun values ()[Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTrigger;
+}
+
+public final class io/opentelemetry/android/instrumentation/navigation/common/models/NavigationTrigger$Companion {
+}
+

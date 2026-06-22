@@ -20,6 +20,7 @@ import io.opentelemetry.android.instrumentation.navigation.common.models.Navigat
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationNodeType
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTransitionCandidate
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTransitionType
+import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTrigger
 import io.opentelemetry.android.instrumentation.navigation.view.models.resolveEntryType
 import io.opentelemetry.sdk.common.Clock
 import java.util.Collections
@@ -29,6 +30,11 @@ import java.util.WeakHashMap
  * Tracks Android Activity and Fragment lifecycles to automatically emit telemetry when users
  * navigate between screens. It maps lifecycle changes to [NavigationTransitionType.PUSH],
  * [NavigationTransitionType.POP], or [NavigationTransitionType.REPLACE] events.
+ *
+ * Threading contract: this collector is not internally synchronized. Activity and Fragment
+ * lifecycle callbacks are delivered on the main thread, and [recordBackPress] is expected to be
+ * called from the same main thread (via [ViewNavigationBackPress]). Driving it from other threads
+ * concurrently is unsupported.
  */
 internal class ViewNavigationCollector(
     private val emitter: NavigationSpanEmitter,
@@ -210,15 +216,7 @@ internal class ViewNavigationCollector(
     private fun consumeBackPressSignal(): Boolean {
         val backPressTimestampNanos = pendingBackPressTimestampNanos ?: return false
         pendingBackPressTimestampNanos = null
-        return clock.now() - backPressTimestampNanos <= BACK_PRESS_SIGNAL_TTL_NANOS
-    }
-
-    private enum class NavigationTrigger(
-        val value: String,
-    ) {
-        BACK_PRESS("back_press"),
-        PROGRAMMATIC("programmatic"),
-        UNKNOWN("unknown"),
+        return clock.now() - backPressTimestampNanos <= NavigationTrigger.BACK_PRESS_SIGNAL_TTL_NANOS
     }
 
     private val fragmentLifecycleCallbacks =
@@ -272,8 +270,4 @@ internal class ViewNavigationCollector(
         activity: Activity,
         outState: Bundle,
     ) = Unit
-
-    private companion object {
-        const val BACK_PRESS_SIGNAL_TTL_NANOS: Long = 1_000_000_000L
-    }
 }

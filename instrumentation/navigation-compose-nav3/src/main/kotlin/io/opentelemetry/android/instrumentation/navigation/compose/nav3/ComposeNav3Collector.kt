@@ -13,6 +13,7 @@ import io.opentelemetry.android.instrumentation.navigation.common.models.Navigat
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationNodeType
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTransitionCandidate
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTransitionType
+import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTrigger
 import androidx.navigation3.runtime.NavKey
 
 internal class ComposeNav3Collector(
@@ -96,7 +97,7 @@ internal class ComposeNav3Collector(
     private fun consumeBackPressSignal(): Boolean {
         val backPressTimestampNanos = pendingBackPressTimestampNanos ?: return false
         pendingBackPressTimestampNanos = null
-        return clock.now() - backPressTimestampNanos <= BACK_PRESS_SIGNAL_TTL_NANOS
+        return clock.now() - backPressTimestampNanos <= NavigationTrigger.BACK_PRESS_SIGNAL_TTL_NANOS
     }
 
     private fun NavKey.toNavigationNode(): NavigationNode =
@@ -104,16 +105,4 @@ internal class ComposeNav3Collector(
             type = NavigationNodeType.COMPOSE_ROUTE,
             name = nameOf(this),
         )
-
-    private enum class NavigationTrigger(
-        val value: String,
-    ) {
-        BACK_PRESS("back_press"),
-        PROGRAMMATIC("programmatic"),
-        UNKNOWN("unknown"),
-    }
-
-    private companion object {
-        const val BACK_PRESS_SIGNAL_TTL_NANOS: Long = 1_000_000_000L
-    }
 }

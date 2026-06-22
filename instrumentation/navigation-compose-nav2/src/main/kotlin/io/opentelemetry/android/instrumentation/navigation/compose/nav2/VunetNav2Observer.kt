@@ -35,8 +35,18 @@ fun VunetNav2Observer(navController: NavController) {
 /**
  * Wraps an [onBack] callback and records a back-press trigger when possible.
  *
- * Use this wrapper for your navigation back action so pop transitions can be
- * attributed to a back press when [VunetNav2Observer] is active for the same [navController].
+ * Returns a new lambda that records the back press and then invokes [onBack]. You must call this
+ * returned lambda (not the original [onBack]) for the pop to be attributed to a back press when
+ * [VunetNav2Observer] is active for the same [navController]; invoking [onBack] directly bypasses
+ * attribution.
+ *
+ * Example:
+ * ```
+ * val onBack = rememberVunetOnBack(navController) { navController.popBackStack() }
+ * BackHandler(onBack = onBack)
+ * // ...
+ * IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = null) }
+ * ```
  */
 @Composable
 @Suppress("FunctionName")

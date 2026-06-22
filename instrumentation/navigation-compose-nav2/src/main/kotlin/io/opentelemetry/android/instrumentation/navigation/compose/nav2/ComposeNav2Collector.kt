@@ -16,7 +16,14 @@ import io.opentelemetry.android.instrumentation.navigation.common.models.Navigat
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationNodeType
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTransitionCandidate
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTransitionType
+import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTrigger
 
+/**
+ * Threading contract: this collector is not internally synchronized. `onDestinationChanged` is
+ * delivered by the Navigation library on the main thread, and [recordBackPress] is expected to be
+ * called from the same main thread (it is wired through `rememberVunetOnBack`, a Compose callback).
+ * Driving it from other threads concurrently is unsupported.
+ */
 internal class ComposeNav2Collector(
     openTelemetryRum: OpenTelemetryRum,
     private val destinationFilter: (NavDestination) -> Boolean = ComposeNav2DestinationFilter::shouldIgnore,
@@ -85,12 +92,15 @@ internal class ComposeNav2Collector(
     }
 
     /**
-     * Classifies the transition into [destinationId] using our tracked stack:
+     * Classifies the transition into [destinationId] using our tracked stack and the live entry
+     * directly beneath the new top ([NavController.previousBackStackEntry]):
      * - the first destination is a [NavigationTransitionType.PUSH];
-     * - returning to a destination already on the stack is a [NavigationTransitionType.POP];
-     * - a new destination is a [NavigationTransitionType.PUSH] when the previous top is still
-     *   beneath it (live [NavController.previousBackStackEntry]), otherwise a
-     *   [NavigationTransitionType.REPLACE].
+     * - if the previous top is now the entry beneath [destinationId], the stack grew, so it is a
+     *   [NavigationTransitionType.PUSH] — this is checked first so that re-pushing a destination
+     *   that already appears elsewhere on the stack (e.g. A → B → A) is not mistaken for a pop;
+     * - otherwise, returning to a destination already on the stack is a
+     *   [NavigationTransitionType.POP];
+     * - any other new destination is a [NavigationTransitionType.REPLACE].
      */
     private fun inferTransitionType(
         controller: NavController,
@@ -99,17 +109,23 @@ internal class ComposeNav2Collector(
         if (destinationIdStack.isEmpty()) {
             return NavigationTransitionType.PUSH
         }
+        val liveEntryBelowTopId = previousEntryIdProvider(controller)
+        if (liveEntryBelowTopId != null && liveEntryBelowTopId == destinationIdStack.last()) {
+            // The previous top is still directly below the new top: the back stack grew by one.
+            return NavigationTransitionType.PUSH
+        }
         if (destinationIdStack.contains(destinationId)) {
             return NavigationTransitionType.POP
         }
-        val liveEntryBelowTopId = previousEntryIdProvider(controller)
-        return if (liveEntryBelowTopId != null && liveEntryBelowTopId == destinationIdStack.last()) {
-            NavigationTransitionType.PUSH
-        } else {
-            NavigationTransitionType.REPLACE
-        }
+        return NavigationTransitionType.REPLACE
     }
 
+    /**
+     * Updates [destinationIdStack] to reflect the applied [transitionType]. For a
+     * [NavigationTransitionType.POP] the entries above [destinationId] are unwound while
+     * [destinationId] itself is intentionally kept as the new top (it is the screen the user
+     * returned to).
+     */
     private fun applyTransition(
         transitionType: NavigationTransitionType,
         destinationId: Int,
@@ -117,6 +133,7 @@ internal class ComposeNav2Collector(
         when (transitionType) {
             NavigationTransitionType.PUSH -> destinationIdStack.addLast(destinationId)
             NavigationTransitionType.POP -> {
+                // Unwind everything above destinationId, leaving it as the new top.
                 while (destinationIdStack.isNotEmpty() && destinationIdStack.last() != destinationId) {
                     destinationIdStack.removeLast()
                 }
@@ -158,20 +175,10 @@ internal class ComposeNav2Collector(
     private fun consumeBackPressSignal(): Boolean {
         val backPressTimestampNanos = pendingBackPressTimestampNanos ?: return false
         pendingBackPressTimestampNanos = null
-        return clock.now() - backPressTimestampNanos <= BACK_PRESS_SIGNAL_TTL_NANOS
-    }
-
-    private enum class NavigationTrigger(
-        val value: String,
-    ) {
-        BACK_PRESS("back_press"),
-        PROGRAMMATIC("programmatic"),
-        UNKNOWN("unknown"),
+        return clock.now() - backPressTimestampNanos <= NavigationTrigger.BACK_PRESS_SIGNAL_TTL_NANOS
     }
 
     companion object {
-        private const val BACK_PRESS_SIGNAL_TTL_NANOS: Long = 1_000_000_000L
-
         /**
          * Reads the id of the destination directly beneath the current top using the public,
          * version-stable [NavController.previousBackStackEntry] (which reflects the live back stack
