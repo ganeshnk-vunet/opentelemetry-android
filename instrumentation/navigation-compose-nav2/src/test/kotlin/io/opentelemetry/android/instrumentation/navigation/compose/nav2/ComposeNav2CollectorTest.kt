@@ -28,61 +28,145 @@ class ComposeNav2CollectorTest {
             .addSpanProcessor(SimpleSpanProcessor.create(exporter))
             .build()
     private val openTelemetry = OpenTelemetrySdk.builder().setTracerProvider(tracerProvider).build()
+    private var nowNanos: Long = 1234L
     private val testClock =
         object : Clock {
-            override fun now(): Long = 1234L
+            override fun now(): Long = nowNanos
 
-            override fun nanoTime(): Long = 1234L
+            override fun nanoTime(): Long = nowNanos
         }
     private val navController = mockk<NavController>(relaxed = true)
+
+    /** Id of the destination beneath the current top, as the live NavController would report it. */
+    private var entryBelowTopId: Int? = null
 
     @BeforeEach
     fun setUp() {
         exporter.reset()
+        nowNanos = 1234L
+        entryBelowTopId = null
     }
 
     @Test
     fun compose_route_push_emits_span() {
-        val collector = createCollector(backStackSizes = listOf(1))
-        collector.onDestinationChanged(navController, destination("home"), null)
+        val collector = createCollector()
+        collector.onDestinationChanged(navController, destination("home", id = 1), null)
 
         val spans = exporter.finishedSpanItems
         assertThat(spans).hasSize(1)
         assertThat(spans[0].attributes.get(NavigationConstants.NAVIGATION_DESTINATION_TYPE_KEY)).isEqualTo("compose_route")
         assertThat(spans[0].attributes.get(NavigationConstants.NAVIGATION_TRANSITION_TYPE_KEY)).isEqualTo("push")
+        assertThat(spans[0].attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("unknown")
     }
 
     @Test
-    fun compose_route_pop_emits_span_when_backstack_shrinks() {
-        val collector = createCollector(backStackSizes = listOf(2, 1))
+    fun compose_route_pop_emits_span_when_returning_to_existing_destination() {
+        val collector = createCollector()
+        collector.onDestinationChanged(navController, destination("home", id = 1), null)
+        entryBelowTopId = 1
         collector.onDestinationChanged(navController, destination("details/{id}", id = 2), null)
         collector.onDestinationChanged(navController, destination("home", id = 1), null)
 
         val spans = exporter.finishedSpanItems
-        assertThat(spans).hasSize(2)
-        assertThat(spans[1].attributes.get(NavigationConstants.NAVIGATION_TRANSITION_TYPE_KEY)).isEqualTo("pop")
+        assertThat(spans).hasSize(3)
+        assertThat(spans[2].attributes.get(NavigationConstants.NAVIGATION_TRANSITION_TYPE_KEY)).isEqualTo("pop")
+        assertThat(spans[2].attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("programmatic")
     }
 
     @Test
-    fun compose_route_replace_emits_span_when_count_unchanged() {
-        val collector = createCollector(backStackSizes = listOf(2, 2))
-        collector.onDestinationChanged(navController, destination("home"), null)
-        collector.onDestinationChanged(navController, destination("settings"), null)
+    fun compose_route_pop_after_recent_back_press_emits_back_press_trigger() {
+        val collector = createCollector()
+        collector.onDestinationChanged(navController, destination("home", id = 1), null)
+        entryBelowTopId = 1
+        collector.onDestinationChanged(navController, destination("details/{id}", id = 2), null)
+
+        collector.recordBackPress()
+        nowNanos += 100L
+        collector.onDestinationChanged(navController, destination("home", id = 1), null)
+
+        val spans = exporter.finishedSpanItems
+        assertThat(spans).hasSize(3)
+        assertThat(spans[2].attributes.get(NavigationConstants.NAVIGATION_TRANSITION_TYPE_KEY)).isEqualTo("pop")
+        assertThat(spans[2].attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("back_press")
+    }
+
+    @Test
+    fun compose_route_stale_back_press_signal_falls_back_to_programmatic() {
+        val collector = createCollector()
+        collector.onDestinationChanged(navController, destination("home", id = 1), null)
+        entryBelowTopId = 1
+        collector.onDestinationChanged(navController, destination("details/{id}", id = 2), null)
+
+        collector.recordBackPress()
+        nowNanos += 1_000_000_001L
+        collector.onDestinationChanged(navController, destination("home", id = 1), null)
+
+        val spans = exporter.finishedSpanItems
+        assertThat(spans).hasSize(3)
+        assertThat(spans[2].attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("programmatic")
+    }
+
+    @Test
+    fun compose_route_push_when_previous_top_remains_below() {
+        val collector = createCollector()
+        collector.onDestinationChanged(navController, destination("home", id = 1), null)
+        entryBelowTopId = 1
+        collector.onDestinationChanged(navController, destination("details/{id}", id = 2), null)
+
+        val spans = exporter.finishedSpanItems
+        assertThat(spans).hasSize(2)
+        assertThat(spans[1].attributes.get(NavigationConstants.NAVIGATION_TRANSITION_TYPE_KEY)).isEqualTo("push")
+        assertThat(spans[1].attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("unknown")
+    }
+
+    @Test
+    fun compose_route_replace_emits_span_when_top_swapped() {
+        val collector = createCollector()
+        collector.onDestinationChanged(navController, destination("home", id = 1), null)
+        entryBelowTopId = null
+        collector.onDestinationChanged(navController, destination("settings", id = 2), null)
 
         val spans = exporter.finishedSpanItems
         assertThat(spans).hasSize(2)
         assertThat(spans[1].attributes.get(NavigationConstants.NAVIGATION_TRANSITION_TYPE_KEY)).isEqualTo("replace")
+        assertThat(spans[1].attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("unknown")
+    }
+
+    @Test
+    fun same_destination_redispatch_does_not_emit_a_second_span() {
+        val collector = createCollector()
+        collector.onDestinationChanged(navController, destination("home", id = 1), null)
+        // Re-dispatch of the same top destination (e.g. recomposition); nothing navigational changed.
+        collector.onDestinationChanged(navController, destination("home", id = 1), null)
+
+        val spans = exporter.finishedSpanItems
+        assertThat(spans).hasSize(1)
+        assertThat(spans[0].attributes.get(NavigationConstants.NAVIGATION_TRANSITION_TYPE_KEY)).isEqualTo("push")
+    }
+
+    @Test
+    fun repushing_a_destination_already_on_the_stack_is_a_push_not_a_pop() {
+        val collector = createCollector()
+        collector.onDestinationChanged(navController, destination("home", id = 1), null)
+        entryBelowTopId = 1
+        collector.onDestinationChanged(navController, destination("details/{id}", id = 2), null)
+        // Navigate forward to home again (home → details → home). The live entry beneath the new
+        // top is details (id 2), so this must be classified as a PUSH even though home (id 1) is
+        // already on the stack — not a POP.
+        entryBelowTopId = 2
+        collector.onDestinationChanged(navController, destination("home", id = 1), null)
+
+        val spans = exporter.finishedSpanItems
+        assertThat(spans).hasSize(3)
+        assertThat(spans[2].attributes.get(NavigationConstants.NAVIGATION_TRANSITION_TYPE_KEY)).isEqualTo("push")
+        assertThat(spans[2].attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("unknown")
     }
 
     @Test
     fun dialog_destination_is_filtered() {
-        val collector =
-            createCollector(
-                backStackSizes = listOf(1, 2),
-                destinationFilter = { it.route == "dialog" },
-            )
-        collector.onDestinationChanged(navController, destination("home"), null)
-        collector.onDestinationChanged(navController, destination("dialog"), null)
+        val collector = createCollector(destinationFilter = { it.route == "dialog" })
+        collector.onDestinationChanged(navController, destination("home", id = 1), null)
+        collector.onDestinationChanged(navController, destination("dialog", id = 2), null)
 
         val spans = exporter.finishedSpanItems
         assertThat(spans).hasSize(1)
@@ -90,10 +174,10 @@ class ComposeNav2CollectorTest {
 
     @Test
     fun multiple_navcontrollers_are_independent() {
-        val first = createCollector(backStackSizes = listOf(1, 2))
-        val second = createCollector(backStackSizes = listOf(1, 2))
-        first.onDestinationChanged(navController, destination("home"), null)
-        second.onDestinationChanged(navController, destination("feed"), null)
+        val first = createCollector()
+        val second = createCollector()
+        first.onDestinationChanged(navController, destination("home", id = 1), null)
+        second.onDestinationChanged(navController, destination("feed", id = 2), null)
 
         val spans = exporter.finishedSpanItems
         assertThat(spans).hasSize(2)
@@ -124,16 +208,13 @@ class ComposeNav2CollectorTest {
         }
 
     private fun createCollector(
-        backStackSizes: List<Int>,
         destinationFilter: (NavDestination) -> Boolean = { false },
-    ): ComposeNav2Collector {
-        var i = 0
-        return ComposeNav2Collector(
+    ): ComposeNav2Collector =
+        ComposeNav2Collector(
             openTelemetryRum = rum(),
             destinationFilter = destinationFilter,
-            backStackSizeProvider = { backStackSizes[(i++).coerceAtMost(backStackSizes.lastIndex)] },
+            previousEntryIdProvider = { entryBelowTopId },
         )
-    }
 
     private fun rum(): OpenTelemetryRum =
         mockk {

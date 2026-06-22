@@ -13,6 +13,7 @@ import io.opentelemetry.android.instrumentation.navigation.common.models.Navigat
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationNodeType
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTransitionCandidate
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTransitionType
+import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTrigger
 import androidx.navigation3.runtime.NavKey
 
 internal class ComposeNav3Collector(
@@ -105,15 +106,12 @@ internal class ComposeNav3Collector(
             name = nameOf(this),
         )
 
-    private enum class NavigationTrigger(
-        val value: String,
-    ) {
-        BACK_PRESS("back_press"),
-        PROGRAMMATIC("programmatic"),
-        UNKNOWN("unknown"),
-    }
-
     private companion object {
+        /**
+         * How long a recorded back press stays eligible to be attributed to the next pop. A pop that
+         * arrives later is treated as programmatic, guarding against a stale back-press signal being
+         * misattributed. Implementation detail, intentionally not part of the published API.
+         */
         const val BACK_PRESS_SIGNAL_TTL_NANOS: Long = 1_000_000_000L
     }
 }

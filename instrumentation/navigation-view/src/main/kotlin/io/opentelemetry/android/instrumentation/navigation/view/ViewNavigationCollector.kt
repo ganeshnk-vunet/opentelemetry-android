@@ -20,6 +20,7 @@ import io.opentelemetry.android.instrumentation.navigation.common.models.Navigat
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationNodeType
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTransitionCandidate
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTransitionType
+import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTrigger
 import io.opentelemetry.android.instrumentation.navigation.view.models.resolveEntryType
 import io.opentelemetry.sdk.common.Clock
 import java.util.Collections
@@ -29,6 +30,11 @@ import java.util.WeakHashMap
  * Tracks Android Activity and Fragment lifecycles to automatically emit telemetry when users
  * navigate between screens. It maps lifecycle changes to [NavigationTransitionType.PUSH],
  * [NavigationTransitionType.POP], or [NavigationTransitionType.REPLACE] events.
+ *
+ * Threading contract: this collector is not internally synchronized. Activity and Fragment
+ * lifecycle callbacks are delivered on the main thread, and [recordBackPress] is expected to be
+ * called from the same main thread (via [ViewNavigationBackPress]). Driving it from other threads
+ * concurrently is unsupported.
  */
 internal class ViewNavigationCollector(
     private val emitter: NavigationSpanEmitter,
@@ -68,6 +74,22 @@ internal class ViewNavigationCollector(
      */
     private val resumedActivities: MutableSet<Activity> =
         Collections.newSetFromMap(WeakHashMap())
+
+    /**
+     * Timestamp of the most recent back press recorded via [recordBackPress], used to attribute the
+     * next [NavigationTransitionType.POP] to [NavigationTrigger.BACK_PRESS] when it lands within
+     * [BACK_PRESS_SIGNAL_TTL_NANOS].
+     */
+    private var pendingBackPressTimestampNanos: Long? = null
+
+    /**
+     * Records that a back press just occurred so the next [NavigationTransitionType.POP] can be
+     * attributed to [NavigationTrigger.BACK_PRESS]. Call from the app's back handling via
+     * [ViewNavigationBackPress].
+     */
+    internal fun recordBackPress() {
+        pendingBackPressTimestampNanos = clock.now()
+    }
 
     override fun onActivityCreated(
         activity: Activity,
@@ -136,6 +158,7 @@ internal class ViewNavigationCollector(
         resumedActivities.clear()
         currentVisibleNode = null
         finishingActivityPaused = false
+        pendingBackPressTimestampNanos = null
     }
 
     /**
@@ -152,6 +175,7 @@ internal class ViewNavigationCollector(
             return
         }
 
+        val navigationTrigger = resolveTrigger(transitionType)
         emitter.emit(
             NavigationTransitionCandidate(
                 source = source,
@@ -160,8 +184,39 @@ internal class ViewNavigationCollector(
                 entryType = entryType,
                 timestampNanos = clock.now(),
             ),
+            navigationTrigger = navigationTrigger.value,
         )
         currentVisibleNode = destination
+    }
+
+    /**
+     * Attributes a transition to a [NavigationTrigger]. Only a [NavigationTransitionType.POP]
+     * that follows a recent [recordBackPress] is reported as [NavigationTrigger.BACK_PRESS];
+     * other pops are [NavigationTrigger.PROGRAMMATIC] and forward transitions are
+     * [NavigationTrigger.UNKNOWN].
+     */
+    private fun resolveTrigger(transitionType: NavigationTransitionType): NavigationTrigger =
+        when (transitionType) {
+            NavigationTransitionType.POP -> {
+                if (consumeBackPressSignal()) {
+                    NavigationTrigger.BACK_PRESS
+                } else {
+                    NavigationTrigger.PROGRAMMATIC
+                }
+            }
+
+            NavigationTransitionType.PUSH,
+            NavigationTransitionType.REPLACE,
+            -> {
+                pendingBackPressTimestampNanos = null
+                NavigationTrigger.UNKNOWN
+            }
+        }
+
+    private fun consumeBackPressSignal(): Boolean {
+        val backPressTimestampNanos = pendingBackPressTimestampNanos ?: return false
+        pendingBackPressTimestampNanos = null
+        return clock.now() - backPressTimestampNanos <= BACK_PRESS_SIGNAL_TTL_NANOS
     }
 
     private val fragmentLifecycleCallbacks =
@@ -215,4 +270,13 @@ internal class ViewNavigationCollector(
         activity: Activity,
         outState: Bundle,
     ) = Unit
+
+    private companion object {
+        /**
+         * How long a recorded back press stays eligible to be attributed to the next pop. A pop that
+         * arrives later is treated as programmatic, guarding against a stale back-press signal being
+         * misattributed. Implementation detail, intentionally not part of the published API.
+         */
+        const val BACK_PRESS_SIGNAL_TTL_NANOS: Long = 1_000_000_000L
+    }
 }
