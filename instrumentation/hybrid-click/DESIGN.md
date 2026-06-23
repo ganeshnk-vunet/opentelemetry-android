@@ -198,12 +198,25 @@ Every qualified tap produces one `ui.click` span with these attributes:
 | `app.screen.coordinate.x`     | Tap X position in window                     | `250`                |
 | `app.screen.coordinate.y`     | Tap Y position in window                     | `480`                |
 | `app.widget.source`           | UI framework: `"compose"` or `"view"`        | `"compose"`          |
+| `app.widget.type`             | Widget kind (button/switch/text_field/…)     | `"button"`           |
 | `app.widget.checked`          | Toggle state — **toggle widgets only**       | `true`               |
 
 The span ends immediately after the tap (or after the toggle-state read for `CompoundButton`).
 `ActiveInteractionContext` separately remains current for `activeContextWindowMillis`
 (configurable via `setActiveContextWindowMillis`) so downstream async work can still parent
 to the click. The configured window controls the parenting window, not the span duration.
+
+### `app.widget.type`
+
+A normalized widget kind so clicks can be grouped/queried by element type. Values:
+`button`, `switch`, `checkbox`, `radio`, `toggle`, `text_field`, `image`, `tab`, `dropdown`,
+`text`, `view`, `unknown`.
+
+- **View** — derived from the widget class (`Button`/`ImageButton` → `button`, `CompoundButton`
+  subtypes → `switch`/`checkbox`/`radio`/`toggle`, `EditText` → `text_field`, etc.).
+- **Compose** — derived primarily from the semantics `Role` (`Role.Button`, `Role.Switch`,
+  `Role.Checkbox`, `Role.RadioButton`, `Role.Tab`, …), falling back to `SetText` → `text_field` and
+  `OnClick` → `button`.
 
 ### `app.widget.checked`
 

@@ -14,6 +14,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.ModifierInfo
 import androidx.compose.ui.node.LayoutNode
 import androidx.compose.ui.semantics.AccessibilityAction
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsConfiguration
 import androidx.compose.ui.semantics.SemanticsModifier
@@ -136,6 +137,41 @@ internal class ComposeTapTargetDetectorTest {
             )
         assertThat(label).isEqualTo("password field")
         assertThat(label).isNotEqualTo(secret)
+    }
+
+    @Test
+    fun `widget type from semantics role`() {
+        assertThat(detector.widgetTypeOf(typeConfig(role = Role.Button))).isEqualTo("button")
+        assertThat(detector.widgetTypeOf(typeConfig(role = Role.Switch))).isEqualTo("switch")
+        assertThat(detector.widgetTypeOf(typeConfig(role = Role.Checkbox))).isEqualTo("checkbox")
+        assertThat(detector.widgetTypeOf(typeConfig(role = Role.RadioButton))).isEqualTo("radio")
+        assertThat(detector.widgetTypeOf(typeConfig(role = Role.Tab))).isEqualTo("tab")
+    }
+
+    @Test
+    fun `widget type falls back to actions when no role`() {
+        assertThat(detector.widgetTypeOf(typeConfig(role = null, setText = true))).isEqualTo("text_field")
+        assertThat(detector.widgetTypeOf(typeConfig(role = null, onClick = true))).isEqualTo("button")
+        assertThat(detector.widgetTypeOf(typeConfig(role = null))).isEqualTo("unknown")
+        assertThat(detector.widgetTypeOf(null)).isEqualTo("unknown")
+    }
+
+    private fun typeConfig(
+        role: Role?,
+        setText: Boolean = false,
+        onClick: Boolean = false,
+    ): SemanticsConfiguration {
+        val config = SemanticsConfiguration()
+        if (role != null) {
+            config[SemanticsProperties.Role] = role
+        }
+        if (setText) {
+            config[SemanticsActions.SetText] = AccessibilityAction<(AnnotatedString) -> Boolean>("setText") { true }
+        }
+        if (onClick) {
+            config[SemanticsActions.OnClick] = AccessibilityAction<() -> Boolean>("onClick") { true }
+        }
+        return config
     }
 
     /** A LayoutNode whose only role is the class-name/hashCode fallback path. */

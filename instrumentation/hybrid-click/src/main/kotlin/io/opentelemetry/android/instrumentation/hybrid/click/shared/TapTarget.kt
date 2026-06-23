@@ -22,5 +22,6 @@ internal data class TapTarget(
     val label: String,
     val x: Long,
     val y: Long,
+    val type: String = WIDGET_TYPE_UNKNOWN,
     val checkedStateProvider: (() -> Boolean?)? = null,
 )

@@ -130,8 +130,21 @@ class ViewEditTextClickTest {
         return exporter.finishedSpanItems.single()
     }
 
+    @Test
+    fun `edit text reports text_field type`() {
+        val window = windowOf(EditText(context).apply { isClickable = true; hint = "Mobile Number" })
+        generator.startTracking(window)
+
+        tap(window)
+
+        assertThat(widgetType(singleSpan())).isEqualTo("text_field")
+    }
+
     private fun widgetName(span: SpanData): String? =
         span.attributes.get(AppIncubatingAttributes.APP_WIDGET_NAME)
+
+    private fun widgetType(span: SpanData): String? =
+        span.attributes.get(io.opentelemetry.api.common.AttributeKey.stringKey("app.widget.type"))
 
     private companion object {
         const val VIEW_SIZE = 500

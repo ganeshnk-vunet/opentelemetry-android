@@ -13,12 +13,22 @@ import androidx.compose.ui.node.LayoutNode
 import androidx.compose.ui.node.Owner
 import androidx.compose.ui.semantics.SemanticsConfiguration
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsModifier
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getAllSemanticsNodes
 import androidx.compose.ui.semantics.getOrNull
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.LabelResolver
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_BUTTON
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_CHECKBOX
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_DROPDOWN
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_IMAGE
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_RADIO
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_SWITCH
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_TAB
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_TEXT_FIELD
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_UNKNOWN
 import java.util.LinkedList
 
 /**
@@ -76,6 +86,35 @@ internal class ComposeTapTargetDetector(
         } catch (_: Throwable) {
             nodeId(node)
         }
+
+    /**
+     * Maps a Compose node to a normalized widget kind, primarily from its semantics [Role], falling
+     * back to the editable/clickable actions it exposes.
+     */
+    internal fun nodeToType(node: LayoutNode): String = widgetTypeOf(mergedConfigFor(node))
+
+    internal fun widgetTypeOf(config: SemanticsConfiguration?): String {
+        if (config == null) return WIDGET_TYPE_UNKNOWN
+        return try {
+            // Null-safe equality on the nullable Role value class (a `when (role)` subject would
+            // unbox null and throw).
+            val role = config.getOrNull(SemanticsProperties.Role)
+            when {
+                role == Role.Button -> WIDGET_TYPE_BUTTON
+                role == Role.Checkbox -> WIDGET_TYPE_CHECKBOX
+                role == Role.Switch -> WIDGET_TYPE_SWITCH
+                role == Role.RadioButton -> WIDGET_TYPE_RADIO
+                role == Role.Tab -> WIDGET_TYPE_TAB
+                role == Role.Image -> WIDGET_TYPE_IMAGE
+                role == Role.DropdownList -> WIDGET_TYPE_DROPDOWN
+                config.contains(SemanticsActions.SetText) -> WIDGET_TYPE_TEXT_FIELD
+                config.contains(SemanticsActions.OnClick) -> WIDGET_TYPE_BUTTON
+                else -> WIDGET_TYPE_UNKNOWN
+            }
+        } catch (_: Throwable) {
+            WIDGET_TYPE_UNKNOWN
+        }
+    }
 
     /**
      * Resolves node coordinates in window space for span attributes.

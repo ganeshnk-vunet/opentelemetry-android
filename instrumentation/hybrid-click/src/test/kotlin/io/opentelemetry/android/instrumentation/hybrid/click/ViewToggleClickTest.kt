@@ -174,8 +174,25 @@ class ViewToggleClickTest {
         return exporter.finishedSpanItems.single()
     }
 
+    @Test
+    fun `checkbox reports checkbox type and button reports button type`() {
+        val checkBoxWindow = windowOf(frameRoot(CheckBox(context).apply { isClickable = true }))
+        generator.startTracking(checkBoxWindow)
+        tap(checkBoxWindow)
+        assertThat(widgetType(singleSpan())).isEqualTo("checkbox")
+
+        exporter.reset()
+        val buttonWindow = windowOf(frameRoot(Button(context).apply { isClickable = true; text = "Pay" }))
+        generator.startTracking(buttonWindow)
+        tap(buttonWindow)
+        assertThat(widgetType(singleSpan())).isEqualTo("button")
+    }
+
     private fun widgetName(span: SpanData): String? =
         span.attributes.get(AppIncubatingAttributes.APP_WIDGET_NAME)
+
+    private fun widgetType(span: SpanData): String? =
+        span.attributes.get(io.opentelemetry.api.common.AttributeKey.stringKey("app.widget.type"))
 
     private fun checkedState(span: SpanData): Boolean? =
         span.attributes.get(AttributeKey.booleanKey(ATTR_WIDGET_CHECKED))
