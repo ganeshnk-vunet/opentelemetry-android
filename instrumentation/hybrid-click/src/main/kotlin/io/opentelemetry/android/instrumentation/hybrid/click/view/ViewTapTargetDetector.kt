@@ -16,6 +16,7 @@ import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.RadioButton
+import android.widget.Switch
 import android.widget.TextView
 import android.widget.ToggleButton
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.LabelResolver
@@ -75,23 +76,26 @@ internal class ViewTapTargetDetector : TapTargetDetector {
 
     /** Maps a tapped View to a normalized widget kind. */
     private fun viewToType(view: View): String =
-        when {
-            view is EditText -> WIDGET_TYPE_TEXT_FIELD
-            view is CompoundButton ->
-                when {
-                    view is CheckBox -> WIDGET_TYPE_CHECKBOX
-                    view is RadioButton -> WIDGET_TYPE_RADIO
-                    view is ToggleButton -> WIDGET_TYPE_TOGGLE
-                    // Switch / SwitchCompat / MaterialSwitch — matched by name to avoid extra deps.
-                    view.javaClass.simpleName.contains("Switch", ignoreCase = true) -> WIDGET_TYPE_SWITCH
-                    else -> WIDGET_TYPE_TOGGLE
-                }
-            view is CheckedTextView -> WIDGET_TYPE_CHECKBOX
-            view is ImageButton -> WIDGET_TYPE_BUTTON
-            view is Button -> WIDGET_TYPE_BUTTON
-            view is ImageView -> WIDGET_TYPE_IMAGE
-            view is TextView -> WIDGET_TYPE_TEXT
+        when (view) {
+            is EditText -> WIDGET_TYPE_TEXT_FIELD
+            is CompoundButton -> compoundButtonType(view)
+            is CheckedTextView -> WIDGET_TYPE_CHECKBOX
+            is ImageButton -> WIDGET_TYPE_BUTTON
+            is Button -> WIDGET_TYPE_BUTTON
+            is ImageView -> WIDGET_TYPE_IMAGE
+            is TextView -> WIDGET_TYPE_TEXT
             else -> WIDGET_TYPE_VIEW
+        }
+
+    private fun compoundButtonType(view: CompoundButton): String =
+        when {
+            view is CheckBox -> WIDGET_TYPE_CHECKBOX
+            view is RadioButton -> WIDGET_TYPE_RADIO
+            view is ToggleButton -> WIDGET_TYPE_TOGGLE
+            // android.widget.Switch is matched by type; SwitchCompat / MaterialSwitch are matched by
+            // name to avoid pulling appcompat/material into this module.
+            view is Switch || view.javaClass.simpleName.contains("Switch", ignoreCase = true) -> WIDGET_TYPE_SWITCH
+            else -> WIDGET_TYPE_TOGGLE
         }
 
     /**
