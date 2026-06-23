@@ -13,14 +13,16 @@ import android.view.Window
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.mockk.every
 import io.mockk.mockk
-import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_WIDGET_CHECKED
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_WIDGET_TYPE
+import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.sdk.OpenTelemetrySdk
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
 import io.opentelemetry.sdk.trace.SdkTracerProvider
@@ -188,11 +190,25 @@ class ViewToggleClickTest {
         assertThat(widgetType(singleSpan())).isEqualTo("button")
     }
 
+    @Test
+    fun `clickable image view reports image type and clickable text view reports text type`() {
+        val imageWindow = windowOf(frameRoot(ImageView(context).apply { isClickable = true; contentDescription = "Logo" }))
+        generator.startTracking(imageWindow)
+        tap(imageWindow)
+        assertThat(widgetType(singleSpan())).isEqualTo("image")
+
+        exporter.reset()
+        val textWindow = windowOf(frameRoot(TextView(context).apply { isClickable = true; text = "Terms" }))
+        generator.startTracking(textWindow)
+        tap(textWindow)
+        assertThat(widgetType(singleSpan())).isEqualTo("text")
+    }
+
     private fun widgetName(span: SpanData): String? =
         span.attributes.get(AppIncubatingAttributes.APP_WIDGET_NAME)
 
     private fun widgetType(span: SpanData): String? =
-        span.attributes.get(io.opentelemetry.api.common.AttributeKey.stringKey("app.widget.type"))
+        span.attributes.get(AttributeKey.stringKey(ATTR_WIDGET_TYPE))
 
     private fun checkedState(span: SpanData): Boolean? =
         span.attributes.get(AttributeKey.booleanKey(ATTR_WIDGET_CHECKED))

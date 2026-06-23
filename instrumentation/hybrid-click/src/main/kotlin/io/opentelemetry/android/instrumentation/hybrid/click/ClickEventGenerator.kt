@@ -97,12 +97,17 @@ internal class ClickEventGenerator(
                     methodBaseName = "nodeToPosition",
                     parameterType = layoutNodeClass,
                 )
+            // Optional: an older detector build may not have nodeToType. Resolve it leniently so a
+            // missing method only degrades `type` to "unknown" rather than failing the whole bridge
+            // (which would disable all Compose click detection).
             val nodeToTypeMethod =
-                findMangledMethod(
-                    detectorClass = detectorClass,
-                    methodBaseName = "nodeToType",
-                    parameterType = layoutNodeClass,
-                )
+                runCatching {
+                    findMangledMethod(
+                        detectorClass = detectorClass,
+                        methodBaseName = "nodeToType",
+                        parameterType = layoutNodeClass,
+                    )
+                }.getOrNull()
             ReflectiveComposeDetectorBridge(
                 detector = detector,
                 findTapTargetMethod = findTapTargetMethod,
@@ -288,7 +293,7 @@ private class ReflectiveComposeDetectorBridge(
     private val nodeToNameMethod: Method,
     private val nodeToLabelMethod: Method,
     private val nodeToPositionMethod: Method,
-    private val nodeToTypeMethod: Method,
+    private val nodeToTypeMethod: Method?,
 ) : ComposeDetectorBridge {
     /**
      * Invokes reflected detector methods and maps the Compose node to hybrid [TapTarget].
@@ -305,7 +310,7 @@ private class ReflectiveComposeDetectorBridge(
             val position = nodeToPositionMethod.invoke(detector, node) as? Pair<*, *>
             val nodeX = (position?.first as? Long) ?: 0L
             val nodeY = (position?.second as? Long) ?: 0L
-            val type = nodeToTypeMethod.invoke(detector, node) as? String ?: WIDGET_TYPE_UNKNOWN
+            val type = nodeToTypeMethod?.invoke(detector, node) as? String ?: WIDGET_TYPE_UNKNOWN
             TapTarget(
                 source = SOURCE_COMPOSE,
                 widgetId = node.hashCode().toString(),

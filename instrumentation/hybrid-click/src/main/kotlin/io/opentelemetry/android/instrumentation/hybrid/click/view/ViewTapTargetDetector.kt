@@ -95,6 +95,8 @@ internal class ViewTapTargetDetector : TapTargetDetector {
             // android.widget.Switch is matched by type; SwitchCompat / MaterialSwitch are matched by
             // name to avoid pulling appcompat/material into this module.
             view is Switch || view.javaClass.simpleName.contains("Switch", ignoreCase = true) -> WIDGET_TYPE_SWITCH
+            // Intentional: any other CompoundButton (incl. custom/third-party ones) is a toggleable
+            // control, so it is reported as "toggle" rather than "unknown".
             else -> WIDGET_TYPE_TOGGLE
         }
 

@@ -21,6 +21,8 @@ import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
 import io.opentelemetry.sdk.trace.SdkTracerProvider
 import io.opentelemetry.sdk.trace.data.SpanData
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_WIDGET_TYPE
+import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.semconv.incubating.AppIncubatingAttributes
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.Before
@@ -144,7 +146,7 @@ class ViewEditTextClickTest {
         span.attributes.get(AppIncubatingAttributes.APP_WIDGET_NAME)
 
     private fun widgetType(span: SpanData): String? =
-        span.attributes.get(io.opentelemetry.api.common.AttributeKey.stringKey("app.widget.type"))
+        span.attributes.get(AttributeKey.stringKey(ATTR_WIDGET_TYPE))
 
     private companion object {
         const val VIEW_SIZE = 500

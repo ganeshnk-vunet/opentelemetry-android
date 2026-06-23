@@ -146,6 +146,8 @@ internal class ComposeTapTargetDetectorTest {
         assertThat(detector.widgetTypeOf(typeConfig(role = Role.Checkbox))).isEqualTo("checkbox")
         assertThat(detector.widgetTypeOf(typeConfig(role = Role.RadioButton))).isEqualTo("radio")
         assertThat(detector.widgetTypeOf(typeConfig(role = Role.Tab))).isEqualTo("tab")
+        assertThat(detector.widgetTypeOf(typeConfig(role = Role.Image))).isEqualTo("image")
+        assertThat(detector.widgetTypeOf(typeConfig(role = Role.DropdownList))).isEqualTo("dropdown")
     }
 
     @Test
