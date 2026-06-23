@@ -8,13 +8,30 @@ package io.opentelemetry.android.instrumentation.hybrid.click.view
 import android.text.InputType
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Button
+import android.widget.CheckBox
 import android.widget.CheckedTextView
 import android.widget.CompoundButton
 import android.widget.EditText
+import android.widget.ImageButton
+import android.widget.ImageView
+import android.widget.RadioButton
+import android.widget.Switch
+import android.widget.TextView
+import android.widget.ToggleButton
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.LabelResolver
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.SOURCE_VIEW
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.TapTarget
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.TapTargetDetector
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_BUTTON
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_CHECKBOX
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_IMAGE
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_RADIO
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_SWITCH
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_TEXT
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_TEXT_FIELD
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_TOGGLE
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_VIEW
 import java.util.LinkedList
 
 internal class ViewTapTargetDetector : TapTargetDetector {
@@ -52,9 +69,36 @@ internal class ViewTapTargetDetector : TapTargetDetector {
             label = viewToLabel(clickTarget),
             x = clickTarget.x.toLong(),
             y = clickTarget.y.toLong(),
+            type = viewToType(clickTarget),
             checkedStateProvider = checkedStateProviderOf(clickTarget),
         )
     }
+
+    /** Maps a tapped View to a normalized widget kind. */
+    private fun viewToType(view: View): String =
+        when (view) {
+            is EditText -> WIDGET_TYPE_TEXT_FIELD
+            is CompoundButton -> compoundButtonType(view)
+            is CheckedTextView -> WIDGET_TYPE_CHECKBOX
+            is ImageButton -> WIDGET_TYPE_BUTTON
+            is Button -> WIDGET_TYPE_BUTTON
+            is ImageView -> WIDGET_TYPE_IMAGE
+            is TextView -> WIDGET_TYPE_TEXT
+            else -> WIDGET_TYPE_VIEW
+        }
+
+    private fun compoundButtonType(view: CompoundButton): String =
+        when {
+            view is CheckBox -> WIDGET_TYPE_CHECKBOX
+            view is RadioButton -> WIDGET_TYPE_RADIO
+            view is ToggleButton -> WIDGET_TYPE_TOGGLE
+            // android.widget.Switch is matched by type; SwitchCompat / MaterialSwitch are matched by
+            // name to avoid pulling appcompat/material into this module.
+            view is Switch || view.javaClass.simpleName.contains("Switch", ignoreCase = true) -> WIDGET_TYPE_SWITCH
+            // Intentional: any other CompoundButton (incl. custom/third-party ones) is a toggleable
+            // control, so it is reported as "toggle" rather than "unknown".
+            else -> WIDGET_TYPE_TOGGLE
+        }
 
     /**
      * Returns a live checked-state reader, but only for genuine toggle widgets. We intentionally do

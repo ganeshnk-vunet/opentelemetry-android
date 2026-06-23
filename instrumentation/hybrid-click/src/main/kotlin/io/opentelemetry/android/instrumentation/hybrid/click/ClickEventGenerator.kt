@@ -15,7 +15,9 @@ import io.opentelemetry.android.common.RumDiagnostics
 import io.opentelemetry.android.common.internal.instrumentation.ActiveInteractionContext
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_WIDGET_CHECKED
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_WIDGET_SOURCE
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_WIDGET_TYPE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.SOURCE_COMPOSE
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_UNKNOWN
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.TapGestureClassifier
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.TapTarget
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.UI_CLICK_SPAN_NAME
@@ -95,12 +97,24 @@ internal class ClickEventGenerator(
                     methodBaseName = "nodeToPosition",
                     parameterType = layoutNodeClass,
                 )
+            // Optional: an older detector build may not have nodeToType. Resolve it leniently so a
+            // missing method only degrades `type` to "unknown" rather than failing the whole bridge
+            // (which would disable all Compose click detection).
+            val nodeToTypeMethod =
+                runCatching {
+                    findMangledMethod(
+                        detectorClass = detectorClass,
+                        methodBaseName = "nodeToType",
+                        parameterType = layoutNodeClass,
+                    )
+                }.getOrNull()
             ReflectiveComposeDetectorBridge(
                 detector = detector,
                 findTapTargetMethod = findTapTargetMethod,
                 nodeToNameMethod = nodeToNameMethod,
                 nodeToLabelMethod = nodeToLabelMethod,
                 nodeToPositionMethod = nodeToPositionMethod,
+                nodeToTypeMethod = nodeToTypeMethod,
             )
         } catch (_: Throwable) {
             null
@@ -182,6 +196,7 @@ internal class ClickEventGenerator(
                 .setAttribute(AppIncubatingAttributes.APP_SCREEN_COORDINATE_X, target.x)
                 .setAttribute(AppIncubatingAttributes.APP_SCREEN_COORDINATE_Y, target.y)
                 .setAttribute(ATTR_WIDGET_SOURCE, target.source)
+                .setAttribute(ATTR_WIDGET_TYPE, target.type)
                 .startSpan()
 
         val token = ActiveInteractionContext.begin(span)
@@ -278,6 +293,7 @@ private class ReflectiveComposeDetectorBridge(
     private val nodeToNameMethod: Method,
     private val nodeToLabelMethod: Method,
     private val nodeToPositionMethod: Method,
+    private val nodeToTypeMethod: Method?,
 ) : ComposeDetectorBridge {
     /**
      * Invokes reflected detector methods and maps the Compose node to hybrid [TapTarget].
@@ -294,6 +310,7 @@ private class ReflectiveComposeDetectorBridge(
             val position = nodeToPositionMethod.invoke(detector, node) as? Pair<*, *>
             val nodeX = (position?.first as? Long) ?: 0L
             val nodeY = (position?.second as? Long) ?: 0L
+            val type = nodeToTypeMethod?.invoke(detector, node) as? String ?: WIDGET_TYPE_UNKNOWN
             TapTarget(
                 source = SOURCE_COMPOSE,
                 widgetId = node.hashCode().toString(),
@@ -301,6 +318,7 @@ private class ReflectiveComposeDetectorBridge(
                 label = label,
                 x = nodeX,
                 y = nodeY,
+                type = type,
             )
         } catch (_: Throwable) {
             null
