@@ -17,6 +17,7 @@ import io.opentelemetry.android.internal.services.Services
 import io.opentelemetry.android.internal.services.applifecycle.AppLifecycle
 import io.opentelemetry.android.session.SessionObserver
 import org.junit.After
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -53,6 +54,46 @@ class OpenTelemetryRumInitializerTest {
         verify {
             appLifecycle.registerListener(any<SessionIdTimeoutHandler>())
         }
+    }
+
+    @Test
+    fun `spanExporterCustomizer is forwarded to builder`() {
+        var customizerInvoked = false
+        val rum = OpenTelemetryRumInitializer.initialize(
+            context = RuntimeEnvironment.getApplication(),
+            configuration = {
+                httpExport {
+                    baseUrl = "http://127.0.0.1:4318"
+                }
+                spanExporterCustomizer { exporter ->
+                    customizerInvoked = true
+                    exporter
+                }
+            },
+        )
+        rum.shutdown()
+
+        assertTrue(customizerInvoked)
+    }
+
+    @Test
+    fun `logRecordExporterCustomizer is forwarded to builder`() {
+        var customizerInvoked = false
+        val rum = OpenTelemetryRumInitializer.initialize(
+            context = RuntimeEnvironment.getApplication(),
+            configuration = {
+                httpExport {
+                    baseUrl = "http://127.0.0.1:4318"
+                }
+                logRecordExporterCustomizer { exporter ->
+                    customizerInvoked = true
+                    exporter
+                }
+            },
+        )
+        rum.shutdown()
+
+        assertTrue(customizerInvoked)
     }
 
     @Test

@@ -12,7 +12,9 @@ import io.opentelemetry.android.config.OtelRumConfig
 import io.opentelemetry.android.instrumentation.AndroidInstrumentationLoader
 import io.opentelemetry.api.common.Attributes
 import io.opentelemetry.sdk.common.Clock
+import io.opentelemetry.sdk.logs.export.LogRecordExporter
 import io.opentelemetry.sdk.resources.ResourceBuilder
+import io.opentelemetry.sdk.trace.export.SpanExporter
 
 /**
  * Type-safe config DSL that controls how OpenTelemetry should behave.
@@ -32,6 +34,8 @@ class OpenTelemetryConfiguration internal constructor(
     internal val sessionConfig = SessionConfiguration()
     internal val instrumentations = InstrumentationConfiguration(rumConfig, instrumentationLoader)
     internal var resourceAction: ResourceBuilder.() -> Unit = {}
+    internal var spanExporterCustomizerAction: (SpanExporter) -> SpanExporter = { it }
+    internal var logRecordExporterCustomizerAction: (LogRecordExporter) -> LogRecordExporter = { it }
 
     /**
      * When true, enables verbose diagnostics across instrumentations and OTLP export decorators.
@@ -87,5 +91,20 @@ class OpenTelemetryConfiguration internal constructor(
      */
     fun resource(action: ResourceBuilder.() -> Unit) {
         resourceAction = action
+    }
+
+    /**
+     * Wraps the OTLP span exporter after diagnostic decorators are applied.
+     * Use for export-time filtering or enrichment of finished spans.
+     */
+    fun spanExporterCustomizer(action: (SpanExporter) -> SpanExporter) {
+        spanExporterCustomizerAction = action
+    }
+
+    /**
+     * Wraps the OTLP log record exporter after diagnostic decorators are applied.
+     */
+    fun logRecordExporterCustomizer(action: (LogRecordExporter) -> LogRecordExporter) {
+        logRecordExporterCustomizerAction = action
     }
 }
