@@ -15,7 +15,27 @@ internal class ActionSummarySpanExporter(
     private val delegate: SpanExporter,
 ) : SpanExporter {
     override fun export(spans: Collection<SpanData>): CompletableResultCode =
-        delegate.export(spans.map { addSummaryIfApplicable(it) })
+        delegate.export(enrich(spans))
+
+    private fun enrich(spans: Collection<SpanData>): Collection<SpanData> {
+        var result: ArrayList<SpanData>? = null
+        var index = 0
+        for (span in spans) {
+            val enriched = addSummaryIfApplicable(span)
+            if (result == null && enriched !== span) {
+                result =
+                    ArrayList<SpanData>(spans.size).apply {
+                        for (prior in spans) {
+                            if (size == index) break
+                            add(prior)
+                        }
+                    }
+            }
+            result?.add(enriched)
+            index++
+        }
+        return result ?: spans
+    }
 
     private fun addSummaryIfApplicable(span: SpanData): SpanData {
         val summary = ActionSummarizer.summarize(span) ?: return span
