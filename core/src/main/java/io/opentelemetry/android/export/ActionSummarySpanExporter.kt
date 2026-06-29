@@ -6,7 +6,6 @@
 package io.opentelemetry.android.export
 
 import io.opentelemetry.android.common.RumConstants
-import io.opentelemetry.api.common.Attributes
 import io.opentelemetry.sdk.common.CompletableResultCode
 import io.opentelemetry.sdk.trace.data.SpanData
 import io.opentelemetry.sdk.trace.export.SpanExporter
