@@ -1,6 +1,7 @@
 public final class io/opentelemetry/android/common/RumConstants {
 	public static final field ACTIVITY_LIFECYCLE_EVENT_KEY Lio/opentelemetry/api/common/AttributeKey;
 	public static final field ACTIVITY_LIFECYCLE_SPAN_NAME Ljava/lang/String;
+	public static final field APP_FRAMEWORK_KEY Lio/opentelemetry/api/common/AttributeKey;
 	public static final field APP_START_SPAN_NAME Ljava/lang/String;
 	public static final field BATTERY_PERCENT_KEY Lio/opentelemetry/api/common/AttributeKey;
 	public static final field FRAGMENT_LIFECYCLE_EVENT_KEY Lio/opentelemetry/api/common/AttributeKey;
