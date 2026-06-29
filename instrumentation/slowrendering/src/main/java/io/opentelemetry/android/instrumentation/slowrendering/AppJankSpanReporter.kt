@@ -8,15 +8,16 @@ package io.opentelemetry.android.instrumentation.slowrendering
 import io.opentelemetry.android.common.RumDiagnostics
 import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.api.common.Attributes
-import io.opentelemetry.api.logs.Logger
+import io.opentelemetry.api.trace.Tracer
+import java.time.Instant
 
 // TODO: Replace with semconv constants
 internal val FRAME_COUNT: AttributeKey<Long> = AttributeKey.longKey("app.jank.frame_count")
 internal val PERIOD: AttributeKey<Double> = AttributeKey.doubleKey("app.jank.period")
 internal val THRESHOLD: AttributeKey<Double> = AttributeKey.doubleKey("app.jank.threshold")
 
-internal class EventJankReporter(
-    private val eventLogger: Logger,
+internal class AppJankSpanReporter(
+    private val tracer: Tracer,
     private val threshold: Double,
     private val debugVerbose: Boolean = false,
 ) : JankReporter {
@@ -38,7 +39,7 @@ internal class EventJankReporter(
         }
 
         if (frameCount > 0) {
-            val eventBuilder = eventLogger.logRecordBuilder()
+            val now = Instant.now()
             val attributes =
                 Attributes
                     .builder()
@@ -46,10 +47,12 @@ internal class EventJankReporter(
                     .put(PERIOD, periodSeconds)
                     .put(THRESHOLD, threshold)
                     .build()
-            eventBuilder
-                .setEventName("app.jank")
+            tracer
+                .spanBuilder("app.jank")
                 .setAllAttributes(attributes)
-                .emit()
+                .setStartTimestamp(now)
+                .startSpan()
+                .end(now)
         }
     }
 }

@@ -13,14 +13,14 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.Rule
 import org.junit.jupiter.api.Test
 
-class EventJankReporterTest {
+class AppJankSpanReporterTest {
     @Rule
     var otelTesting: OpenTelemetryRule = OpenTelemetryRule.create()
 
     @Test
-    fun `event is generated`() {
-        val eventLogger = otelTesting.openTelemetry.logsBridge.get("JANK!")
-        val jankReporter = EventJankReporter(eventLogger, 0.600)
+    fun `span is generated`() {
+        val tracer = otelTesting.openTelemetry.getTracer("JANK!")
+        val jankReporter = AppJankSpanReporter(tracer, 0.600)
         val histogramData = HashMap<Int, Int>()
         histogramData[17] = 3
         histogramData[701] = 1
@@ -30,11 +30,11 @@ class EventJankReporterTest {
 
         jankReporter.reportSlow(histogramData, 10.5, "io.otel/Komponent")
 
-        assertThat(otelTesting.logRecords.size).isEqualTo(1)
-        val log = otelTesting.logRecords.get(0)
-        assertThat(log.eventName).isEqualTo("app.jank")
-        assertThat(log.attributes.get(FRAME_COUNT)).isEqualTo(1)
-        assertThat(log.attributes.get(PERIOD)).isEqualTo(10.5)
-        assertThat(log.attributes.get(THRESHOLD)).isEqualTo(0.6)
+        assertThat(otelTesting.spans.size).isEqualTo(1)
+        val span = otelTesting.spans.get(0)
+        assertThat(span.name).isEqualTo("app.jank")
+        assertThat(span.attributes.get(FRAME_COUNT)).isEqualTo(1)
+        assertThat(span.attributes.get(PERIOD)).isEqualTo(10.5)
+        assertThat(span.attributes.get(THRESHOLD)).isEqualTo(0.6)
     }
 }
