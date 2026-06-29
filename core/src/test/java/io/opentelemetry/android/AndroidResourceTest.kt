@@ -14,6 +14,7 @@ import io.mockk.every
 import io.mockk.impl.annotations.RelaxedMockK
 import io.mockk.mockk
 import io.mockk.slot
+import io.opentelemetry.android.common.RumConstants
 import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.sdk.resources.Resource
 import io.opentelemetry.sdk.resources.ResourceBuilder
@@ -84,6 +85,7 @@ internal class AndroidResourceTest {
                     Build.VERSION.SDK_INT.toString(),
                 ).put(OsIncubatingAttributes.OS_DESCRIPTION, osDescription)
                 .put(AppIncubatingAttributes.APP_INSTALLATION_ID, installId)
+                .put(RumConstants.APP_FRAMEWORK_KEY, "native_android")
     }
 
     @Test
