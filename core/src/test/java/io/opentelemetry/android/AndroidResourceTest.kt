@@ -105,6 +105,35 @@ internal class AndroidResourceTest {
     }
 
     @Test
+    fun `resolveAppFramework detects flutter`() {
+        assertEquals(
+            "flutter",
+            AndroidResource.resolveAppFramework { it == "io.flutter.embedding.engine.FlutterEngine" },
+        )
+    }
+
+    @Test
+    fun `resolveAppFramework detects react native via ReactApplication`() {
+        assertEquals(
+            "react_native",
+            AndroidResource.resolveAppFramework { it == "com.facebook.react.ReactApplication" },
+        )
+    }
+
+    @Test
+    fun `resolveAppFramework detects react native via legacy ReactRootView`() {
+        assertEquals(
+            "react_native",
+            AndroidResource.resolveAppFramework { it == "com.facebook.react.ReactRootView" },
+        )
+    }
+
+    @Test
+    fun `resolveAppFramework falls back to native_android when no marker present`() {
+        assertEquals("native_android", AndroidResource.resolveAppFramework { false })
+    }
+
+    @Test
     fun `fall back to nonLocalizedLabel if needed`() {
         appInfo =
             ApplicationInfo().apply {

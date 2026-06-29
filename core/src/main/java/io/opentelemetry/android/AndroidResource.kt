@@ -8,6 +8,7 @@ package io.opentelemetry.android
 import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Build
+import androidx.annotation.VisibleForTesting
 import io.opentelemetry.android.common.RumConstants.APP_FRAMEWORK_KEY
 import io.opentelemetry.sdk.resources.Resource
 import io.opentelemetry.semconv.ServiceAttributes.SERVICE_NAME
@@ -33,10 +34,15 @@ private const val FRAMEWORK_NATIVE = "native_android"
 /**
  * Marker classes that, when present on the classpath, identify a cross-platform shell. Ordered by
  * priority; the first present marker wins. Falls back to [FRAMEWORK_NATIVE] when none resolve.
+ *
+ * React Native is matched primarily on `ReactApplication`, a core interface that is stable across
+ * the legacy bridge and the new (Fabric/bridgeless) architecture; `ReactRootView` is kept as a
+ * secondary marker for older RN versions where the primary one may be absent.
  */
 private val FRAMEWORK_MARKERS: List<Pair<String, String>> =
     listOf(
         "io.flutter.embedding.engine.FlutterEngine" to FRAMEWORK_FLUTTER,
+        "com.facebook.react.ReactApplication" to FRAMEWORK_REACT_NATIVE,
         "com.facebook.react.ReactRootView" to FRAMEWORK_REACT_NATIVE,
     )
 
@@ -70,12 +76,14 @@ object AndroidResource {
     private val appFramework: String by lazy { resolveAppFramework() }
 
     /**
-     * Resolves the framework by probing for marker classes on the classpath, returning the first
-     * match in priority order. Falls back to [FRAMEWORK_NATIVE] when no cross-platform marker resolves.
+     * Resolves the framework by probing for marker classes, returning the first match in priority
+     * order. Falls back to [FRAMEWORK_NATIVE] when no cross-platform marker resolves. The
+     * [isPresent] probe is injectable so all branches can be exercised without the real classpath.
      */
-    private fun resolveAppFramework(): String {
+    @VisibleForTesting
+    internal fun resolveAppFramework(isPresent: (String) -> Boolean = ::isClassPresent): String {
         for ((className, framework) in FRAMEWORK_MARKERS) {
-            if (isClassPresent(className)) {
+            if (isPresent(className)) {
                 return framework
             }
         }
