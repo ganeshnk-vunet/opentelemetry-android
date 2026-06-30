@@ -15,26 +15,26 @@ every 1 second.
 This instrumentation produces the following telemetry, with an instrumentation
 scope of `app.jank`.
 
-### Slow Renders (Event)
+### Slow Renders (Span)
 
 Generated when rendering takes more than 16ms within a polling period.
 
-* Type: Event
-* Event Name: `app.jank`
-* Description: This event is emitted when frame metrics contain at least
+* Type: Span (zero duration)
+* Name: `app.jank`
+* Description: This span is emitted when frame metrics contain at least
   one render duration longer than 16ms (the slow rendering threshold).
 * Attributes:
   * `app.jank.frame_count` - the number of frames that exceeded the threshold
   * `app.jank.period` - the polling period duration in seconds during which the frames were detected
   * `app.jank.threshold` - the threshold in seconds above which a frame is considered slow (e.g. `0.016`)
 
-### Frozen Renders (Event)
+### Frozen Renders (Span)
 
 Generated when rendering takes more than 700ms within a polling period.
 
-* Type: Event
-* Event Name: `app.jank`
-* Description: This event is emitted when frame metrics contain at least
+* Type: Span (zero duration)
+* Name: `app.jank`
+* Description: This span is emitted when frame metrics contain at least
   one render duration longer than 700ms (the frozen rendering threshold).
 * Attributes:
   * `app.jank.frame_count` - the number of frames that exceeded the threshold
@@ -45,10 +45,11 @@ Generated when rendering takes more than 700ms within a polling period.
 
 > **Deprecated.** Zero-duration spans are no longer emitted by default. They can be re-enabled
 > via `enableDeprecatedZeroDurationSpan()` for backwards compatibility, but this is discouraged.
-> Use the `app.jank` events above instead.
+> Use the `app.jank` spans above instead.
 
 When enabled via `enableDeprecatedZeroDurationSpan()`, the instrumentation additionally produces
-spans with an instrumentation scope of `io.opentelemetry.slow-rendering`.
+spans named `slowRenders`/`frozenRenders` with an instrumentation scope of
+`io.opentelemetry.slow-rendering`.
 
 #### Slow Renders (Span)
 

@@ -42,6 +42,10 @@ object RumConstants {
     val FRAGMENT_LIFECYCLE_EVENT_KEY: AttributeKey<String> =
         AttributeKey.stringKey("fragment.lifecycle.event")
 
+    @JvmField
+    val APP_ACTION_SUMMARY_KEY: AttributeKey<String> =
+        AttributeKey.stringKey("app.action.summary")
+
     object Events {
         const val INIT_EVENT_STARTED: String = "rum.sdk.init.started"
         const val INIT_EVENT_CONFIG: String = "rum.sdk.init.config"
