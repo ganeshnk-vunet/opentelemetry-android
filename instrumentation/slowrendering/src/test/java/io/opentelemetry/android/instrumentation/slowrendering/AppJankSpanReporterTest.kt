@@ -37,4 +37,27 @@ class AppJankSpanReporterTest {
         assertThat(span.attributes.get(PERIOD)).isEqualTo(10.5)
         assertThat(span.attributes.get(THRESHOLD)).isEqualTo(0.6)
     }
+
+    @Test
+    fun `span has no parent even when an ambient span is active`() {
+        val tracer = otelTesting.openTelemetry.getTracer("JANK!")
+        val jankReporter = AppJankSpanReporter(tracer, 0.600)
+        val histogramData = HashMap<Int, Int>()
+        histogramData[701] = 1
+
+        mockkStatic(Log::class)
+        every { Log.d(any(), any()) } returns 0
+
+        val parent = tracer.spanBuilder("activity.lifecycle").startSpan()
+        val scope = parent.makeCurrent()
+        try {
+            jankReporter.reportSlow(histogramData, 10.5, "io.otel/Komponent")
+        } finally {
+            scope.close()
+            parent.end()
+        }
+
+        val jankSpan = otelTesting.spans.first { it.name == "app.jank" }
+        assertThat(jankSpan.parentSpanContext.isValid).isFalse()
+    }
 }

@@ -49,6 +49,7 @@ internal class AppJankSpanReporter(
                     .build()
             tracer
                 .spanBuilder("app.jank")
+                .setNoParent()
                 .setAllAttributes(attributes)
                 .setStartTimestamp(now)
                 .startSpan()
