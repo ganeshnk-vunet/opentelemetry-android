@@ -17,8 +17,7 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import io.opentelemetry.android.OpenTelemetryRum
-import io.opentelemetry.api.logs.Logger
-import io.opentelemetry.api.logs.LoggerProvider
+import io.opentelemetry.api.trace.Tracer
 import io.opentelemetry.sdk.OpenTelemetrySdk
 import io.opentelemetry.sdk.common.Clock
 import java.time.Duration
@@ -39,15 +38,13 @@ class SlowRenderingInstrumentationTest {
     private lateinit var openTelemetry: OpenTelemetrySdk
 
     @MockK
-    private lateinit var logger: Logger
+    private lateinit var tracer: Tracer
 
     @Before
     fun setUp() {
         MockKAnnotations.init(this)
-        val logsBridge: LoggerProvider = mockk()
         slowRenderingInstrumentation = SlowRenderingInstrumentation()
-        every { openTelemetry.logsBridge } returns logsBridge
-        every { logsBridge.get("app.jank") } returns logger
+        every { openTelemetry.getTracer("app.jank") } returns tracer
     }
 
     @Test

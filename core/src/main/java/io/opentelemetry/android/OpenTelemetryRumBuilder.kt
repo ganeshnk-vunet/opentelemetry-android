@@ -14,6 +14,7 @@ import io.opentelemetry.android.AndroidResource.createDefault
 import io.opentelemetry.android.AndroidResource.createMinimal
 import io.opentelemetry.android.common.RumConstants
 import io.opentelemetry.android.config.OtelRumConfig
+import io.opentelemetry.android.export.ActionSummarySpanExporter
 import io.opentelemetry.android.export.BufferDelegatingLogExporter
 import io.opentelemetry.android.export.BufferDelegatingMetricExporter
 import io.opentelemetry.android.export.BufferDelegatingSpanExporter
@@ -404,6 +405,7 @@ class OpenTelemetryRumBuilder internal constructor(
         var spanExporter = buildSpanExporter()
         spanExporter = SelectiveResourceSpanExporter(spanExporter, resource)
         spanExporter = MarkerSpanExporter(spanExporter)
+        spanExporter = ActionSummarySpanExporter(spanExporter)
         var logsExporter: LogRecordExporter = MarkerLogRecordExporter(buildLogsExporter())
         var metricExporter: MetricExporter = MarkerMetricExporter(buildMetricExporter())
         var signalFromDiskExporter: SignalFromDiskExporter? = null
