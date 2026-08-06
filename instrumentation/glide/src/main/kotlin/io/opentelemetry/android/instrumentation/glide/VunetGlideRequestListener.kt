@@ -7,8 +7,10 @@ package io.opentelemetry.android.instrumentation.glide
 
 import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.load.engine.GlideException
+import com.bumptech.glide.load.model.GlideUrl
 import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.target.Target
+import io.opentelemetry.android.common.internal.imageload.ImageLoadAttributes
 import io.opentelemetry.api.trace.Span
 import io.opentelemetry.api.trace.StatusCode
 import java.util.concurrent.TimeUnit
@@ -73,7 +75,9 @@ class VunetGlideRequestListener : RequestListener<Any> {
                 val tracer = GlideInstrumentation.tracer ?: return false
                 tracer.spanBuilder(IMAGE_LOAD_SPAN_NAME)
                     .setStartTimestamp(receivedAtEpochNanos, TimeUnit.NANOSECONDS)
-                    .setAttribute(ATTR_IMAGE_URL, sanitizeModel(model.toString()))
+                    .also { builder ->
+                        urlForModel(model)?.let { builder.setAttribute(ATTR_IMAGE_URL, it) }
+                    }
                     .setAttribute(ATTR_IMAGE_MODEL_TYPE, model.javaClass.name)
                     .startSpan()
                     .also { memSpan ->
@@ -107,13 +111,17 @@ class VunetGlideRequestListener : RequestListener<Any> {
                 val tracer = GlideInstrumentation.tracer ?: return false
                 tracer.spanBuilder(IMAGE_LOAD_SPAN_NAME)
                     .setStartTimestamp(receivedAtEpochNanos, TimeUnit.NANOSECONDS)
-                    .setAttribute(ATTR_IMAGE_URL, sanitizeModel(model.toString()))
+                    .also { builder ->
+                        urlForModel(model)?.let { builder.setAttribute(ATTR_IMAGE_URL, it) }
+                    }
                     .setAttribute(ATTR_IMAGE_MODEL_TYPE, model.javaClass.name)
                     .startSpan()
             }
             activeSpan.setAttribute(ATTR_IMAGE_IS_FIRST_RESOURCE, isFirstResource)
             activeSpan.setAttribute(ATTR_IMAGE_LOAD_STATUS, STATUS_ERROR)
-            if (e != null) activeSpan.recordException(e)
+            // Never Span.recordException here: GlideException aggregates root causes whose raw
+            // messages routinely embed the full unsanitised URL (tokens included).
+            if (e != null) ImageLoadAttributes.recordSanitizedException(activeSpan, e)
             activeSpan.setStatus(StatusCode.ERROR)
             activeSpan.end()
             false
@@ -129,4 +137,20 @@ private fun DataSource.toSourceLabel(): String =
         DataSource.LOCAL -> SOURCE_DISK
         DataSource.REMOTE -> SOURCE_NETWORK
         DataSource.DATA_DISK_CACHE, DataSource.RESOURCE_DISK_CACHE -> SOURCE_DISK_CACHE
+    }
+
+/**
+ * Returns the sanitised URL for URL-like models, or null for everything else.
+ *
+ * The global [RequestListener] receives **every** Glide model — including [java.io.File],
+ * `byte[]`, resource IDs, and arbitrary custom model classes whose `toString()` may embed
+ * customer data (PII) or, for base64 `data:` URI strings, hundreds of kilobytes of payload.
+ * Only models that are genuinely URL-shaped are recorded as `image.url`; all other types are
+ * identified by `image.model_type` alone.
+ */
+private fun urlForModel(model: Any): String? =
+    when (model) {
+        is String, is android.net.Uri, is java.net.URL, is GlideUrl ->
+            sanitizeModel(model.toString())
+        else -> null
     }

@@ -31,13 +31,22 @@ import kotlinx.coroutines.withContext
  */
 class VunetCoilInterceptor : Interceptor {
     override suspend fun intercept(chain: Interceptor.Chain): ImageResult {
-        val key = System.identityHashCode(chain.request)
-        val span = CoilSpanStore.spans[key]
+        // Defensive: telemetry lookup failures must never break the image pipeline. Note the
+        // lookup keys on the identity of chain.request — if another interceptor rebuilt the
+        // request before this one runs, the lookup misses and OkHttp spans lose their parent,
+        // so register this interceptor FIRST (see README).
+        val contextElement =
+            try {
+                val key = System.identityHashCode(chain.request)
+                CoilSpanStore.spans[key]?.asContextElement()
+            } catch (_: Throwable) {
+                null
+            }
 
-        return if (span != null) {
+        return if (contextElement != null) {
             // Propagate the exact span from the EventListener into the coroutine context.
             // The OTel OkHttp instrumentation captures this automatically during newCall.
-            withContext(span.asContextElement()) {
+            withContext(contextElement) {
                 chain.proceed(chain.request)
             }
         } else {

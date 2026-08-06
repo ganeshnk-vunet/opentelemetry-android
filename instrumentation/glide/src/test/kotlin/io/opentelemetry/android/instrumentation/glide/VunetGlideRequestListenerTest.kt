@@ -158,6 +158,24 @@ class VunetGlideRequestListenerTest {
     }
 
     @Test
+    fun `onLoadFailed exception event never contains query-string tokens`() {
+        val model = "https://cdn.bank.com/profile.png?auth=tokenXYZ"
+        primeStore(model)
+        // GlideException messages routinely embed the full request URL, tokens included.
+        val exception = GlideException("Fetch failed for https://cdn.bank.com/profile.png?auth=tokenXYZ")
+
+        listener.onLoadFailed(exception, model, mockk(relaxed = true), true)
+
+        val span = otelTesting.spans[0]
+        val exceptionEvent = span.events.first { it.name == "exception" }
+        val serialized = exceptionEvent.attributes.asMap().values.joinToString()
+        assertThat(serialized).doesNotContain("tokenXYZ")
+        assertThat(serialized).doesNotContain("auth=")
+        // The exception type must still be present for debuggability.
+        assertThat(serialized).contains("GlideException")
+    }
+
+    @Test
     fun `onLoadFailed with null exception does not throw`() {
         val model = "https://example.com/img.png"
         primeStore(model)
@@ -200,6 +218,26 @@ class VunetGlideRequestListenerTest {
         // URL sanitisation must strip the query parameter
         assertThat(span.attributes[ATTR_IMAGE_URL]).isEqualTo("https://cdn.bank.com/logo.png")
         assertThat(span.attributes[ATTR_IMAGE_URL]).doesNotContain("SECRET")
+
+        GlideInstrumentation.tracer = null
+    }
+
+    @Test
+    fun `synthetic span for a non-URL model records model type but no image url`() {
+        GlideInstrumentation.tracer =
+            otelTesting.openTelemetry.tracerProvider.tracerBuilder("test").build()
+
+        // A custom model class whose toString() embeds customer data — must never be recorded.
+        class AccountAvatarModel(val accountNumber: String) {
+            override fun toString(): String = "AccountAvatarModel(accountNumber=$accountNumber)"
+        }
+        val model = AccountAvatarModel("XX-1234-SECRET")
+
+        listener.onResourceReady(Any(), model, null, DataSource.MEMORY_CACHE, true)
+
+        val span = otelTesting.spans[0]
+        assertThat(span.attributes[ATTR_IMAGE_URL]).isNull()
+        assertThat(span.attributes[ATTR_IMAGE_MODEL_TYPE]).contains("AccountAvatarModel")
 
         GlideInstrumentation.tracer = null
     }

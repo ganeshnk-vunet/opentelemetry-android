@@ -6,6 +6,8 @@
 package io.opentelemetry.android.common.internal.imageload
 
 import io.opentelemetry.api.common.AttributeKey
+import io.opentelemetry.api.common.Attributes
+import io.opentelemetry.api.trace.Span
 
 /**
  * Shared span name, attribute keys, and canonical label values for image-load telemetry.
@@ -46,11 +48,56 @@ object ImageLoadAttributes {
     const val SOURCE_DISK_CACHE: String = "disk_cache"
 
     /**
-     * Strips query parameters from a raw URL/model string to avoid leaking sensitive tokens
-     * (auth, signatures) into telemetry attributes. Critical for BFSI compliance.
+     * Maximum length for URL-like attribute values. Protects the export pipeline from
+     * pathological models such as base64 `data:` URIs (which have no query separator and can
+     * be hundreds of kilobytes long).
      */
-    fun sanitizeUrl(raw: String): String {
-        val withoutQuery = raw.substringBefore('?')
-        return withoutQuery.ifBlank { raw }
+    private const val MAX_ATTRIBUTE_LENGTH = 512
+
+    /** `?` or `#` followed by non-whitespace — used to scrub URLs embedded in free text. */
+    private val EMBEDDED_QUERY_OR_FRAGMENT = Regex("""[?#]\S*""")
+
+    private val EXCEPTION_TYPE: AttributeKey<String> = AttributeKey.stringKey("exception.type")
+    private val EXCEPTION_MESSAGE: AttributeKey<String> = AttributeKey.stringKey("exception.message")
+
+    /**
+     * Strips query parameters and fragments from a raw URL/model string to avoid leaking
+     * sensitive tokens (auth, signatures) into telemetry attributes, and truncates the result
+     * to [MAX_ATTRIBUTE_LENGTH]. Critical for BFSI compliance.
+     *
+     * Fails closed: an input that is blank up to the first `?`/`#` (e.g. `"?token=..."`)
+     * yields an empty string — never the raw input.
+     */
+    fun sanitizeUrl(raw: String): String =
+        raw
+            .substringBefore('?')
+            .substringBefore('#')
+            .take(MAX_ATTRIBUTE_LENGTH)
+
+    /**
+     * Scrubs URL query strings / fragments embedded anywhere in a free-text error message and
+     * truncates to [MAX_ATTRIBUTE_LENGTH]. Exception messages from HTTP stacks routinely embed
+     * the full request URL (tokens included), so they must never be recorded verbatim.
+     */
+    fun sanitizeErrorMessage(raw: String?): String? =
+        raw
+            ?.replace(EMBEDDED_QUERY_OR_FRAGMENT, "")
+            ?.take(MAX_ATTRIBUTE_LENGTH)
+
+    /**
+     * Records a sanitised `exception` event on [span]: the exception class name plus a message
+     * scrubbed via [sanitizeErrorMessage]. Deliberately does **not** use
+     * [Span.recordException] — that would serialise raw messages of the whole cause chain
+     * (and stack-trace text), which for HTTP failures typically contains the unsanitised URL.
+     */
+    fun recordSanitizedException(
+        span: Span,
+        throwable: Throwable,
+    ) {
+        val attributes = Attributes.builder().put(EXCEPTION_TYPE, throwable.javaClass.name)
+        sanitizeErrorMessage(throwable.message)
+            ?.takeIf { it.isNotBlank() }
+            ?.let { attributes.put(EXCEPTION_MESSAGE, it) }
+        span.addEvent("exception", attributes.build())
     }
 }

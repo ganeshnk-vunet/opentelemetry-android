@@ -217,6 +217,23 @@ class CoilOtelEventListenerTest {
         assertThat(exceptionEvent).isNotNull()
     }
 
+    @Test
+    fun `onError exception event never contains query-string tokens`() {
+        val request = buildRequest("https://cdn.bank.com/photo.jpg?token=SECRET")
+        listener.onStart(request)
+        // HTTP-stack exception messages routinely embed the full request URL, tokens included.
+        val throwable =
+            java.io.IOException("Failed to fetch https://cdn.bank.com/photo.jpg?token=SECRET&sig=abc")
+        listener.onError(request, buildErrorResult(request, throwable))
+
+        val exceptionEvent = otelTesting.spans[0].events.first { it.name == "exception" }
+        val serialized = exceptionEvent.attributes.asMap().values.joinToString()
+        assertThat(serialized).doesNotContain("SECRET")
+        assertThat(serialized).doesNotContain("token=")
+        // The exception type must still be present for debuggability.
+        assertThat(serialized).contains("IOException")
+    }
+
     // ---------------------------------------------------------------------------
     // onCancel
     // ---------------------------------------------------------------------------

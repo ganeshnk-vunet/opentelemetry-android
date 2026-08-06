@@ -7,9 +7,12 @@ image request made through [Coil](https://coil-kt.github.io/coil/) (version 2.x)
 the image source, load outcome, and a sanitised URL without requiring any change to existing
 image-loading call sites.
 
-Image URLs are automatically sanitised before recording: everything after the first `?` is
-stripped, so authentication tokens, signed parameters, and other sensitive query-string data
-never reach the telemetry back-end — a hard requirement for BFSI and banking applications.
+Image URLs are automatically sanitised before recording: everything after the first `?` or `#`
+is stripped and the value is truncated to 512 characters, so authentication tokens, signed
+parameters, and other sensitive query-string data never reach the telemetry back-end — a hard
+requirement for BFSI and banking applications. Exception messages recorded on failure are
+scrubbed the same way (embedded query strings removed) because HTTP-stack exceptions routinely
+embed the full request URL in their message.
 
 This instrumentation is **not** included in the `android-agent` by default and must be
 declared as an explicit dependency.
@@ -33,10 +36,14 @@ Data produced by this instrumentation uses instrumentation scope name
         * `"network"` — fetched from the network (OkHttp child spans will appear under this span)
         * `"disk"` — served from Coil's disk cache
         * `"memory"` — served from Coil's memory cache or in-memory bitmap pool
-    * `image.load.status` — `"success"` or `"error"`
+    * `image.load.status` — `"success"`, `"error"`, or `"cancelled"` (request disposed before
+      completion, e.g. fast scrolling — span status stays UNSET since a cancellation is not an
+      error)
 
-On failure, the span status is set to `ERROR` and the throwable is recorded on the span
-via `span.recordException`.
+On failure, the span status is set to `ERROR` and a sanitised `exception` event is recorded on
+the span (exception class name plus a query-scrubbed message). `span.recordException` is
+deliberately **not** used: it would serialise the raw messages of the entire cause chain, which
+for HTTP failures typically contain the unsanitised URL, tokens included.
 
 ### OkHttp child spans
 
@@ -45,6 +52,13 @@ child `GET` spans under the `image.load` span. This works because `VunetCoilInte
 the downstream chain execution in `withContext(span.asContextElement())`, propagating the
 `image.load` span into the coroutine context before OkHttp executes. Both the interceptor
 and the event listener factory must be registered (see Installation below).
+
+> [!IMPORTANT]
+> `VunetCoilInterceptor` looks up the span by the **identity** of the incoming request. If
+> another interceptor rebuilds the request (`request.newBuilder().build()`) before this one
+> runs, the lookup misses and OkHttp spans silently lose their parent. Register
+> `VunetCoilInterceptor` **first** in the `components { }` block, ahead of any other
+> interceptors.
 
 ## Installation
 

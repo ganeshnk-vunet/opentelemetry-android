@@ -73,7 +73,7 @@ internal class CoilOtelEventListener(
                     .setAttribute(ATTR_IMAGE_MODEL_TYPE, request.data.javaClass.name)
                     .startSpan()
 
-            CoilSpanStore.spans[key] = span
+            CoilSpanStore.put(key, span)
         } catch (_: Throwable) {
             // Telemetry failures must never interrupt the image loading pipeline.
         }
@@ -101,7 +101,10 @@ internal class CoilOtelEventListener(
 
     /**
      * Called by Coil when an image request fails for any reason. The throwable from [ErrorResult]
-     * is recorded on the span so the full stack trace is available in the telemetry back-end.
+     * is recorded on the span as a sanitised `exception` event (class name + query-scrubbed
+     * message) via [ImageLoadAttributes.recordSanitizedException] — never via
+     * [io.opentelemetry.api.trace.Span.recordException], whose raw messages routinely embed the
+     * full unsanitised URL (tokens included) on HTTP failures.
      */
     override fun onError(
         request: ImageRequest,
@@ -112,7 +115,7 @@ internal class CoilOtelEventListener(
             val span = CoilSpanStore.spans.remove(key)
             span?.let {
                 it.setAttribute(ATTR_IMAGE_LOAD_STATUS, STATUS_ERROR)
-                it.recordException(result.throwable)
+                ImageLoadAttributes.recordSanitizedException(it, result.throwable)
                 it.setStatus(StatusCode.ERROR)
                 it.end()
             }

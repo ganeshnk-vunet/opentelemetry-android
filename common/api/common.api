@@ -150,6 +150,8 @@ public final class io/opentelemetry/android/common/internal/imageload/ImageLoadA
 	public static final field STATUS_CANCELLED Ljava/lang/String;
 	public static final field STATUS_ERROR Ljava/lang/String;
 	public static final field STATUS_SUCCESS Ljava/lang/String;
+	public final fun recordSanitizedException (Lio/opentelemetry/api/trace/Span;Ljava/lang/Throwable;)V
+	public final fun sanitizeErrorMessage (Ljava/lang/String;)Ljava/lang/String;
 	public final fun sanitizeUrl (Ljava/lang/String;)Ljava/lang/String;
 }
 

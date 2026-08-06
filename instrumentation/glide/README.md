@@ -7,9 +7,12 @@ image request made through [Glide](https://github.com/bumptech/glide). It captur
 source, load outcome, and a sanitised URL without requiring any change to existing image-loading
 call sites.
 
-Image URLs are automatically sanitised before recording: everything after the first `?` is
-stripped, so authentication tokens, signed parameters, and other sensitive query-string data
-never reach the telemetry back-end — a hard requirement for BFSI and banking applications.
+Image URLs are automatically sanitised before recording: everything after the first `?` or `#`
+is stripped and the value is truncated to 512 characters, so authentication tokens, signed
+parameters, and other sensitive query-string data never reach the telemetry back-end — a hard
+requirement for BFSI and banking applications. Exception messages recorded on failure are
+scrubbed the same way (embedded query strings removed) because `GlideException` root causes
+routinely embed the full request URL in their message.
 
 This instrumentation is **not** included in the `android-agent` by default and must be
 declared as an explicit dependency.
@@ -34,11 +37,20 @@ Data produced by this instrumentation uses instrumentation scope name
         * `"disk_cache"` — served from Glide's data or resource disk cache
         * `"disk"` — served from Glide's local disk (e.g. file URI)
         * `"memory"` — served from Glide's active-resources or memory LRU cache
-    * `image.load.status` — `"success"` or `"error"`
+    * `image.load.status` — `"success"`, `"error"`, or `"cancelled"` (request cancelled while
+      the fetch was in flight, e.g. scroll-away — span status stays UNSET since a cancellation
+      is not an error)
     * `image.is_first_resource` — `true` if this was the first resource loaded for the target
 
-On failure, the span status is set to `ERROR` and the `GlideException` is recorded on the
-span via `span.recordException`.
+`image.url` is only recorded for URL-like models (`String`, `Uri`, `URL`, `GlideUrl`). Other
+model types — `File`, `byte[]`, resource IDs, custom model classes — are identified by
+`image.model_type` alone, because an arbitrary model's `toString()` may embed customer data
+(PII) or, for base64 `data:` URI strings, an enormous payload.
+
+On failure, the span status is set to `ERROR` and a sanitised `exception` event is recorded on
+the span (exception class name plus a query-scrubbed message). `span.recordException` is
+deliberately **not** used: `GlideException` aggregates root causes whose raw messages typically
+contain the unsanitised URL, tokens included.
 
 ### OkHttp child spans
 
@@ -176,10 +188,47 @@ In practice BFSI apps load remote images via URL/`String`/`Uri`, which are all c
 relies heavily on `File` or resource-ID loads and you need spans for them, additional model types
 would have to be registered in `GlideInstrumentation.registerGlideComponents`.
 
+### Concurrent requests sharing the same model instance
+
+In-flight spans are keyed by the **identity** of the Glide model object. Two *different* String
+instances with the same URL content are tracked independently, but two concurrent requests that
+share the *same* model instance (a URL held in a constant, or the same String field bound to two
+targets at once — e.g. the same avatar in a toolbar and a list row) collide: the second request
+ends the first request's span as stale, and the terminal callbacks race for the single entry, so
+durations/outcomes can be attributed to the wrong request. This cannot crash or leak — worst case
+is inaccurate telemetry for those overlapping loads. If this pattern is hot in your app, pass a
+fresh model instance per request.
+
+### Cancellation coverage
+
+Glide's `RequestListener` has no cancellation callback. Cancellations that occur while the fetch
+is in flight are handled by `OtelContextDataFetcher.cancel()` (span ends with
+`image.load.status = "cancelled"`). Cancellations before the fetcher is built or after the fetch
+(during decode) have no hook; those spans are reclaimed by the span store's size cap (200
+entries) rather than ending at the exact cancellation time.
+
+### Initialisation order
+
+`GlideOtelModule` registers the OTel model loaders when Glide initialises its component registry
+— which happens once, on first use of Glide. The OpenTelemetry RUM SDK must therefore be
+initialised **before** the first Glide request, or the network-path instrumentation is silently
+skipped for the process lifetime (only memory-cache synthetic spans would appear). With the
+Gradle plugin's auto-init (ContentProvider, runs before `Application.onCreate`) this is always
+satisfied; with manual/delayed SDK init, initialise the SDK before any image loads.
+
+### One listener registration style per request
+
+Register `VunetGlideRequestListener` **either** globally (`AppGlideModule.applyOptions`) **or**
+per-request (Compose `GlideImage` `requestBuilderTransform`) — never both for the same request.
+Both listeners would fire for the same request and memory-cache hits would be double-counted
+(the second invocation finds no stored span and synthesises a duplicate).
+
 ### Timestamp precision
 
 The `image.load` span start time is set from `System.currentTimeMillis() * 1_000_000`, i.e.
 **millisecond** wall-clock resolution rescaled to nanoseconds — not true nanosecond precision.
 Sub-millisecond operations (notably memory-cache hits) may therefore report a near-zero duration in
 the backend. This is an accepted tradeoff for RUM; finer resolution would require pairing a
-`System.nanoTime()` delta with a clock offset (a pattern used elsewhere in the SDK).
+`System.nanoTime()` delta with a clock offset (a pattern used elsewhere in the SDK). Additionally,
+because the start timestamp comes from the wall clock while the end comes from the SDK clock, an
+NTP clock adjustment mid-request can skew a span's reported duration.

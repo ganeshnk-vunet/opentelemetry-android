@@ -23,6 +23,7 @@ internal val ATTR_IMAGE_IS_FIRST_RESOURCE = ImageLoadAttributes.ATTR_IMAGE_IS_FI
 
 internal const val STATUS_SUCCESS = ImageLoadAttributes.STATUS_SUCCESS
 internal const val STATUS_ERROR = ImageLoadAttributes.STATUS_ERROR
+internal const val STATUS_CANCELLED = ImageLoadAttributes.STATUS_CANCELLED
 
 internal const val SOURCE_MEMORY = ImageLoadAttributes.SOURCE_MEMORY
 internal const val SOURCE_DISK = ImageLoadAttributes.SOURCE_DISK

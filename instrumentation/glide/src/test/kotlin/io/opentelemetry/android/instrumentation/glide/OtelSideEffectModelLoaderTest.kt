@@ -54,10 +54,14 @@ class OtelSideEffectModelLoaderTest {
     fun setUp() {
         GlideSpanStore.spans.clear()
         tracer = otelTesting.openTelemetry.tracerProvider.tracerBuilder("test").build()
+        // buildLoadData gates on the live companion tracer (uninstall pass-through behaviour),
+        // so tests must mark the instrumentation as installed.
+        GlideInstrumentation.tracer = tracer
     }
 
     @AfterEach
     fun tearDown() {
+        GlideInstrumentation.tracer = null
         GlideSpanStore.spans.clear()
     }
 
@@ -221,6 +225,70 @@ class OtelSideEffectModelLoaderTest {
         // The store now holds the new span instance, not the stale one
         assertThat(secondSpan).isNotSameAs(firstSpan)
         secondSpan?.end()
+    }
+
+    // ── cancellation cleanup (fetcher.cancel) ────────────────────────────────
+
+    @Test
+    fun `cancel on fetcher ends the span with cancelled status and removes it from the store`() {
+        val loader = makeLoader()
+        val model = "https://cdn.bank.com/logo.png"
+
+        val loadData = loader.buildLoadData(model, 100, 100, Options())!!
+        val key = System.identityHashCode(model)
+        assertThat(GlideSpanStore.spans).containsKey(key)
+
+        loadData.fetcher.cancel()
+
+        // Span must be removed and ended — a cancelled request has no terminal listener callback.
+        assertThat(GlideSpanStore.spans).doesNotContainKey(key)
+        assertThat(otelTesting.spans).hasSize(1)
+        val span = otelTesting.spans[0]
+        assertThat(span.attributes[ATTR_IMAGE_LOAD_STATUS]).isEqualTo(STATUS_CANCELLED)
+        // Cancellation is not an error
+        assertThat(span.status.statusCode).isEqualTo(io.opentelemetry.api.trace.StatusCode.UNSET)
+    }
+
+    @Test
+    fun `cancel after terminal callback already removed the span is a safe no-op`() {
+        val loader = makeLoader()
+        val model = "https://cdn.bank.com/logo.png"
+
+        val loadData = loader.buildLoadData(model, 100, 100, Options())!!
+        val key = System.identityHashCode(model)
+        // Simulate the RequestListener winning the race: entry already removed and ended.
+        GlideSpanStore.spans.remove(key)?.end()
+
+        loadData.fetcher.cancel()
+
+        assertThat(otelTesting.spans).hasSize(1)
+    }
+
+    // ── uninstall gating ─────────────────────────────────────────────────────
+
+    @Test
+    fun `buildLoadData is a transparent pass-through after uninstall (companion tracer null)`() {
+        val loader = makeLoader()
+        GlideInstrumentation.tracer = null
+
+        val result = loader.buildLoadData("https://cdn.bank.com/logo.png", 100, 100, Options())
+
+        assertThat(result).isNotNull()
+        assertThat(GlideSpanStore.spans).isEmpty()
+        assertThat(otelTesting.spans).isEmpty()
+    }
+
+    // ── store size cap (leak safety net) ─────────────────────────────────────
+
+    @Test
+    fun `GlideSpanStore put evicts and ends an entry once the cap is reached`() {
+        // Fill beyond the cap; the store must stay bounded and evicted spans must be ended.
+        repeat(250) { i ->
+            GlideSpanStore.put(i, tracer.spanBuilder(IMAGE_LOAD_SPAN_NAME).startSpan())
+        }
+        assertThat(GlideSpanStore.spans.size).isLessThanOrEqualTo(200)
+        // 50 evictions → 50 ended spans exported
+        assertThat(otelTesting.spans).hasSize(50)
     }
 
     // ── null from delegate ───────────────────────────────────────────────────

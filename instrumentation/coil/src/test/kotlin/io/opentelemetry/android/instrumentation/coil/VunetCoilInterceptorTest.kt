@@ -79,7 +79,7 @@ class VunetCoilInterceptorTest {
 
     @Test
     fun `intercept is transparent pass-through when no span in store`() =
-        runBlocking {
+        runBlocking<Unit> {
             val request = buildRequest("https://example.com/img.png")
             var proceedCalled = false
             val expectedResult = mockk<SuccessResult>(relaxed = true)
@@ -97,7 +97,7 @@ class VunetCoilInterceptorTest {
 
     @Test
     fun `intercept does not throw when store is empty`() =
-        runBlocking {
+        runBlocking<Unit> {
             val request = buildRequest("https://example.com/img.png")
             val chain = mockChain(request) { mockk<SuccessResult>(relaxed = true) }
 

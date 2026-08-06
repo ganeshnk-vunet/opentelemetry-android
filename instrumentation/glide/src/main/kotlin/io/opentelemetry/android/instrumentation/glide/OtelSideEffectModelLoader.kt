@@ -77,6 +77,12 @@ internal class OtelContextModelLoader<Model : Any>(
 
         if (delegateData == null) return null
 
+        // The tracer captured at registration time outlives uninstall() (Glide's Registry keeps
+        // the loader for the process lifetime). Gate on the live companion field so that after
+        // uninstall this loader degrades to a transparent pass-through instead of creating
+        // spans with a stale tracer.
+        if (GlideInstrumentation.tracer == null) return delegateData
+
         return try {
             val key = System.identityHashCode(model)
             // Span start timestamp in wall-clock epoch nanoseconds. Note this is millisecond
@@ -103,11 +109,11 @@ internal class OtelContextModelLoader<Model : Any>(
             // This context snapshot is handed to OtelContextDataFetcher which restores
             // it on the background thread, propagating the parent span to OkHttp.
             val capturedContext = OtelContext.current().with(span)
-            GlideSpanStore.spans[key] = span
+            GlideSpanStore.put(key, span)
 
             ModelLoader.LoadData(
                 delegateData.sourceKey,
-                OtelContextDataFetcher(delegateData.fetcher, capturedContext),
+                OtelContextDataFetcher(delegateData.fetcher, capturedContext, key),
             )
         } catch (_: Throwable) {
             // Telemetry failures must never interrupt the image loading pipeline.
@@ -127,10 +133,17 @@ internal class OtelContextModelLoader<Model : Any>(
  * This is the mechanism that makes HTTP spans (created by the OkHttp instrumentation on the
  * background thread) appear as children of the "image.load" span rather than as independent
  * root traces.
+ *
+ * [cancel] additionally ends the in-flight span: Glide's [com.bumptech.glide.request.RequestListener]
+ * has **no** cancellation callback (unlike Coil's `onCancel`), so scroll-away / navigate-away
+ * cancellations would otherwise orphan the span in [GlideSpanStore] for the process lifetime —
+ * a memory leak in list-heavy apps. Cancellations that occur before the fetcher is built or
+ * after the fetch completes are covered by the [GlideSpanStore] size cap instead.
  */
 internal class OtelContextDataFetcher(
     private val delegate: DataFetcher<InputStream>,
     private val capturedContext: OtelContext,
+    private val storeKey: Int,
 ) : DataFetcher<InputStream> {
 
     override fun loadData(
@@ -146,7 +159,21 @@ internal class OtelContextDataFetcher(
 
     override fun cleanup() = delegate.cleanup()
 
-    override fun cancel() = delegate.cancel()
+    override fun cancel() {
+        // End the span for a cancelled request; the RequestListener terminal callbacks will
+        // never fire for it. remove() is atomic, so a rare race with a terminal callback ends
+        // in exactly one of the two paths owning the span.
+        try {
+            GlideSpanStore.spans.remove(storeKey)?.let { span ->
+                span.setAttribute(ATTR_IMAGE_LOAD_STATUS, STATUS_CANCELLED)
+                // Leave the span status UNSET: a cancellation is not an error.
+                span.end()
+            }
+        } catch (_: Throwable) {
+            // Telemetry failures must never interrupt the image loading pipeline.
+        }
+        delegate.cancel()
+    }
 
     override fun getDataClass(): Class<InputStream> = delegate.dataClass
 
