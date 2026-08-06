@@ -19,7 +19,7 @@ internal class ActionSummarizerTest {
     fun clickButton() {
         val span =
             TestSpanHelper.span(
-                "ui.click",
+                "ui.interaction",
                 Attributes.of(
                     AttributeKey.stringKey("app.widget.type"), "button",
                     AttributeKey.stringKey("app.widget.name"), "Pay",
@@ -34,7 +34,7 @@ internal class ActionSummarizerTest {
     fun clickToggleOn() {
         val span =
             TestSpanHelper.span(
-                "ui.click",
+                "ui.interaction",
                 Attributes.of(
                     AttributeKey.stringKey("app.widget.type"), "switch",
                     AttributeKey.stringKey("app.widget.name"), "Dark Mode",
@@ -50,7 +50,7 @@ internal class ActionSummarizerTest {
     fun clickToggleOff() {
         val span =
             TestSpanHelper.span(
-                "ui.click",
+                "ui.interaction",
                 Attributes.of(
                     AttributeKey.stringKey("app.widget.type"), "checkbox",
                     AttributeKey.stringKey("app.widget.name"), "Notifications",
@@ -66,7 +66,7 @@ internal class ActionSummarizerTest {
     fun clickWithoutScreenName() {
         val span =
             TestSpanHelper.span(
-                "ui.click",
+                "ui.interaction",
                 Attributes.of(
                     AttributeKey.stringKey("app.widget.type"), "button",
                     AttributeKey.stringKey("app.widget.name"), "Submit",
@@ -80,7 +80,7 @@ internal class ActionSummarizerTest {
     fun clickWithoutWidgetName() {
         val span =
             TestSpanHelper.span(
-                "ui.click",
+                "ui.interaction",
                 Attributes.of(
                     AttributeKey.stringKey("app.widget.type"), "image",
                     RumConstants.SCREEN_NAME_KEY, "HomeScreen",

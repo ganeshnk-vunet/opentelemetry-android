@@ -19,7 +19,7 @@ This module contains shared navigation telemetry internals used by:
 When a click triggers navigation and a later API call runs on another thread, the expected trace shape within that single interaction is:
 
 ```
-ui.click
+ui.interaction
 ├── POST (immediate async work)
 └── ui.navigation
       └── POST (work after screen transition)

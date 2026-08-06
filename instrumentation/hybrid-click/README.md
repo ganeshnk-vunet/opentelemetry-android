@@ -15,7 +15,7 @@ Data produced by this instrumentation uses instrumentation scope name
 ### Clicks
 
 * Type: Span
-* Name: `ui.click`
+* Name: `ui.interaction`
 * Description: Span emitted when a clickable view or composable is tapped.
 
 ## Installation
@@ -42,5 +42,5 @@ OpenTelemetryRumInitializer.initialize(
 ```
 
 This controls the parenting window for async work triggered by a click (for example network
-requests or navigation), not the `ui.click` span duration. The span itself ends immediately
+requests or navigation), not the `ui.interaction` span duration. The span itself ends immediately
 after the tap.

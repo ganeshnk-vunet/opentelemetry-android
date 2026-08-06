@@ -19,7 +19,7 @@ object ActiveInteractionContext {
     private var rootContext: Context? = null
     private var generation: Long = 0
 
-    /** Starts a new interaction rooted at [root] (for example `ui.click`). Clears any stale interaction. */
+    /** Starts a new interaction rooted at [root] (for example `ui.interaction`). Clears any stale interaction. */
     fun begin(root: Span): Long =
         synchronized(lock) {
             activeSpan = root
