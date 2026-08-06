@@ -64,8 +64,8 @@ Also set:
 
 **Not emitted:** causes such as user tap vs programmatic navigation are intentionally **not**
 encoded as attributes here. If **`hybrid-click`** / **`view-click`** runs in the same app, a tap
-that synchronously triggers navigation typically leaves **`ui.click`** current when the lifecycle
-runs, so backends can correlate **`parentSpanId`** → **`ui.click`** vs no parent trace link.
+that synchronously triggers navigation typically leaves **`ui.interaction`** current when the lifecycle
+runs, so backends can correlate **`parentSpanId`** → **`ui.interaction`** vs no parent trace link.
 
 ### Entry-type heuristics
 
@@ -115,7 +115,7 @@ per-`FragmentManager` lifecycle listeners are removed.
 |--------|----------|
 | **[activity](../activity/)** | Activity lifecycle spans/events (not the same as screen-to-screen **`ui.navigation`**). |
 | **[fragment](../fragment/)** | Fine-grained fragment lifecycle instrumentation. |
-| **[hybrid-click](../hybrid-click/)** | **`ui.click`** spans; correlates via trace parent when navigation runs under click context. |
+| **[hybrid-click](../hybrid-click/)** | **`ui.interaction`** spans; correlates via trace parent when navigation runs under click context. |
 | **[compose/click](../compose/click/)** | Compose tap instrumentation (**`ui.click`**). Compose navigation surfaces here only when underlying Activity / Fragment lifecycle changes justify it. |
 
 ## Module layout (`src/main`)

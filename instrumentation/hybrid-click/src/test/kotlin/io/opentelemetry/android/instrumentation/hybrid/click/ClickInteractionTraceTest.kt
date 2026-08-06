@@ -63,7 +63,7 @@ class ClickInteractionTraceTest {
         tap(window)
         tap(window)
 
-        val clickSpans = finishedSpans().filter { it.name == "ui.click" }
+        val clickSpans = finishedSpans().filter { it.name == "ui.interaction" }
         assertThat(clickSpans).hasSize(2)
         assertThat(clickSpans[0].traceId).isNotEqualTo(clickSpans[1].traceId)
     }
@@ -92,7 +92,7 @@ class ClickInteractionTraceTest {
         }
         appStart.end()
 
-        val clickSpan = finishedSpans().single { it.name == "ui.click" }
+        val clickSpan = finishedSpans().single { it.name == "ui.interaction" }
         val appStartSpan = finishedSpans().single { it.name == "app.start" }
         assertThat(clickSpan.traceId).isNotEqualTo(appStartSpan.traceId)
     }

@@ -33,7 +33,7 @@ internal object ActionSummarizer {
 
     fun summarize(span: SpanData): String? =
         when (span.name) {
-            "ui.click" -> summarizeClick(span)
+            "ui.interaction" -> summarizeClick(span)
             RumConstants.APP_START_SPAN_NAME -> summarizeAppStart(span)
             RumConstants.ACTIVITY_LIFECYCLE_SPAN_NAME -> summarizeActivityLifecycle(span)
             RumConstants.FRAGMENT_LIFECYCLE_SPAN_NAME -> summarizeFragmentLifecycle(span)
