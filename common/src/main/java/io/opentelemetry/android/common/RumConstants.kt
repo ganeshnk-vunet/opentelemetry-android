@@ -19,6 +19,10 @@ object RumConstants {
     @JvmField
     val START_TYPE_KEY: AttributeKey<String> = AttributeKey.stringKey("start.type")
 
+    /** App framework the host application is built with (e.g. native_android, flutter, react_native). */
+    @JvmField
+    val APP_FRAMEWORK_KEY: AttributeKey<String> = AttributeKey.stringKey("app.framework")
+
     @JvmField
     val STORAGE_SPACE_FREE_KEY: AttributeKey<Long> = AttributeKey.longKey("storage.free")
 

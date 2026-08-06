@@ -8,6 +8,8 @@ package io.opentelemetry.android
 import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Build
+import androidx.annotation.VisibleForTesting
+import io.opentelemetry.android.common.RumConstants.APP_FRAMEWORK_KEY
 import io.opentelemetry.sdk.resources.Resource
 import io.opentelemetry.semconv.ServiceAttributes.SERVICE_NAME
 import io.opentelemetry.semconv.ServiceAttributes.SERVICE_VERSION
@@ -24,6 +26,25 @@ import java.util.UUID
 
 private const val SHARED_PREF_FILE = "opentelemetry-android"
 private const val DEFAULT_APP_NAME = "unknown_service:android"
+
+private const val FRAMEWORK_FLUTTER = "flutter"
+private const val FRAMEWORK_REACT_NATIVE = "react_native"
+private const val FRAMEWORK_NATIVE = "native_android"
+
+/**
+ * Marker classes that, when present on the classpath, identify a cross-platform shell. Ordered by
+ * priority; the first present marker wins. Falls back to [FRAMEWORK_NATIVE] when none resolve.
+ *
+ * React Native is matched primarily on `ReactApplication`, a core interface that is stable across
+ * the legacy bridge and the new (Fabric/bridgeless) architecture; `ReactRootView` is kept as a
+ * secondary marker for older RN versions where the primary one may be absent.
+ */
+private val FRAMEWORK_MARKERS: List<Pair<String, String>> =
+    listOf(
+        "io.flutter.embedding.engine.FlutterEngine" to FRAMEWORK_FLUTTER,
+        "com.facebook.react.ReactApplication" to FRAMEWORK_REACT_NATIVE,
+        "com.facebook.react.ReactRootView" to FRAMEWORK_REACT_NATIVE,
+    )
 
 object AndroidResource {
     @JvmStatic
@@ -43,8 +64,41 @@ object AndroidResource {
             .put(OS_VERSION, Build.VERSION.RELEASE)
             .put(OS_DESCRIPTION, oSDescription)
             .put(APP_INSTALLATION_ID, readInstallId(context))
+            .put(APP_FRAMEWORK_KEY, appFramework)
             .build()
     }
+
+    /**
+     * Host app framework, resolved once per process. The classpath is fixed for the process
+     * lifetime, so the marker-class probes are memoized; the agent builds the default resource more
+     * than once during init, and this keeps every build after the first lookup-free.
+     */
+    private val appFramework: String by lazy { resolveAppFramework() }
+
+    /**
+     * Resolves the framework by probing for marker classes, returning the first match in priority
+     * order. Falls back to [FRAMEWORK_NATIVE] when no cross-platform marker resolves. The
+     * [isPresent] probe is injectable so all branches can be exercised without the real classpath.
+     */
+    @VisibleForTesting
+    internal fun resolveAppFramework(isPresent: (String) -> Boolean = ::isClassPresent): String {
+        for ((className, framework) in FRAMEWORK_MARKERS) {
+            if (isPresent(className)) {
+                return framework
+            }
+        }
+        return FRAMEWORK_NATIVE
+    }
+
+    private fun isClassPresent(className: String): Boolean =
+        try {
+            Class.forName(className, false, AndroidResource::class.java.classLoader)
+            true
+        } catch (_: Throwable) {
+            // Throwable (not Exception) on purpose: a present marker with missing transitive deps
+            // surfaces as NoClassDefFoundError/LinkageError, which are Errors, not Exceptions.
+            false
+        }
 
     /**
      * Minimal resource for trace spans. Device/OS/installation attrs are exported on the first

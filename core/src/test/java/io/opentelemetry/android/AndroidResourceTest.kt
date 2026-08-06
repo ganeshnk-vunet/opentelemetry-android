@@ -14,6 +14,7 @@ import io.mockk.every
 import io.mockk.impl.annotations.RelaxedMockK
 import io.mockk.mockk
 import io.mockk.slot
+import io.opentelemetry.android.common.RumConstants
 import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.sdk.resources.Resource
 import io.opentelemetry.sdk.resources.ResourceBuilder
@@ -84,6 +85,7 @@ internal class AndroidResourceTest {
                     Build.VERSION.SDK_INT.toString(),
                 ).put(OsIncubatingAttributes.OS_DESCRIPTION, osDescription)
                 .put(AppIncubatingAttributes.APP_INSTALLATION_ID, installId)
+                .put(RumConstants.APP_FRAMEWORK_KEY, "native_android")
     }
 
     @Test
@@ -100,6 +102,35 @@ internal class AndroidResourceTest {
         assertEquals(expected, minimal)
         assertThat(minimal.getAttribute(DeviceIncubatingAttributes.DEVICE_MODEL_NAME)).isNull()
         assertTelemetrySdkAttributesAbsent(minimal)
+    }
+
+    @Test
+    fun `resolveAppFramework detects flutter`() {
+        assertEquals(
+            "flutter",
+            AndroidResource.resolveAppFramework { it == "io.flutter.embedding.engine.FlutterEngine" },
+        )
+    }
+
+    @Test
+    fun `resolveAppFramework detects react native via ReactApplication`() {
+        assertEquals(
+            "react_native",
+            AndroidResource.resolveAppFramework { it == "com.facebook.react.ReactApplication" },
+        )
+    }
+
+    @Test
+    fun `resolveAppFramework detects react native via legacy ReactRootView`() {
+        assertEquals(
+            "react_native",
+            AndroidResource.resolveAppFramework { it == "com.facebook.react.ReactRootView" },
+        )
+    }
+
+    @Test
+    fun `resolveAppFramework falls back to native_android when no marker present`() {
+        assertEquals("native_android", AndroidResource.resolveAppFramework { false })
     }
 
     @Test
