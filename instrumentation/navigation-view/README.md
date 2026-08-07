@@ -63,9 +63,10 @@ Also set:
 | **`screen.name`** | Destination screen name (matches destination; applied after span start so it wins over default appenders where relevant). |
 
 **Not emitted:** causes such as user tap vs programmatic navigation are intentionally **not**
-encoded as attributes here. If **`hybrid-click`** / **`view-click`** runs in the same app, a tap
-that synchronously triggers navigation typically leaves **`ui.interaction`** current when the lifecycle
-runs, so backends can correlate **`parentSpanId`** → **`ui.interaction`** vs no parent trace link.
+encoded as attributes here. If **`hybrid-click`** runs in the same app, a tap that synchronously
+triggers navigation typically leaves **`ui.interaction`** current when the lifecycle runs, so
+backends can correlate **`parentSpanId`** → **`ui.interaction`** vs no parent trace link.
+(**`view-click`** emits log events rather than spans, so it establishes no such trace parent.)
 
 ### Entry-type heuristics
 
@@ -116,7 +117,7 @@ per-`FragmentManager` lifecycle listeners are removed.
 | **[activity](../activity/)** | Activity lifecycle spans/events (not the same as screen-to-screen **`ui.navigation`**). |
 | **[fragment](../fragment/)** | Fine-grained fragment lifecycle instrumentation. |
 | **[hybrid-click](../hybrid-click/)** | **`ui.interaction`** spans; correlates via trace parent when navigation runs under click context. |
-| **[compose/click](../compose/click/)** | Compose tap instrumentation (**`ui.click`**). Compose navigation surfaces here only when underlying Activity / Fragment lifecycle changes justify it. |
+| **[compose/click](../compose/click/)** | Compose tap instrumentation. Emits **`app.screen.click`** / **`app.widget.click`** log events, not spans, so it has no trace-parent relation to **`ui.navigation`**. |
 
 ## Module layout (`src/main`)
 

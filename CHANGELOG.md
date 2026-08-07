@@ -11,6 +11,10 @@
 
 ### ⚠️⚠️ Breaking changes
 
+- Hybrid-click span renamed from `ui.click` to `ui.interaction`
+  (`RumConstants.UI_INTERACTION_SPAN_NAME`). Update dashboards, alerts, and queries keyed on the
+  old name. Span attributes and the derived `app.action.summary` value are unchanged.
+
 - Trace spans no longer repeat full device/OS resource attributes on every export. Only the first
   cold `app.start` span includes the full OTLP resource block; other trace spans use a minimal
   resource (`service.name` + SDK defaults). Logs and metrics are unchanged. Query `device.*` /
