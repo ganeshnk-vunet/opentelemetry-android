@@ -8,7 +8,9 @@ package io.opentelemetry.android.instrumentation.glide
 import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.load.engine.GlideException
 import com.bumptech.glide.request.RequestListener
+import com.bumptech.glide.request.target.CustomViewTarget
 import com.bumptech.glide.request.target.Target
+import io.opentelemetry.android.common.internal.imageload.ImageLoadAttributes
 import io.opentelemetry.api.trace.Span
 import io.opentelemetry.api.trace.StatusCode
 import java.util.concurrent.TimeUnit
@@ -30,9 +32,9 @@ import java.util.concurrent.TimeUnit
  * never stored in [GlideSpanStore] and require no cleanup here.
  *
  * ## Null-safety
- * The spans map is queried with `.remove()` — atomic retrieve-and-delete. If the ModelLoader did
- * not store an entry (e.g. Glide disabled our loader, or a prior exception), the methods return
- * silently without any side effects.
+ * The spans map is queried with `.remove()` — atomic retrieve-and-delete. When the ModelLoader did
+ * not store an entry (memory-cache hit, an uncovered model type, or a failure before
+ * `buildLoadData` ran) a span is synthesised here so the outcome is still reported.
  *
  * ## Consumer registration (in AppGlideModule)
  * ```kotlin
@@ -55,35 +57,26 @@ class VunetGlideRequestListener : RequestListener<Any> {
         // (Engine.load → onResourceReady runs without leaving the calling thread), so this
         // timestamp is within microseconds of when the request was submitted.
         val receivedAtEpochNanos = System.currentTimeMillis() * 1_000_000
-        val key = System.identityHashCode(model)
         return try {
-            val span: Span? = GlideSpanStore.spans.remove(key)
-            if (span != null) {
-                // Normal path: span was started by OtelContextModelLoader (disk / network)
-                // with setStartTimestamp, so its duration already reflects real fetch time.
-                span.setAttribute(ATTR_IMAGE_SOURCE, dataSource.toSourceLabel())
-                span.setAttribute(ATTR_IMAGE_IS_FIRST_RESOURCE, isFirstResource)
-                span.setAttribute(ATTR_IMAGE_LOAD_STATUS, STATUS_SUCCESS)
-                span.setStatus(StatusCode.OK)
-                span.end()
-            } else if (dataSource == DataSource.MEMORY_CACHE) {
-                // Memory-cache hit: Glide bypasses the ModelLoader entirely so no span was
-                // pre-created. Use receivedAtEpochNanos as the start timestamp so the span has a
-                // meaningful (sub-millisecond) duration rather than zero.
-                val tracer = GlideInstrumentation.tracer ?: return false
-                tracer.spanBuilder(IMAGE_LOAD_SPAN_NAME)
-                    .setStartTimestamp(receivedAtEpochNanos, TimeUnit.NANOSECONDS)
-                    .setAttribute(ATTR_IMAGE_URL, sanitizeModel(model.toString()))
-                    .setAttribute(ATTR_IMAGE_MODEL_TYPE, model.javaClass.name)
-                    .startSpan()
-                    .also { memSpan ->
-                        memSpan.setAttribute(ATTR_IMAGE_SOURCE, SOURCE_MEMORY)
-                        memSpan.setAttribute(ATTR_IMAGE_IS_FIRST_RESOURCE, isFirstResource)
-                        memSpan.setAttribute(ATTR_IMAGE_LOAD_STATUS, STATUS_SUCCESS)
-                        memSpan.setStatus(StatusCode.OK)
-                        memSpan.end()
+            // Normal path: span was started by OtelContextModelLoader (disk / network) with
+            // setStartTimestamp, so its duration already reflects real fetch time.
+            val span =
+                GlideSpanStore.spans.remove(System.identityHashCode(model))
+                    ?: if (dataSource == DataSource.MEMORY_CACHE) {
+                        // Glide bypasses the ModelLoader entirely for memory-cache hits, so no span
+                        // was pre-created. receivedAtEpochNanos gives the synthesised span a
+                        // meaningful (sub-millisecond) duration rather than zero.
+                        startSyntheticSpan(model, receivedAtEpochNanos) ?: return false
+                    } else {
+                        return false
                     }
-            }
+
+            span.setAttribute(ATTR_IMAGE_SOURCE, dataSource.toSourceLabel())
+            span.setAttribute(ATTR_IMAGE_IS_FIRST_RESOURCE, isFirstResource)
+            span.setAttribute(ATTR_IMAGE_LOAD_STATUS, STATUS_SUCCESS)
+            span.setTargetAttributes(target)
+            span.setStatus(StatusCode.OK)
+            span.end()
             false
         } catch (_: Throwable) {
             false
@@ -97,31 +90,81 @@ class VunetGlideRequestListener : RequestListener<Any> {
         isFirstResource: Boolean,
     ): Boolean {
         val receivedAtEpochNanos = System.currentTimeMillis() * 1_000_000
-        val key = model?.let { System.identityHashCode(it) } ?: return false
         return try {
-            val span: Span? = GlideSpanStore.spans.remove(key)
-            // If no pre-created span exists (e.g. failure on a memory-cache path),
-            // create one on-the-fly so the failure is never silently dropped.
-            // Use receivedAtEpochNanos as start so the span has a real (sub-millisecond) duration.
-            val activeSpan = span ?: run {
-                val tracer = GlideInstrumentation.tracer ?: return false
-                tracer.spanBuilder(IMAGE_LOAD_SPAN_NAME)
-                    .setStartTimestamp(receivedAtEpochNanos, TimeUnit.NANOSECONDS)
-                    .setAttribute(ATTR_IMAGE_URL, sanitizeModel(model.toString()))
-                    .setAttribute(ATTR_IMAGE_MODEL_TYPE, model.javaClass.name)
-                    .startSpan()
+            // A failure must never be dropped: when no span was pre-created — memory-cache path, an
+            // uncovered model type, or a null model such as `load(null)` — synthesise one so the
+            // failure still reaches the back-end.
+            val span =
+                model?.let { GlideSpanStore.spans.remove(System.identityHashCode(it)) }
+                    ?: startSyntheticSpan(model, receivedAtEpochNanos)
+                    ?: return false
+
+            span.setAttribute(ATTR_IMAGE_IS_FIRST_RESOURCE, isFirstResource)
+            span.setAttribute(ATTR_IMAGE_LOAD_STATUS, STATUS_ERROR)
+            span.setTargetAttributes(target)
+            if (e != null) {
+                span.setAttribute(ATTR_IMAGE_ERROR_TYPE, e.rootErrorType())
+                span.recordException(e)
             }
-            activeSpan.setAttribute(ATTR_IMAGE_IS_FIRST_RESOURCE, isFirstResource)
-            activeSpan.setAttribute(ATTR_IMAGE_LOAD_STATUS, STATUS_ERROR)
-            if (e != null) activeSpan.recordException(e)
-            activeSpan.setStatus(StatusCode.ERROR)
-            activeSpan.end()
+            span.setStatus(StatusCode.ERROR)
+            span.end()
             false
         } catch (_: Throwable) {
             false
         }
     }
+
+    /**
+     * Starts an "image.load" span for a request that never passed through
+     * [OtelContextModelLoader]. [startEpochNanos] is the moment the terminal callback was entered,
+     * so the span still has a non-zero duration.
+     *
+     * Returns `null` — and therefore reports nothing — when the SDK has not installed a tracer.
+     */
+    private fun startSyntheticSpan(
+        model: Any?,
+        startEpochNanos: Long,
+    ): Span? {
+        val tracer = GlideInstrumentation.tracer ?: return null
+        return tracer
+            .spanBuilder(IMAGE_LOAD_SPAN_NAME)
+            .setStartTimestamp(startEpochNanos, TimeUnit.NANOSECONDS)
+            .setAttribute(ATTR_IMAGE_URL, model?.let { sanitizeModel(it.toString()) } ?: VALUE_UNKNOWN)
+            .setAttribute(ATTR_IMAGE_MODEL_TYPE, model?.javaClass?.name ?: VALUE_UNKNOWN)
+            .startSpan()
+    }
 }
+
+/**
+ * Records which widget the image was being loaded into. Glide hands the [Target] to every terminal
+ * callback but the model alone cannot tell two `ImageView`s on the same screen apart — this is what
+ * makes a failure actionable ("`avatar_image` on ProfileFragment failed").
+ *
+ * Both view-backed target hierarchies are covered: `ViewTarget` — deprecated in Glide, but still
+ * the base of `ImageViewTarget` and therefore of every `into(imageView)` call, hence the
+ * suppression — and the newer [CustomViewTarget]. Non-view targets — `submit()`, `preload()`,
+ * custom [Target] implementations — carry no view attributes.
+ */
+@Suppress("DEPRECATION")
+private fun Span.setTargetAttributes(target: Target<*>?) {
+    val view =
+        when (target) {
+            is com.bumptech.glide.request.target.ViewTarget<*, *> -> target.view
+            is CustomViewTarget<*, *> -> target.view
+            else -> null
+        } ?: return
+    setAttribute(ATTR_IMAGE_TARGET_VIEW_ID, ImageLoadAttributes.resolveViewId(view))
+    setAttribute(ATTR_IMAGE_TARGET_VIEW_TYPE, view.javaClass.name)
+}
+
+/**
+ * Glide wraps every failure in a [GlideException] whose message is a generic "Failed to load
+ * resource". Reporting that class name would make every failure look identical, so the first root
+ * cause — the real `HttpException`, `SocketTimeoutException`, `FileNotFoundException`, … — is used
+ * when Glide recorded one.
+ */
+private fun GlideException.rootErrorType(): String =
+    ImageLoadAttributes.errorType(rootCauses?.firstOrNull() ?: this)
 
 private fun DataSource.toSourceLabel(): String =
     when (this) {

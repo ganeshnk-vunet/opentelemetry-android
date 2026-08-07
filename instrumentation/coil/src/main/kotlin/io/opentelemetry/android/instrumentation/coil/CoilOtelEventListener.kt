@@ -10,7 +10,10 @@ import coil.decode.DataSource
 import coil.request.ErrorResult
 import coil.request.ImageRequest
 import coil.request.SuccessResult
+import coil.target.Target
+import coil.target.ViewTarget
 import io.opentelemetry.android.common.internal.imageload.ImageLoadAttributes
+import io.opentelemetry.api.trace.SpanBuilder
 import io.opentelemetry.api.trace.StatusCode
 import io.opentelemetry.api.trace.Tracer
 
@@ -71,6 +74,7 @@ internal class CoilOtelEventListener(
                     .spanBuilder(IMAGE_LOAD_SPAN_NAME)
                     .setAttribute(ATTR_IMAGE_URL, imageUrl)
                     .setAttribute(ATTR_IMAGE_MODEL_TYPE, request.data.javaClass.name)
+                    .setTargetAttributes(request.target)
                     .startSpan()
 
             CoilSpanStore.spans[key] = span
@@ -102,6 +106,14 @@ internal class CoilOtelEventListener(
     /**
      * Called by Coil when an image request fails for any reason. The throwable from [ErrorResult]
      * is recorded on the span so the full stack trace is available in the telemetry back-end.
+     *
+     * Unlike the Glide listener, this does **not** synthesise a span when the store holds no entry,
+     * and the asymmetry is structural rather than drift. Glide skips `buildLoadData` entirely for
+     * memory-cache hits, uncovered model types, and null models, so "no span was pre-created" is a
+     * routine Glide state that would otherwise drop real failures. Coil dispatches [onStart] for
+     * every request *before* consulting its memory cache, so a missing entry here means [onStart]
+     * itself failed — in which case the tracer needed to synthesise a replacement is equally
+     * suspect, and inventing a span with no start time would report a fabricated duration.
      */
     override fun onError(
         request: ImageRequest,
@@ -112,6 +124,7 @@ internal class CoilOtelEventListener(
             val span = CoilSpanStore.spans.remove(key)
             span?.let {
                 it.setAttribute(ATTR_IMAGE_LOAD_STATUS, STATUS_ERROR)
+                it.setAttribute(ATTR_IMAGE_ERROR_TYPE, ImageLoadAttributes.errorType(result.throwable))
                 it.recordException(result.throwable)
                 it.setStatus(StatusCode.ERROR)
                 it.end()
@@ -139,6 +152,22 @@ internal class CoilOtelEventListener(
             }
         } catch (_: Throwable) {}
     }
+}
+
+/**
+ * Records which widget the image is being loaded into, when the request has a view-backed target
+ * (`imageView.load(url)`, `AsyncImage` with a `ViewTarget`, …). Without this, a screen showing many
+ * images produces failure spans that are indistinguishable from one another.
+ *
+ * Compose targets and `ImageRequest`s built without a target simply carry no view attributes.
+ *
+ * Reading [android.view.View.getId] here is safe: Coil dispatches `onStart` on
+ * `Dispatchers.Main.immediate`, so this runs on the thread that owns the view.
+ */
+private fun SpanBuilder.setTargetAttributes(target: Target?): SpanBuilder {
+    val view = (target as? ViewTarget<*>)?.view ?: return this
+    return setAttribute(ATTR_IMAGE_TARGET_VIEW_ID, ImageLoadAttributes.resolveViewId(view))
+        .setAttribute(ATTR_IMAGE_TARGET_VIEW_TYPE, view.javaClass.name)
 }
 
 /**

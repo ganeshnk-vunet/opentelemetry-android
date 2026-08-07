@@ -33,10 +33,31 @@ Data produced by this instrumentation uses instrumentation scope name
         * `"network"` — fetched from the network (OkHttp child spans will appear under this span)
         * `"disk"` — served from Coil's disk cache
         * `"memory"` — served from Coil's memory cache or in-memory bitmap pool
-    * `image.load.status` — `"success"` or `"error"`
+    * `image.load.status` — `"success"`, `"error"`, or `"cancelled"`
+    * `image.target.view_id` — resource entry name of the view the image is loading into
+      (e.g. `avatar_image`); `"no-id"` when the view has no `android:id`, and `"unresolved"` when
+      the id has no resource-table entry (a runtime `View.generateViewId()` value, whose raw
+      integer restarts each process launch and so is never emitted). Absent for requests
+      without a `ViewTarget` — notably Compose `AsyncImage` and preloads
+    * `image.target.view_type` — fully-qualified class of that view
+      (e.g. `androidx.appcompat.widget.AppCompatImageView`)
+    * `image.error.type` — failure class, on error spans only (see below)
+
+Combined with the `screen.name` attribute that the SDK appends to every span, the view attributes
+identify exactly **which** `ImageView` on a screen failed — `screen.name` alone cannot separate two
+images rendered on the same screen.
 
 On failure, the span status is set to `ERROR` and the throwable is recorded on the span
-via `span.recordException`.
+via `span.recordException`. Because `recordException` writes a span *event* — which most back-ends
+cannot group or chart — the throwable's class is **also** recorded as the `image.error.type`
+attribute, so failure breakdowns (timeouts vs. HTTP errors vs. decode errors) can be charted
+directly.
+
+> [!NOTE]
+> Loads abandoned before they finish — fast scrolling, `DisposableEffect` cleanup, navigating away —
+> arrive in `onCancel` and are recorded as `image.load.status = "cancelled"` with an **UNSET** span
+> status. They are deliberately not errors, so exclude or include them explicitly when building a
+> failure-rate chart.
 
 ### OkHttp child spans
 
@@ -127,9 +148,9 @@ Each of these now emits an `image.load` span, with OkHttp child spans on the net
 
 | Phase | Class | Action |
 |---|---|---|
-| Request enqueued (any thread) | `CoilOtelEventListener.onStart` | Starts span, calls `makeCurrent()`, stores in `CoilSpanStore` |
+| Request enqueued (main dispatcher) | `CoilOtelEventListener.onStart` | Starts span, records URL and target view, stores in `CoilSpanStore` |
 | Fetch runs (coroutine dispatcher) | `VunetCoilInterceptor` | Restores span via `withContext(span.asContextElement())` → OkHttp spans parent to image.load |
-| Request finished | `CoilOtelEventListener.onSuccess` / `onError` | Closes scope, adds attributes, ends span |
+| Request finished | `CoilOtelEventListener.onSuccess` / `onError` / `onCancel` | Adds outcome attributes, ends span |
 
 ## Disabling via the agent DSL
 

@@ -6,11 +6,18 @@
 package io.opentelemetry.android.instrumentation.coil
 
 import android.content.Context
+import android.content.res.Resources
+import android.view.View
+import android.widget.ImageView
 import coil.decode.DataSource
 import coil.request.ErrorResult
 import coil.request.ImageRequest
 import coil.request.SuccessResult
+import coil.target.Target
+import coil.target.ViewTarget
+import io.mockk.every
 import io.mockk.mockk
+import io.opentelemetry.android.common.internal.imageload.ImageLoadAttributes
 import io.opentelemetry.api.trace.StatusCode
 import io.opentelemetry.sdk.testing.junit5.OpenTelemetryExtension
 import io.opentelemetry.sdk.trace.data.SpanData
@@ -19,6 +26,7 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.RegisterExtension
+import java.net.SocketTimeoutException
 
 /**
  * Unit tests for [CoilOtelEventListener].
@@ -403,13 +411,146 @@ class CoilOtelEventListenerTest {
     }
 
     // ---------------------------------------------------------------------------
+    // Target view attributes
+    // ---------------------------------------------------------------------------
+
+    @Test
+    fun `onStart records the view the image is being loaded into`() {
+        val request = buildRequest("https://example.com/img.png", viewTarget("avatar_image"))
+
+        listener.onStart(request)
+        CoilSpanStore.spans[System.identityHashCode(request)]?.end()
+
+        val attributes = otelTesting.spans[0].attributes
+        assertThat(attributes.get(ATTR_IMAGE_TARGET_VIEW_ID)).isEqualTo("avatar_image")
+        assertThat(attributes.get(ATTR_IMAGE_TARGET_VIEW_TYPE)).isEqualTo(ImageView::class.java.name)
+    }
+
+    @Test
+    fun `a target view without an android id is recorded as no-id`() {
+        val request = buildRequest("https://example.com/img.png", viewTarget(entryName = null))
+
+        listener.onStart(request)
+        CoilSpanStore.spans[System.identityHashCode(request)]?.end()
+
+        assertThat(otelTesting.spans[0].attributes.get(ATTR_IMAGE_TARGET_VIEW_ID))
+            .isEqualTo(ImageLoadAttributes.VIEW_ID_UNSET)
+    }
+
+    @Test
+    fun `a runtime-generated view id is bucketed instead of emitting an unstable integer`() {
+        val request = buildRequest("https://example.com/img.png", generatedIdViewTarget())
+
+        listener.onStart(request)
+        CoilSpanStore.spans[System.identityHashCode(request)]?.end()
+
+        // View.generateViewId() values restart at 1 each process launch, so the raw integer would
+        // neither be stable for one widget nor unique between widgets.
+        val viewId = otelTesting.spans[0].attributes.get(ATTR_IMAGE_TARGET_VIEW_ID)
+        assertThat(viewId).isEqualTo(ImageLoadAttributes.VIEW_ID_UNRESOLVED)
+        assertThat(viewId).isNotEqualTo(GENERATED_VIEW_ID.toString())
+    }
+
+    @Test
+    fun `a request without a target contributes no view attributes`() {
+        // Compose AsyncImage and preload requests have no ViewTarget.
+        val request = buildRequest("https://example.com/img.png")
+
+        listener.onStart(request)
+        CoilSpanStore.spans[System.identityHashCode(request)]?.end()
+
+        val attributes = otelTesting.spans[0].attributes
+        assertThat(attributes.get(ATTR_IMAGE_TARGET_VIEW_ID)).isNull()
+        assertThat(attributes.get(ATTR_IMAGE_TARGET_VIEW_TYPE)).isNull()
+    }
+
+    @Test
+    fun `view attributes survive onto the terminal error span`() {
+        val request = buildRequest("https://example.com/img.png", viewTarget("avatar_image"))
+
+        listener.onStart(request)
+        listener.onError(request, buildErrorResult(request, RuntimeException("fail")))
+
+        // Attributes are set at onStart; the span carries them through to the failure.
+        assertThat(otelTesting.spans[0].attributes.get(ATTR_IMAGE_TARGET_VIEW_ID))
+            .isEqualTo("avatar_image")
+    }
+
+    // ---------------------------------------------------------------------------
+    // Error type
+    // ---------------------------------------------------------------------------
+
+    @Test
+    fun `onError records the throwable class as the error type`() {
+        val request = buildRequest("https://example.com/img.png")
+        listener.onStart(request)
+
+        listener.onError(request, buildErrorResult(request, SocketTimeoutException("timeout")))
+
+        assertThat(otelTesting.spans[0].attributes.get(ATTR_IMAGE_ERROR_TYPE))
+            .isEqualTo(SocketTimeoutException::class.java.simpleName)
+    }
+
+    @Test
+    fun `successful and cancelled loads carry no error type`() {
+        val request = buildRequest("https://example.com/img.png")
+        listener.onStart(request)
+
+        listener.onSuccess(request, buildSuccessResult(request, DataSource.NETWORK))
+
+        assertThat(otelTesting.spans[0].attributes.get(ATTR_IMAGE_ERROR_TYPE)).isNull()
+    }
+
+    // ---------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------
 
-    private fun buildRequest(url: String): ImageRequest =
+    private fun buildRequest(
+        url: String,
+        target: Target? = null,
+    ): ImageRequest =
         ImageRequest.Builder(androidContext)
             .data(url)
+            .apply { target?.let { target(it) } }
             .build()
+
+    /**
+     * Builds a Coil [ViewTarget] wrapping an [ImageView] whose id resolves to [entryName], or a
+     * view with no `android:id` when [entryName] is `null`.
+     */
+    private fun viewTarget(entryName: String?): Target =
+        viewTargetFor(
+            mockk<ImageView>(relaxed = true).also { view ->
+                if (entryName == null) {
+                    every { view.id } returns View.NO_ID
+                } else {
+                    val resources = mockk<Resources>(relaxed = true)
+                    every { view.id } returns VIEW_ID
+                    every { view.resources } returns resources
+                    every { resources.getResourceEntryName(VIEW_ID) } returns entryName
+                }
+            },
+        )
+
+    /**
+     * Builds a target whose view carries a runtime id from `View.generateViewId()`: the id is set,
+     * but the resource table has no entry for it, so lookup throws.
+     */
+    private fun generatedIdViewTarget(): Target =
+        viewTargetFor(
+            mockk<ImageView>(relaxed = true).also { view ->
+                val resources = mockk<Resources>(relaxed = true)
+                every { view.id } returns GENERATED_VIEW_ID
+                every { view.resources } returns resources
+                every { resources.getResourceEntryName(GENERATED_VIEW_ID) } throws
+                    Resources.NotFoundException("no entry for $GENERATED_VIEW_ID")
+            },
+        )
+
+    private fun viewTargetFor(imageView: ImageView): Target =
+        object : ViewTarget<ImageView> {
+            override val view: ImageView = imageView
+        }
 
     private fun buildSuccessResult(
         request: ImageRequest,
@@ -435,3 +576,8 @@ class CoilOtelEventListenerTest {
         )
     }
 }
+
+private const val VIEW_ID = 0x7f0a0042
+
+/** In the range View.generateViewId() allocates from (1..0x00FFFFFF), never a resource id. */
+private const val GENERATED_VIEW_ID = 17

@@ -137,10 +137,13 @@ public final class io/opentelemetry/android/common/internal/http/HttpErrorCatego
 }
 
 public final class io/opentelemetry/android/common/internal/imageload/ImageLoadAttributes {
+	public static final field ATTR_IMAGE_ERROR_TYPE Lio/opentelemetry/api/common/AttributeKey;
 	public static final field ATTR_IMAGE_IS_FIRST_RESOURCE Lio/opentelemetry/api/common/AttributeKey;
 	public static final field ATTR_IMAGE_LOAD_STATUS Lio/opentelemetry/api/common/AttributeKey;
 	public static final field ATTR_IMAGE_MODEL_TYPE Lio/opentelemetry/api/common/AttributeKey;
 	public static final field ATTR_IMAGE_SOURCE Lio/opentelemetry/api/common/AttributeKey;
+	public static final field ATTR_IMAGE_TARGET_VIEW_ID Lio/opentelemetry/api/common/AttributeKey;
+	public static final field ATTR_IMAGE_TARGET_VIEW_TYPE Lio/opentelemetry/api/common/AttributeKey;
 	public static final field ATTR_IMAGE_URL Lio/opentelemetry/api/common/AttributeKey;
 	public static final field IMAGE_LOAD_SPAN_NAME Ljava/lang/String;
 	public static final field INSTANCE Lio/opentelemetry/android/common/internal/imageload/ImageLoadAttributes;
@@ -151,6 +154,11 @@ public final class io/opentelemetry/android/common/internal/imageload/ImageLoadA
 	public static final field STATUS_CANCELLED Ljava/lang/String;
 	public static final field STATUS_ERROR Ljava/lang/String;
 	public static final field STATUS_SUCCESS Ljava/lang/String;
+	public static final field VALUE_UNKNOWN Ljava/lang/String;
+	public static final field VIEW_ID_UNRESOLVED Ljava/lang/String;
+	public static final field VIEW_ID_UNSET Ljava/lang/String;
+	public static final fun errorType (Ljava/lang/Throwable;)Ljava/lang/String;
+	public static final fun resolveViewId (Landroid/view/View;)Ljava/lang/String;
 	public final fun sanitizeUrl (Ljava/lang/String;)Ljava/lang/String;
 }
 

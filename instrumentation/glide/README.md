@@ -36,9 +36,30 @@ Data produced by this instrumentation uses instrumentation scope name
         * `"memory"` — served from Glide's active-resources or memory LRU cache
     * `image.load.status` — `"success"` or `"error"`
     * `image.is_first_resource` — `true` if this was the first resource loaded for the target
+    * `image.target.view_id` — resource entry name of the view the image is loading into
+      (e.g. `avatar_image`); `"no-id"` when the view has no `android:id`, and `"unresolved"` when
+      the id has no resource-table entry (a runtime `View.generateViewId()` value, whose raw
+      integer restarts each process launch and so is never emitted). Absent for non-view
+      targets (`submit()`, `preload()`, custom `Target`s)
+    * `image.target.view_type` — fully-qualified class of that view
+      (e.g. `androidx.appcompat.widget.AppCompatImageView`)
+    * `image.error.type` — failure class, on error spans only (see below)
+
+Combined with the `screen.name` attribute that the SDK appends to every span, the view attributes
+identify exactly **which** `ImageView` on a screen failed — `screen.name` alone cannot separate two
+images rendered on the same screen.
 
 On failure, the span status is set to `ERROR` and the `GlideException` is recorded on the
-span via `span.recordException`.
+span via `span.recordException`. Because `recordException` writes a span *event* — which most
+back-ends cannot group or chart — the failure class is **also** recorded as the
+`image.error.type` attribute. Glide wraps every failure in a generic `GlideException`, so the
+value is taken from the first root cause (`SocketTimeoutException`, `HttpException`,
+`FileNotFoundException`, …) and falls back to `GlideException` only when Glide recorded no
+root cause.
+
+Failures are never silently dropped: if no span was pre-created — a memory-cache path, an
+uncovered model type, or a null model such as `load(null)` — one is synthesised in
+`onLoadFailed`. Spans for a null model record `image.url` and `image.model_type` as `"unknown"`.
 
 ### OkHttp child spans
 
