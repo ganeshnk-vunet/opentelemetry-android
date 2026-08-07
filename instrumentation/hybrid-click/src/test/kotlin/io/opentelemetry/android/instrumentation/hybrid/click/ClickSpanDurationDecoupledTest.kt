@@ -18,6 +18,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.mockk.every
 import io.mockk.mockk
 import io.opentelemetry.api.common.AttributeKey
+import io.opentelemetry.android.common.RumConstants
 import io.opentelemetry.android.common.internal.instrumentation.ActiveInteractionContext
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_WIDGET_CHECKED
 import io.opentelemetry.sdk.OpenTelemetrySdk
@@ -78,7 +79,7 @@ class ClickSpanDurationDecoupledTest {
         shadowOf(Looper.getMainLooper()).idleFor(50, TimeUnit.MILLISECONDS)
 
         assertThat(exporter.finishedSpanItems).hasSize(1)
-        assertThat(exporter.finishedSpanItems.single().name).isEqualTo("ui.click")
+        assertThat(exporter.finishedSpanItems.single().name).isEqualTo(RumConstants.UI_INTERACTION_SPAN_NAME)
     }
 
     @Test
@@ -89,7 +90,7 @@ class ClickSpanDurationDecoupledTest {
         tap(window)
         shadowOf(Looper.getMainLooper()).idleFor(50, TimeUnit.MILLISECONDS)
 
-        val clickSpan = exporter.finishedSpanItems.single { it.name == "ui.click" }
+        val clickSpan = exporter.finishedSpanItems.single { it.name == RumConstants.UI_INTERACTION_SPAN_NAME }
         val parentContext = ActiveInteractionContext.parentContextOr(io.opentelemetry.context.Context.current())
         val child = tracer.spanBuilder("POST").setParent(parentContext).startSpan()
         child.end()
@@ -107,7 +108,7 @@ class ClickSpanDurationDecoupledTest {
         tap(window)
         shadowOf(Looper.getMainLooper()).idleFor(ACTIVE_CONTEXT_WINDOW_MILLIS + 50, TimeUnit.MILLISECONDS)
 
-        val clickSpan = exporter.finishedSpanItems.single { it.name == "ui.click" }
+        val clickSpan = exporter.finishedSpanItems.single { it.name == RumConstants.UI_INTERACTION_SPAN_NAME }
         val parentContext = ActiveInteractionContext.parentContextOr(io.opentelemetry.context.Context.current())
         val child = tracer.spanBuilder("POST").setParent(parentContext).startSpan()
         child.end()
@@ -131,7 +132,7 @@ class ClickSpanDurationDecoupledTest {
         shadowOf(Looper.getMainLooper()).idle()
 
         val clickSpan = exporter.finishedSpanItems.single()
-        assertThat(clickSpan.name).isEqualTo("ui.click")
+        assertThat(clickSpan.name).isEqualTo(RumConstants.UI_INTERACTION_SPAN_NAME)
         assertThat(checkedState(clickSpan)).isFalse()
     }
 

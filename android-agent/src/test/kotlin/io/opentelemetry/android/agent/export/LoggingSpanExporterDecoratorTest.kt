@@ -47,7 +47,7 @@ class LoggingSpanExporterDecoratorTest {
 
     @Test
     fun export_delegatesAndLogsSuccessWithEndpoint() {
-        val spans = listOf(testSpan("ui.click"))
+        val spans = listOf(testSpan("ui.interaction"))
         val result = CompletableResultCode.ofSuccess()
         every { delegate.export(spans) } returns result
 
@@ -60,7 +60,7 @@ class LoggingSpanExporterDecoratorTest {
             Log.d(RumConstants.OTEL_RUM_LOG_TAG, "export spans: success count=1 endpoint=$endpoint")
         }
         verify {
-            Log.d(RumConstants.OTEL_RUM_LOG_TAG, "export spans: span item=ui.click")
+            Log.d(RumConstants.OTEL_RUM_LOG_TAG, "export spans: span item=ui.interaction")
         }
     }
 

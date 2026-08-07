@@ -32,7 +32,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 /**
  * Verifies that [ClickEventGenerator] tracks multiple windows simultaneously (an Activity window
  * plus dialog windows stacked on top) with independent, per-window gesture state — the behavior
- * that makes taps inside dialogs produce `ui.click` spans.
+ * that makes taps inside dialogs produce `ui.interaction` spans.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [29])
@@ -63,7 +63,7 @@ class ClickEventGeneratorMultiWindowTest {
     }
 
     @Test
-    fun `tap on a tracked window emits a ui_click span resolved against that window`() {
+    fun `tap on a tracked window emits a ui_interaction span resolved against that window`() {
         val window = windowWith(label = "A")
         generator.startTracking(window)
 
@@ -71,7 +71,9 @@ class ClickEventGeneratorMultiWindowTest {
 
         val spans = finishedSpans()
         assertThat(spans).hasSize(1)
-        assertThat(spans.single().name).isEqualTo("ui.click")
+        // Asserted as a literal on purpose: this pins the exported wire value, so a change to
+        // RumConstants.UI_INTERACTION_SPAN_NAME fails here instead of passing silently.
+        assertThat(spans.single().name).isEqualTo("ui.interaction")
         assertThat(widgetName(spans.single())).isEqualTo("A")
     }
 

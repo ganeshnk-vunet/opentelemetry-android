@@ -22,7 +22,7 @@ class ExportDiagnosticsFormatterTest {
         val span =
             TestSpanData
                 .builder()
-                .setName("ui.click")
+                .setName("ui.interaction")
                 .setKind(SpanKind.INTERNAL)
                 .setStatus(StatusData.unset())
                 .setHasEnded(true)
@@ -32,7 +32,7 @@ class ExportDiagnosticsFormatterTest {
 
         val formatted = ExportDiagnosticsFormatter.formatSpan(span)
 
-        assertEquals("span item=ui.click", formatted)
+        assertEquals("span item=ui.interaction", formatted)
         assertFalse(formatted.contains("attrs"))
     }
 

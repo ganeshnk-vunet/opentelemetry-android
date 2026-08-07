@@ -40,7 +40,7 @@ class NavigationActiveContextTest {
 
     @Test
     fun emit_activates_navigation_as_parent_for_subsequent_spans() {
-        val clickSpan = tracer.spanBuilder("ui.click").setNoParent().startSpan()
+        val clickSpan = tracer.spanBuilder("ui.interaction").setNoParent().startSpan()
         ActiveInteractionContext.begin(clickSpan)
         emitter.emit(candidate(destinationName = "account_selection"))
 
@@ -58,7 +58,7 @@ class NavigationActiveContextTest {
 
     @Test
     fun second_emit_replaces_active_navigation_parent_within_click() {
-        val clickSpan = tracer.spanBuilder("ui.click").setNoParent().startSpan()
+        val clickSpan = tracer.spanBuilder("ui.interaction").setNoParent().startSpan()
         ActiveInteractionContext.begin(clickSpan)
         emitter.emit(candidate(destinationName = "login"))
         emitter.emit(candidate(destinationName = "account_selection"))
@@ -104,7 +104,7 @@ class NavigationActiveContextTest {
 
     @Test
     fun post_after_navigation_parents_under_nav_within_click_trace() {
-        val clickSpan = tracer.spanBuilder("ui.click").setNoParent().startSpan()
+        val clickSpan = tracer.spanBuilder("ui.interaction").setNoParent().startSpan()
         ActiveInteractionContext.begin(clickSpan)
         emitter.emit(candidate(destinationName = "account_selection"))
 
@@ -123,7 +123,7 @@ class NavigationActiveContextTest {
 
     @Test
     fun click_two_navigations_are_siblings_under_click() {
-        val clickSpan = tracer.spanBuilder("ui.click").setNoParent().startSpan()
+        val clickSpan = tracer.spanBuilder("ui.interaction").setNoParent().startSpan()
         ActiveInteractionContext.begin(clickSpan)
 
         emitter.emit(candidate(destinationName = "login"))
@@ -151,16 +151,16 @@ class NavigationActiveContextTest {
 
     @Test
     fun new_click_clears_navigation_and_starts_new_trace() {
-        val firstClick = tracer.spanBuilder("ui.click").setNoParent().startSpan()
+        val firstClick = tracer.spanBuilder("ui.interaction").setNoParent().startSpan()
         ActiveInteractionContext.begin(firstClick)
         emitter.emit(candidate(destinationName = "account_selection"))
         firstClick.end()
         ActiveInteractionContext.clear()
 
-        val secondClick = tracer.spanBuilder("ui.click").setNoParent().startSpan()
+        val secondClick = tracer.spanBuilder("ui.interaction").setNoParent().startSpan()
         secondClick.end()
 
-        val clicks = exporter.finishedSpanItems.filter { it.name == "ui.click" }
+        val clicks = exporter.finishedSpanItems.filter { it.name == "ui.interaction" }
         assertThat(clicks).hasSize(2)
         assertThat(clicks[0].traceId).isNotEqualTo(clicks[1].traceId)
     }

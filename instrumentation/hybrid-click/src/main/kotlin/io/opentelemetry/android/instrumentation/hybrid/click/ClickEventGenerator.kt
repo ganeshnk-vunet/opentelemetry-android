@@ -11,6 +11,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.Window
+import io.opentelemetry.android.common.RumConstants
 import io.opentelemetry.android.common.RumDiagnostics
 import io.opentelemetry.android.common.internal.instrumentation.ActiveInteractionContext
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_WIDGET_CHECKED
@@ -20,7 +21,6 @@ import io.opentelemetry.android.instrumentation.hybrid.click.shared.SOURCE_COMPO
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_UNKNOWN
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.TapGestureClassifier
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.TapTarget
-import io.opentelemetry.android.instrumentation.hybrid.click.shared.UI_CLICK_SPAN_NAME
 import io.opentelemetry.android.instrumentation.hybrid.click.view.ViewTapTargetDetector
 import io.opentelemetry.api.trace.Tracer
 import io.opentelemetry.semconv.incubating.AppIncubatingAttributes
@@ -28,7 +28,7 @@ import java.lang.reflect.Method
 import java.util.WeakHashMap
 
 /**
- * Generates `ui.click` spans for qualified tap gestures in hybrid View/Compose screens.
+ * Generates `ui.interaction` spans for qualified tap gestures in hybrid View/Compose screens.
  *
  * ## Why this implementation looks unusual
  * Hybrid click needs Compose node metadata, but direct typed wiring to Compose internals in this
@@ -164,7 +164,7 @@ internal class ClickEventGenerator(
 
     /**
      * Consumes motion events for [window], qualifies tap gestures, resolves a tap target, and emits
-     * `ui.click`. The target is always resolved against the decorView of the window that received
+     * `ui.interaction`. The target is always resolved against the decorView of the window that received
      * the touch, keeping multi-window tracking correct.
      */
     fun generateClick(
@@ -189,7 +189,7 @@ internal class ClickEventGenerator(
         }
 
         val span =
-            tracer.spanBuilder(UI_CLICK_SPAN_NAME)
+            tracer.spanBuilder(RumConstants.UI_INTERACTION_SPAN_NAME)
                 .setNoParent()
                 .setAttribute(AppIncubatingAttributes.APP_WIDGET_ID, target.widgetId)
                 .setAttribute(AppIncubatingAttributes.APP_WIDGET_NAME, target.label)

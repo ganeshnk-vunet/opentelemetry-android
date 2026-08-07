@@ -81,7 +81,7 @@ class ActiveInteractionContextTest {
 
     @Test
     fun begin_sets_active_span_and_root_context() {
-        val click = tracer.spanBuilder("ui.click").setNoParent().startSpan()
+        val click = tracer.spanBuilder("ui.interaction").setNoParent().startSpan()
         val token = ActiveInteractionContext.begin(click)
         click.end()
 
@@ -98,7 +98,7 @@ class ActiveInteractionContextTest {
 
     @Test
     fun end_current_token_clears_interaction() {
-        val click = tracer.spanBuilder("ui.click").setNoParent().startSpan()
+        val click = tracer.spanBuilder("ui.interaction").setNoParent().startSpan()
         val token = ActiveInteractionContext.begin(click)
         click.end()
 
@@ -114,7 +114,7 @@ class ActiveInteractionContextTest {
 
     @Test
     fun end_stale_token_is_no_op() {
-        val click = tracer.spanBuilder("ui.click").setNoParent().startSpan()
+        val click = tracer.spanBuilder("ui.interaction").setNoParent().startSpan()
         val token = ActiveInteractionContext.begin(click)
         click.end()
 
@@ -134,12 +134,12 @@ class ActiveInteractionContextTest {
 
     @Test
     fun begin_twice_replaces_root_context() {
-        val firstClick = tracer.spanBuilder("ui.click").setNoParent().startSpan()
+        val firstClick = tracer.spanBuilder("ui.interaction").setNoParent().startSpan()
         val firstToken = ActiveInteractionContext.begin(firstClick)
         val firstRoot = ActiveInteractionContext.rootContext()
         firstClick.end()
 
-        val secondClick = tracer.spanBuilder("ui.click").setNoParent().startSpan()
+        val secondClick = tracer.spanBuilder("ui.interaction").setNoParent().startSpan()
         val secondToken = ActiveInteractionContext.begin(secondClick)
 
         assertThat(secondToken).isNotEqualTo(firstToken)
@@ -151,7 +151,7 @@ class ActiveInteractionContextTest {
 
     @Test
     fun interaction_end_prevents_cross_interaction_leakage() {
-        val click = tracer.spanBuilder("ui.click").setNoParent().startSpan()
+        val click = tracer.spanBuilder("ui.interaction").setNoParent().startSpan()
         val token = ActiveInteractionContext.begin(click)
         click.end()
 
@@ -172,7 +172,7 @@ class ActiveInteractionContextTest {
 
     @Test
     fun parentContextOr_returns_current_when_exporter_context() {
-        val active = tracer.spanBuilder("ui.click").startSpan()
+        val active = tracer.spanBuilder("ui.interaction").startSpan()
         ActiveInteractionContext.activate(active)
 
         val current = Context.root()
@@ -184,7 +184,7 @@ class ActiveInteractionContextTest {
 
     @Test
     fun parentContextOr_upgrades_same_trace() {
-        val click = tracer.spanBuilder("ui.click").startSpan()
+        val click = tracer.spanBuilder("ui.interaction").startSpan()
         val nav = tracer.spanBuilder("ui.navigation").setParent(Context.current().with(click)).startSpan()
         ActiveInteractionContext.activate(nav)
 
@@ -197,7 +197,7 @@ class ActiveInteractionContextTest {
 
     @Test
     fun parentContextOr_does_not_override_different_trace() {
-        val click = tracer.spanBuilder("ui.click").startSpan()
+        val click = tracer.spanBuilder("ui.interaction").startSpan()
         val nav = tracer.spanBuilder("ui.navigation").startSpan() // different trace
         ActiveInteractionContext.activate(nav)
 

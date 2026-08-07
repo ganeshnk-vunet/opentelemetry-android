@@ -49,7 +49,7 @@ weaving. The **agent** must still be applied on the application module.
 ## Known limitations
 
 - Requires compile-time Byte Buddy weaving (no runtime-only fallback).
-- Does not extend the `ui.click` active context window; work started after that window still
+- Does not extend the `ui.interaction` active context window; work started after that window still
   needs an in-flight parent context on the dispatching thread.
 - Custom `ThreadPoolExecutor` implementations with exotic work queues may behave unexpectedly.
 - Native/NDK thread boundaries are out of scope.

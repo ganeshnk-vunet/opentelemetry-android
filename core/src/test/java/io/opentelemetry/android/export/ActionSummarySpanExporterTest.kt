@@ -27,7 +27,7 @@ internal class ActionSummarySpanExporterTest {
     fun addsSummaryToSupportedSpan() {
         val span =
             TestSpanHelper.span(
-                "ui.click",
+                RumConstants.UI_INTERACTION_SPAN_NAME,
                 Attributes.of(
                     AttributeKey.stringKey("app.widget.type"), "button",
                     AttributeKey.stringKey("app.widget.name"), "OK",
@@ -58,7 +58,7 @@ internal class ActionSummarySpanExporterTest {
     fun mixedSpanBatch() {
         val clickSpan =
             TestSpanHelper.span(
-                "ui.click",
+                RumConstants.UI_INTERACTION_SPAN_NAME,
                 Attributes.of(
                     AttributeKey.stringKey("app.widget.type"), "button",
                     AttributeKey.stringKey("app.widget.name"), "Save",

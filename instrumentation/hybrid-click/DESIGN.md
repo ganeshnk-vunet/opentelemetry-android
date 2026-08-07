@@ -6,7 +6,7 @@
 
 `hybrid-click` captures tap/click interactions from Android apps that use **View-based UI**,
 **Jetpack Compose UI**, or **both** within the same screen. Each qualified tap produces a single
-OpenTelemetry `ui.click` span with metadata identifying the tapped widget and which UI framework
+OpenTelemetry `ui.interaction` span with metadata identifying the tapped widget and which UI framework
 rendered it.
 
 This is distinct from the `view-click` and `compose-click` modules, which each handle only
@@ -49,7 +49,7 @@ entry point.
 │  1. TapGestureClassifier gates non-tap gestures                  │
 │  2. Compose detector first (if Compose on classpath)             │
 │  3. View detector as fallback                                    │
-│  4. Emit ui.click span with attributes                           │
+│  4. Emit ui.interaction span with attributes                           │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -68,10 +68,10 @@ flowchart TD
     composeCheck -->|no| viewDet
     composeCheck -->|yes| composeDet["ComposeTapTargetDetector<br/>(typed LayoutNode traversal)"]
 
-    composeDet -->|TapTarget found| emit["Emit ui.click span<br/>source = compose"]
+    composeDet -->|TapTarget found| emit["Emit ui.interaction span<br/>source = compose"]
     composeDet -->|null| viewDet["ViewTapTargetDetector<br/>(View hierarchy BFS)"]
 
-    viewDet -->|TapTarget found| emitView["Emit ui.click span<br/>source = view"]
+    viewDet -->|TapTarget found| emitView["Emit ui.interaction span<br/>source = view"]
     viewDet -->|null| noop["No span emitted"]
 ```
 
@@ -189,7 +189,7 @@ This prevents double-detection — the Compose detector has already handled anyt
 
 ## Span Output
 
-Every qualified tap produces one `ui.click` span with these attributes:
+Every qualified tap produces one `ui.interaction` span with these attributes:
 
 | Attribute                     | Source                                       | Example              |
 |-------------------------------|----------------------------------------------|----------------------|
@@ -239,7 +239,7 @@ recomposition (asynchronously), so a reliable post-tap read isn't available thro
 
 ## Text fields
 
-Tapping a text field is captured as a `ui.click`, identified by its **label** — never its contents.
+Tapping a text field is captured as a `ui.interaction`, identified by its **label** — never its contents.
 
 - **View** (`EditText`): a stock `EditText` is focusable but **not** clickable, so the detector
   treats `EditText` itself as a valid tap target (alongside `isClickable` views). Its label resolves
@@ -359,7 +359,7 @@ in the body:
    from accessibility metadata, text content, and class names.
 
 5. **Single span per tap**: Regardless of which detector finds the target, exactly one
-   `ui.click` span is emitted with a `view.source` attribute to distinguish the framework.
+   `ui.interaction` span is emitted with a `view.source` attribute to distinguish the framework.
 
 ---
 
