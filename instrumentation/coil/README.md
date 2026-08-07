@@ -41,7 +41,7 @@ Data produced by this instrumentation uses instrumentation scope name
       without a `ViewTarget` — notably Compose `AsyncImage` and preloads
     * `image.target.view_type` — fully-qualified class of that view
       (e.g. `androidx.appcompat.widget.AppCompatImageView`)
-    * `image.error.type` — failure class, on error spans only (see below)
+    * `error.type` — fully-qualified failure class, on error spans only (see below)
 
 Combined with the `screen.name` attribute that the SDK appends to every span, the view attributes
 identify exactly **which** `ImageView` on a screen failed — `screen.name` alone cannot separate two
@@ -49,9 +49,13 @@ images rendered on the same screen.
 
 On failure, the span status is set to `ERROR` and the throwable is recorded on the span
 via `span.recordException`. Because `recordException` writes a span *event* — which most back-ends
-cannot group or chart — the throwable's class is **also** recorded as the `image.error.type`
-attribute, so failure breakdowns (timeouts vs. HTTP errors vs. decode errors) can be charted
-directly.
+cannot group or chart — the throwable's fully-qualified class is **also** recorded as the standard
+semconv `error.type` attribute, so failure breakdowns (timeouts vs. HTTP errors vs. decode errors)
+can be charted directly.
+
+`error.type` is deliberately the same key the OkHttp and HttpURLConnection instrumentations emit,
+so a single "errors by type" query covers image loads and network calls together rather than
+needing an image-specific one.
 
 > [!NOTE]
 > Loads abandoned before they finish — fast scrolling, `DisposableEffect` cleanup, navigating away —

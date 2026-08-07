@@ -124,7 +124,7 @@ internal class CoilOtelEventListener(
             val span = CoilSpanStore.spans.remove(key)
             span?.let {
                 it.setAttribute(ATTR_IMAGE_LOAD_STATUS, STATUS_ERROR)
-                it.setAttribute(ATTR_IMAGE_ERROR_TYPE, ImageLoadAttributes.errorType(result.throwable))
+                it.setAttribute(ATTR_ERROR_TYPE, ImageLoadAttributes.errorType(result.throwable))
                 it.recordException(result.throwable)
                 it.setStatus(StatusCode.ERROR)
                 it.end()

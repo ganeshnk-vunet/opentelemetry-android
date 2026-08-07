@@ -481,24 +481,41 @@ class CoilOtelEventListenerTest {
     // ---------------------------------------------------------------------------
 
     @Test
-    fun `onError records the throwable class as the error type`() {
+    fun `onError records the throwable class under the standard error type key`() {
         val request = buildRequest("https://example.com/img.png")
         listener.onStart(request)
 
         listener.onError(request, buildErrorResult(request, SocketTimeoutException("timeout")))
 
-        assertThat(otelTesting.spans[0].attributes.get(ATTR_IMAGE_ERROR_TYPE))
-            .isEqualTo(SocketTimeoutException::class.java.simpleName)
+        // Fully-qualified, matching semconv and what the HTTP instrumentations emit, so image
+        // failures join the same error.type breakdowns.
+        assertThat(otelTesting.spans[0].attributes.get(ATTR_ERROR_TYPE))
+            .isEqualTo(SocketTimeoutException::class.java.name)
     }
 
     @Test
-    fun `successful and cancelled loads carry no error type`() {
+    fun `successful loads carry no error type`() {
         val request = buildRequest("https://example.com/img.png")
         listener.onStart(request)
 
         listener.onSuccess(request, buildSuccessResult(request, DataSource.NETWORK))
 
-        assertThat(otelTesting.spans[0].attributes.get(ATTR_IMAGE_ERROR_TYPE)).isNull()
+        assertThat(otelTesting.spans[0].attributes.get(ATTR_ERROR_TYPE)).isNull()
+    }
+
+    @Test
+    fun `cancelled loads carry no error type and are not marked as errors`() {
+        val request = buildRequest("https://example.com/img.png")
+        listener.onStart(request)
+
+        listener.onCancel(request)
+
+        // A cancellation (scroll-away, DisposableEffect cleanup) must not pollute failure
+        // dashboards — neither via error.type nor via the span status.
+        val span = otelTesting.spans[0]
+        assertThat(span.attributes.get(ATTR_ERROR_TYPE)).isNull()
+        assertThat(span.attributes.get(ATTR_IMAGE_LOAD_STATUS)).isEqualTo(STATUS_CANCELLED)
+        assertThat(span.status.statusCode).isEqualTo(StatusCode.UNSET)
     }
 
     // ---------------------------------------------------------------------------

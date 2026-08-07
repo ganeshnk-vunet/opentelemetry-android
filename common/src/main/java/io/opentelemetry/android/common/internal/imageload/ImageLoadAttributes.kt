@@ -7,6 +7,7 @@ package io.opentelemetry.android.common.internal.imageload
 
 import android.view.View
 import io.opentelemetry.api.common.AttributeKey
+import io.opentelemetry.semconv.ErrorAttributes
 
 /**
  * Shared span name, attribute keys, and canonical label values for image-load telemetry.
@@ -52,12 +53,18 @@ object ImageLoadAttributes {
         AttributeKey.stringKey("image.target.view_type")
 
     /**
-     * Class name of the failure cause, as a queryable attribute. The full throwable is also
-     * recorded as a span *event* via `recordException`, but events cannot be grouped or charted
-     * in most back-ends, so failure breakdowns need this attribute.
+     * Standard semconv `error.type`, carrying the class name of the failure cause.
+     *
+     * The full throwable is also recorded as a span *event* via `recordException`, but events
+     * cannot be grouped or charted in most back-ends, so failure breakdowns need an attribute.
+     *
+     * This deliberately reuses the semconv key rather than an `image.`-prefixed one: the OkHttp and
+     * HttpURLConnection instrumentations already emit `error.type` (via the upstream HTTP semconv
+     * extractors), so failed image loads join the same cross-instrumentation error breakdowns
+     * instead of needing their own query.
      */
     @JvmField
-    val ATTR_IMAGE_ERROR_TYPE: AttributeKey<String> = AttributeKey.stringKey("image.error.type")
+    val ATTR_ERROR_TYPE: AttributeKey<String> = ErrorAttributes.ERROR_TYPE
 
     const val STATUS_SUCCESS: String = "success"
     const val STATUS_ERROR: String = "error"
@@ -127,11 +134,14 @@ object ImageLoadAttributes {
     }
 
     /**
-     * Maps [throwable] to the value recorded in [ATTR_IMAGE_ERROR_TYPE]. The simple name keeps
-     * attribute cardinality low; anonymous classes have a blank simple name and fall back to the
-     * fully-qualified one.
+     * Maps [throwable] to the value recorded in [ATTR_ERROR_TYPE].
+     *
+     * The fully-qualified class name is used because semconv specifies it for exception-derived
+     * `error.type` values, and because it is what the HTTP instrumentations already record —
+     * a simple name would put image failures in a parallel, non-joining set of buckets.
+     * Cardinality stays bounded: the value space is the set of exception classes the image
+     * pipeline can throw, never user data.
      */
     @JvmStatic
-    fun errorType(throwable: Throwable): String =
-        throwable.javaClass.simpleName.ifBlank { throwable.javaClass.name }
+    fun errorType(throwable: Throwable): String = throwable.javaClass.name
 }

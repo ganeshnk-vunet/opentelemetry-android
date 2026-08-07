@@ -103,7 +103,7 @@ class VunetGlideRequestListener : RequestListener<Any> {
             span.setAttribute(ATTR_IMAGE_LOAD_STATUS, STATUS_ERROR)
             span.setTargetAttributes(target)
             if (e != null) {
-                span.setAttribute(ATTR_IMAGE_ERROR_TYPE, e.rootErrorType())
+                span.setAttribute(ATTR_ERROR_TYPE, e.rootErrorType())
                 span.recordException(e)
             }
             span.setStatus(StatusCode.ERROR)
@@ -162,6 +162,14 @@ private fun Span.setTargetAttributes(target: Target<*>?) {
  * resource". Reporting that class name would make every failure look identical, so the first root
  * cause — the real `HttpException`, `SocketTimeoutException`, `FileNotFoundException`, … — is used
  * when Glide recorded one.
+ *
+ * Glide tries each registered data-fetch/decode path and records a root cause per failed attempt,
+ * so a single failure can carry several. Taking the first is deterministic (Glide appends in
+ * attempt order, so it is the earliest failing path) but is not guaranteed to be the most
+ * actionable one — a load that fails the network fetch *and* then a fallback decode reports the
+ * network error. Ranking causes by "interestingness" was considered and rejected: any ordering
+ * would encode a guess about which layer the reader cares about, and the full set is already on
+ * the span via `recordException`, whose stack trace preserves every cause.
  */
 private fun GlideException.rootErrorType(): String =
     ImageLoadAttributes.errorType(rootCauses?.firstOrNull() ?: this)

@@ -7,11 +7,14 @@
 package io.opentelemetry.android.instrumentation.glide
 
 import android.content.res.Resources
+import android.graphics.drawable.Drawable
 import android.view.View
 import android.widget.ImageView
 import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.load.engine.GlideException
+import com.bumptech.glide.request.target.CustomViewTarget
 import com.bumptech.glide.request.target.Target
+import com.bumptech.glide.request.transition.Transition
 import io.mockk.every
 import io.mockk.mockk
 import io.opentelemetry.android.common.internal.imageload.ImageLoadAttributes
@@ -327,6 +330,31 @@ class VunetGlideRequestListenerTest {
     }
 
     @Test
+    fun `a CustomViewTarget is resolved as well as the legacy ViewTarget`() {
+        val model = "https://cdn.bank.com/logo.png"
+        primeStore(model)
+
+        listener.onResourceReady(Any(), model, customViewTarget("avatar_image"), DataSource.REMOTE, true)
+
+        // Production handles both target hierarchies; without this, a wrong cast on the newer
+        // CustomViewTarget path would go unnoticed.
+        val attributes = otelTesting.spans[0].attributes
+        assertThat(attributes[ATTR_IMAGE_TARGET_VIEW_ID]).isEqualTo("avatar_image")
+        assertThat(attributes[ATTR_IMAGE_TARGET_VIEW_TYPE]).isEqualTo(ImageView::class.java.name)
+    }
+
+    @Test
+    fun `onLoadFailed resolves a CustomViewTarget`() {
+        val model = "https://cdn.bank.com/logo.png"
+        primeStore(model)
+
+        listener.onLoadFailed(GlideException("boom"), model, customViewTarget("avatar_image"), true)
+
+        assertThat(otelTesting.spans[0].attributes[ATTR_IMAGE_TARGET_VIEW_ID])
+            .isEqualTo("avatar_image")
+    }
+
+    @Test
     fun `a non-view target contributes no view attributes`() {
         val model = "https://cdn.bank.com/logo.png"
         primeStore(model)
@@ -350,8 +378,9 @@ class VunetGlideRequestListenerTest {
         listener.onLoadFailed(glideException, model, mockk(relaxed = true), false)
 
         // The wrapping GlideException is generic — the root cause is what makes failures groupable.
-        assertThat(otelTesting.spans[0].attributes[ATTR_IMAGE_ERROR_TYPE])
-            .isEqualTo(SocketTimeoutException::class.java.simpleName)
+        // Fully-qualified, matching semconv and what the HTTP instrumentations emit.
+        assertThat(otelTesting.spans[0].attributes[ATTR_ERROR_TYPE])
+            .isEqualTo(SocketTimeoutException::class.java.name)
     }
 
     @Test
@@ -361,8 +390,28 @@ class VunetGlideRequestListenerTest {
 
         listener.onLoadFailed(GlideException("Failed to load resource"), model, mockk(relaxed = true), false)
 
-        assertThat(otelTesting.spans[0].attributes[ATTR_IMAGE_ERROR_TYPE])
-            .isEqualTo(GlideException::class.java.simpleName)
+        assertThat(otelTesting.spans[0].attributes[ATTR_ERROR_TYPE])
+            .isEqualTo(GlideException::class.java.name)
+    }
+
+    @Test
+    fun `onLoadFailed takes the first root cause when Glide records several`() {
+        val model = "https://cdn.bank.com/logo.png"
+        primeStore(model)
+        // Glide appends a root cause per failed fetch/decode attempt, in attempt order.
+        val glideException =
+            GlideException(
+                "Failed to load resource",
+                listOf(SocketTimeoutException("fetch"), IllegalArgumentException("decode")),
+            )
+
+        listener.onLoadFailed(glideException, model, mockk(relaxed = true), false)
+
+        // Deterministic (earliest failing path), though not necessarily the most actionable one —
+        // the full set stays available via the recorded exception's stack trace.
+        assertThat(otelTesting.spans[0].attributes[ATTR_ERROR_TYPE])
+            .isEqualTo(SocketTimeoutException::class.java.name)
+        assertThat(otelTesting.spans[0].events).anyMatch { it.name == "exception" }
     }
 
     // ── null model ───────────────────────────────────────────────────────────
@@ -427,6 +476,33 @@ class VunetGlideRequestListenerTest {
                     Resources.NotFoundException("no entry for $GENERATED_VIEW_ID")
             },
         )
+
+    /**
+     * Builds a [CustomViewTarget] — the modern replacement for `ViewTarget` — wrapping an
+     * [ImageView] whose id resolves to [entryName]. A real subclass is used rather than a mock
+     * because `CustomViewTarget.getView()` is final.
+     */
+    private fun customViewTarget(entryName: String): Target<Any> {
+        val resources = mockk<Resources>(relaxed = true)
+        val view = mockk<ImageView>(relaxed = true)
+        every { view.id } returns VIEW_ID
+        every { view.resources } returns resources
+        every { resources.getResourceEntryName(VIEW_ID) } returns entryName
+
+        val target =
+            object : CustomViewTarget<ImageView, Any>(view) {
+                override fun onLoadFailed(errorDrawable: Drawable?) = Unit
+
+                override fun onResourceCleared(placeholder: Drawable?) = Unit
+
+                override fun onResourceReady(
+                    resource: Any,
+                    transition: Transition<in Any>?,
+                ) = Unit
+            }
+        @Suppress("UNCHECKED_CAST")
+        return target as Target<Any>
+    }
 
     @Suppress("DEPRECATION") // ViewTarget is deprecated in Glide but still backs into(ImageView).
     private fun viewTargetFor(view: ImageView): Target<Any> {

@@ -137,7 +137,7 @@ public final class io/opentelemetry/android/common/internal/http/HttpErrorCatego
 }
 
 public final class io/opentelemetry/android/common/internal/imageload/ImageLoadAttributes {
-	public static final field ATTR_IMAGE_ERROR_TYPE Lio/opentelemetry/api/common/AttributeKey;
+	public static final field ATTR_ERROR_TYPE Lio/opentelemetry/api/common/AttributeKey;
 	public static final field ATTR_IMAGE_IS_FIRST_RESOURCE Lio/opentelemetry/api/common/AttributeKey;
 	public static final field ATTR_IMAGE_LOAD_STATUS Lio/opentelemetry/api/common/AttributeKey;
 	public static final field ATTR_IMAGE_MODEL_TYPE Lio/opentelemetry/api/common/AttributeKey;

@@ -43,7 +43,7 @@ Data produced by this instrumentation uses instrumentation scope name
       targets (`submit()`, `preload()`, custom `Target`s)
     * `image.target.view_type` — fully-qualified class of that view
       (e.g. `androidx.appcompat.widget.AppCompatImageView`)
-    * `image.error.type` — failure class, on error spans only (see below)
+    * `error.type` — fully-qualified failure class, on error spans only (see below)
 
 Combined with the `screen.name` attribute that the SDK appends to every span, the view attributes
 identify exactly **which** `ImageView` on a screen failed — `screen.name` alone cannot separate two
@@ -51,11 +51,22 @@ images rendered on the same screen.
 
 On failure, the span status is set to `ERROR` and the `GlideException` is recorded on the
 span via `span.recordException`. Because `recordException` writes a span *event* — which most
-back-ends cannot group or chart — the failure class is **also** recorded as the
-`image.error.type` attribute. Glide wraps every failure in a generic `GlideException`, so the
-value is taken from the first root cause (`SocketTimeoutException`, `HttpException`,
+back-ends cannot group or chart — the fully-qualified failure class is **also** recorded as the
+standard semconv `error.type` attribute. Glide wraps every failure in a generic `GlideException`,
+so the value is taken from the first root cause (`SocketTimeoutException`, `HttpException`,
 `FileNotFoundException`, …) and falls back to `GlideException` only when Glide recorded no
 root cause.
+
+`error.type` is deliberately the same key the OkHttp and HttpURLConnection instrumentations emit,
+so a single "errors by type" query covers image loads and network calls together rather than
+needing an image-specific one.
+
+> [!NOTE]
+> Glide tries each registered fetch/decode path and records a root cause per failed attempt, so one
+> failure can carry several. `error.type` reports the **first** — deterministic, and the earliest
+> failing path, but not necessarily the most actionable one. A load that fails the network fetch and
+> then a fallback decode reports the network error. The complete set is preserved in the
+> `recordException` stack trace.
 
 Failures are never silently dropped: if no span was pre-created — a memory-cache path, an
 uncovered model type, or a null model such as `load(null)` — one is synthesised in

@@ -21,7 +21,7 @@ internal val ATTR_IMAGE_LOAD_STATUS = ImageLoadAttributes.ATTR_IMAGE_LOAD_STATUS
 internal val ATTR_IMAGE_MODEL_TYPE = ImageLoadAttributes.ATTR_IMAGE_MODEL_TYPE
 internal val ATTR_IMAGE_TARGET_VIEW_ID = ImageLoadAttributes.ATTR_IMAGE_TARGET_VIEW_ID
 internal val ATTR_IMAGE_TARGET_VIEW_TYPE = ImageLoadAttributes.ATTR_IMAGE_TARGET_VIEW_TYPE
-internal val ATTR_IMAGE_ERROR_TYPE = ImageLoadAttributes.ATTR_IMAGE_ERROR_TYPE
+internal val ATTR_ERROR_TYPE = ImageLoadAttributes.ATTR_ERROR_TYPE
 
 internal const val STATUS_SUCCESS = ImageLoadAttributes.STATUS_SUCCESS
 internal const val STATUS_ERROR = ImageLoadAttributes.STATUS_ERROR
