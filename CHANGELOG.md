@@ -8,6 +8,8 @@
 - HttpURLConnection total request timing (incubating): `http.client.timing.total_ms` and `http.call` span event when `captureNetworkTiming` is enabled (default); `http.client.timing.phases_supported=false` (use OkHttp for phase breakdown).
 - HTTP error taxonomy: OkHttp and HttpURLConnection failed spans include `http.error.category` (`timeout`, `dns`, `ssl`, `io`, `http_client`, `unknown`) alongside existing `error.type`.
 - Network monitoring: `network.connection.metered` boolean on spans and `network.change` events when the active network is known (replaces legacy `net.host.connection.metered`).
+- Image-load target attribution: Glide and Coil `image.load` spans include `image.target.view_id` (resource entry name; `no-id` for views without an `android:id`, `unresolved` for runtime `View.generateViewId()` ids that have no resource-table entry) and `image.target.view_type` when the request has a view-backed target, so a failing image can be traced to a specific widget rather than only to `screen.name`. Compose call sites (`AsyncImage`, `GlideImage`) have no backing `View` and omit both.
+- Image-load error taxonomy: failed `image.load` spans include the standard semconv `error.type` (fully-qualified class of the failure) as a queryable attribute alongside the existing `recordException` span event, which most back-ends cannot group on. Reusing the semconv key means image failures join the same error breakdowns as the OkHttp and HttpURLConnection instrumentations. Glide reports the first root cause rather than the generic wrapping `GlideException`.
 
 ### ⚠️⚠️ Breaking changes
 
@@ -24,6 +26,7 @@
 
 - OkHttp Byte Buddy advice classes (`OkHttpClientAdvice`, `OkHttpCallbackAdvice`) now ship in `okhttp3-library` so woven `OkHttpClient` bytecode resolves them at runtime (fixes `NoClassDefFoundError` on Android).
 - OkHttp client instrumentation logic moved to public `OkHttpSingletons.applyClientInstrumentation` so woven OkHttp bytecode does not invoke private advice helpers (fixes `IllegalAccessError` on Android).
+- Glide image loads that fail with a `null` model (e.g. `Glide.with(view).load(null)`) no longer drop the failure silently; a span is now synthesised with `image.url` and `image.model_type` set to `unknown`.
 
 ### ⚠️⚠️ Breaking changes
 
