@@ -5,7 +5,6 @@
 
 package io.opentelemetry.android.instrumentation.hybrid.click.shared
 
-internal const val UI_INTERACTION_SPAN_NAME = "ui.interaction"
 internal const val ATTR_WIDGET_SOURCE = "app.widget.source"
 
 /** Boolean state of a tapped toggle (switch / checkbox / radio), when the target is checkable. */

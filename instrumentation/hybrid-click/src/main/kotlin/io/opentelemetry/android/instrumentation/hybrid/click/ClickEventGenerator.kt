@@ -11,6 +11,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.Window
+import io.opentelemetry.android.common.RumConstants
 import io.opentelemetry.android.common.RumDiagnostics
 import io.opentelemetry.android.common.internal.instrumentation.ActiveInteractionContext
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_WIDGET_CHECKED
@@ -20,7 +21,6 @@ import io.opentelemetry.android.instrumentation.hybrid.click.shared.SOURCE_COMPO
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_UNKNOWN
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.TapGestureClassifier
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.TapTarget
-import io.opentelemetry.android.instrumentation.hybrid.click.shared.UI_INTERACTION_SPAN_NAME
 import io.opentelemetry.android.instrumentation.hybrid.click.view.ViewTapTargetDetector
 import io.opentelemetry.api.trace.Tracer
 import io.opentelemetry.semconv.incubating.AppIncubatingAttributes
@@ -189,7 +189,7 @@ internal class ClickEventGenerator(
         }
 
         val span =
-            tracer.spanBuilder(UI_INTERACTION_SPAN_NAME)
+            tracer.spanBuilder(RumConstants.UI_INTERACTION_SPAN_NAME)
                 .setNoParent()
                 .setAttribute(AppIncubatingAttributes.APP_WIDGET_ID, target.widgetId)
                 .setAttribute(AppIncubatingAttributes.APP_WIDGET_NAME, target.label)

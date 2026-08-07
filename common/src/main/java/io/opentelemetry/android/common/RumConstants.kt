@@ -42,6 +42,8 @@ object RumConstants {
 
     const val FRAGMENT_LIFECYCLE_SPAN_NAME: String = "fragment.lifecycle"
 
+    const val UI_INTERACTION_SPAN_NAME: String = "ui.interaction"
+
     @JvmField
     val FRAGMENT_LIFECYCLE_EVENT_KEY: AttributeKey<String> =
         AttributeKey.stringKey("fragment.lifecycle.event")

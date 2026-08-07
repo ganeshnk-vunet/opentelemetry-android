@@ -15,6 +15,7 @@ import android.widget.FrameLayout
 import androidx.test.core.app.ApplicationProvider
 import io.mockk.every
 import io.mockk.mockk
+import io.opentelemetry.android.common.RumConstants
 import io.opentelemetry.sdk.OpenTelemetrySdk
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
 import io.opentelemetry.sdk.trace.SdkTracerProvider
@@ -63,7 +64,7 @@ class ClickInteractionTraceTest {
         tap(window)
         tap(window)
 
-        val clickSpans = finishedSpans().filter { it.name == "ui.interaction" }
+        val clickSpans = finishedSpans().filter { it.name == RumConstants.UI_INTERACTION_SPAN_NAME }
         assertThat(clickSpans).hasSize(2)
         assertThat(clickSpans[0].traceId).isNotEqualTo(clickSpans[1].traceId)
     }
@@ -92,7 +93,7 @@ class ClickInteractionTraceTest {
         }
         appStart.end()
 
-        val clickSpan = finishedSpans().single { it.name == "ui.interaction" }
+        val clickSpan = finishedSpans().single { it.name == RumConstants.UI_INTERACTION_SPAN_NAME }
         val appStartSpan = finishedSpans().single { it.name == "app.start" }
         assertThat(clickSpan.traceId).isNotEqualTo(appStartSpan.traceId)
     }

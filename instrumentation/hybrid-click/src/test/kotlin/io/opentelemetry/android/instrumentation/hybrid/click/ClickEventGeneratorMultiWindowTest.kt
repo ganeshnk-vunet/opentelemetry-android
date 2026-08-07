@@ -63,7 +63,7 @@ class ClickEventGeneratorMultiWindowTest {
     }
 
     @Test
-    fun `tap on a tracked window emits a ui_click span resolved against that window`() {
+    fun `tap on a tracked window emits a ui_interaction span resolved against that window`() {
         val window = windowWith(label = "A")
         generator.startTracking(window)
 
@@ -71,6 +71,8 @@ class ClickEventGeneratorMultiWindowTest {
 
         val spans = finishedSpans()
         assertThat(spans).hasSize(1)
+        // Asserted as a literal on purpose: this pins the exported wire value, so a change to
+        // RumConstants.UI_INTERACTION_SPAN_NAME fails here instead of passing silently.
         assertThat(spans.single().name).isEqualTo("ui.interaction")
         assertThat(widgetName(spans.single())).isEqualTo("A")
     }
