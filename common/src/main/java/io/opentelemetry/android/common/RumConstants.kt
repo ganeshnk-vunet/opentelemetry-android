@@ -6,6 +6,7 @@
 package io.opentelemetry.android.common
 
 import io.opentelemetry.api.common.AttributeKey
+import java.util.concurrent.TimeUnit
 
 object RumConstants {
     const val OTEL_RUM_LOG_TAG: String = "VuNetRUM"
@@ -33,6 +34,14 @@ object RumConstants {
     val BATTERY_PERCENT_KEY: AttributeKey<Double> = AttributeKey.doubleKey("battery.percent")
 
     const val APP_START_SPAN_NAME: String = "app.start"
+
+    /**
+     * Maximum time from process start to UI init (and the longest an in-flight
+     * `app.start` span is trusted). Longer usually means a background start,
+     * whose measured duration is misleading.
+     */
+    @JvmField
+    val APP_START_MAX_WINDOW_NANOS: Long = TimeUnit.MINUTES.toNanos(1)
 
     const val ACTIVITY_LIFECYCLE_SPAN_NAME: String = "activity.lifecycle"
 

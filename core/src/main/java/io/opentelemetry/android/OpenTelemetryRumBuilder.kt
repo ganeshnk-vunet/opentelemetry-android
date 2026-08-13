@@ -560,6 +560,11 @@ class OpenTelemetryRumBuilder internal constructor(
                 .setResource(minimalTraceResource)
                 .setClock(clock)
                 .addSpanProcessor(SessionIdSpanAppender(sessionProvider))
+                // Publishes the in-flight app.start span for wrapper SDKs. Registered
+                // here rather than inside an instrumentation because app.start is
+                // created from several places (cold via AppStartupTimer, warm/hot via
+                // ActivityTracer) and a processor observes all of them.
+                .addSpanProcessor(AppStartSpanTracker())
 
         val batchSpanProcessor = BatchSpanProcessor.builder(spanExporter).build()
         tracerProviderBuilder.addSpanProcessor(batchSpanProcessor)

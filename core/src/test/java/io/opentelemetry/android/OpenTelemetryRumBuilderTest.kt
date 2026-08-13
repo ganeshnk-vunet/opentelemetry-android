@@ -17,6 +17,7 @@ import io.mockk.impl.annotations.MockK
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
+import io.opentelemetry.android.common.RumConstants
 import io.opentelemetry.android.common.RumConstants.SCREEN_NAME_KEY
 import io.opentelemetry.android.config.OtelRumConfig
 import io.opentelemetry.android.features.diskbuffering.DiskBufferingConfig
@@ -120,6 +121,7 @@ class OpenTelemetryRumBuilderTest {
         resetForTesting()
         InitializationEvents.resetForTest()
         set(null)
+        AppStartSpans.clear()
     }
 
     @Test
@@ -163,6 +165,24 @@ class OpenTelemetryRumBuilderTest {
                         ),
                     )
             }
+    }
+
+    @Test
+    fun publishesAppStartSpanThroughRegisteredTracker() {
+        createAndSetServiceManager()
+        val rum = makeBuilder().setResource(resource).build()
+
+        val span =
+            rum.openTelemetry
+                .getTracer("test")
+                .spanBuilder(RumConstants.APP_START_SPAN_NAME)
+                .startSpan()
+
+        assertThat(AppStartSpans.current?.spanContext).isEqualTo(span.spanContext)
+
+        span.end()
+
+        assertThat(AppStartSpans.current).isNull()
     }
 
     @Test

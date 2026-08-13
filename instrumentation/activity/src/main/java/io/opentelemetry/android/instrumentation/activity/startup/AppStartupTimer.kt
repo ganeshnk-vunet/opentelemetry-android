@@ -46,7 +46,7 @@ internal class AppStartupTimer(
     // accessed only from UI thread
     private var uiInitStarted = false
 
-    // whether MAX_TIME_TO_UI_INIT has been exceeded
+    // whether the app-start window has been exceeded
     // accessed only from UI thread
     private var uiInitTooLate = false
 
@@ -283,7 +283,7 @@ internal class AppStartupTimer(
         }
         uiInitStarted = true
         startupSpan?.let { recordContentProviderEndEvents(it) }
-        if (spanStartNanos + MAX_TIME_TO_UI_INIT < startupClock.now()) {
+        if (spanStartNanos + RumConstants.APP_START_MAX_WINDOW_NANOS < startupClock.now()) {
             RumDiagnostics.d { "activityStartup: max time to UI init exceeded" }
             uiInitTooLate = true
             clear()
@@ -317,11 +317,6 @@ internal class AppStartupTimer(
     }
 
     companion object {
-        // Maximum time from app start to creation of the UI. If this time is exceeded we will not
-        // create the app start span. Long app startup could indicate that the app was really started in
-        // background, in which case the measured startup time is misleading.
-        private val MAX_TIME_TO_UI_INIT = TimeUnit.MINUTES.toNanos(1)
-
         /** Milestone: Linux process was forked. Backdated via [Process.getStartElapsedRealtime]. */
         internal const val EVENT_PROCESS_CREATION = "app.process.creation"
 
