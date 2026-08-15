@@ -65,6 +65,9 @@ internal object HttpUrlConnectionSingletons {
                 ).addAttributesExtractor(httpClientAttributesExtractorBuilder.build())
                 .addAttributesExtractor(httpClientPeerServiceAttributesExtractor)
                 .addAttributesExtractor(HttpUrlErrorCategoryAttributesExtractor)
+                // Must follow the HTTP attributes extractor above, which skips the status code
+                // when it is not positive, leaving failed requests with no status at all.
+                .addAttributesExtractor(HttpUrlNoResponseStatusCodeAttributesExtractor)
                 .addOperationMetrics(HttpClientMetrics.get())
 
         for (extractor in instrumentation.getAdditionalExtractors()) {

@@ -76,4 +76,37 @@ internal class HttpErrorCategoryTest {
         assertThat(HttpErrorCategory.fromStatusCode(200)).isNull()
         assertThat(HttpErrorCategory.fromStatusCode(399)).isNull()
     }
+
+    @Test
+    fun reportsZeroStatusCode_trueForFailuresThatNeverReachedTheServer() {
+        assertThat(HttpErrorCategory.reportsZeroStatusCode(UnknownHostException())).isTrue()
+        assertThat(HttpErrorCategory.reportsZeroStatusCode(ConnectException("refused"))).isTrue()
+        assertThat(HttpErrorCategory.reportsZeroStatusCode(SSLHandshakeException("bad cert"))).isTrue()
+        assertThat(HttpErrorCategory.reportsZeroStatusCode(CertificateException("untrusted"))).isTrue()
+        assertThat(HttpErrorCategory.reportsZeroStatusCode(IOException("read failed"))).isTrue()
+    }
+
+    @Test
+    fun reportsZeroStatusCode_falseForTimeouts() {
+        // A timeout may still have reached and been processed by the server, so claiming a
+        // status would be misleading; semconv leaves the attribute absent.
+        assertThat(HttpErrorCategory.reportsZeroStatusCode(SocketTimeoutException())).isFalse()
+        assertThat(HttpErrorCategory.reportsZeroStatusCode(InterruptedIOException())).isFalse()
+    }
+
+    @Test
+    fun reportsZeroStatusCode_falseWithoutAnError() {
+        assertThat(HttpErrorCategory.reportsZeroStatusCode(null)).isFalse()
+    }
+
+    @Test
+    fun reportsZeroStatusCode_followsCauseChain() {
+        // Clients commonly wrap the real cause; a wrapped timeout must still be treated as one.
+        assertThat(
+            HttpErrorCategory.reportsZeroStatusCode(IOException("wrapped", SocketTimeoutException())),
+        ).isFalse()
+        assertThat(
+            HttpErrorCategory.reportsZeroStatusCode(IOException("wrapped", UnknownHostException())),
+        ).isTrue()
+    }
 }

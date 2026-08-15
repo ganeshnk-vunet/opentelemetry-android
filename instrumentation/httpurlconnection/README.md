@@ -58,6 +58,27 @@ include a normalized `http.error.category` attribute alongside the standard `err
 
 Use `http.response.status_code` to distinguish 4xx vs 5xx when `http.error.category` is `http_client`.
 
+#### Status code when no response was received
+
+When a request fails before any response arrives, the OpenTelemetry HTTP attributes extractor omits
+`http.response.status_code` entirely, which is indistinguishable downstream from a request that was
+never instrumented. This instrumentation fills that gap:
+
+| Failure | `http.error.category` | `http.response.status_code` |
+|---------|-----------------------|-----------------------------|
+| DNS resolution failure | `dns` | `0` |
+| Connection refused / transport I/O failure | `io` | `0` |
+| TLS or certificate failure | `ssl` | `0` |
+| Timeout or aborted request | `timeout` | *absent* |
+| Response received (any status) | — | actual status (`200`, `404`, `500`, …) |
+
+Timeouts are deliberately excluded: the request may well have reached the server and been processed,
+so reporting a status would be misleading. Failures that never reached the server report `0`, which
+lets a backend separate "never got there" from "no telemetry at all".
+
+> **Note:** reporting `0` is a deliberate deviation from the OpenTelemetry semantic conventions,
+> which leave `http.response.status_code` unset when no response was received.
+
 ### Network timing (incubating, best-effort)
 
 When `captureNetworkTiming` is enabled (default `true`), HttpURLConnection spans include total

@@ -136,6 +136,7 @@ public final class io/opentelemetry/android/common/internal/http/HttpErrorCatego
 	public static final field UNKNOWN Ljava/lang/String;
 	public final fun fromStatusCode (I)Ljava/lang/String;
 	public final fun fromThrowable (Ljava/lang/Throwable;)Ljava/lang/String;
+	public final fun reportsZeroStatusCode (Ljava/lang/Throwable;)Z
 }
 
 public final class io/opentelemetry/android/common/internal/imageload/ImageLoadAttributes {

@@ -121,6 +121,10 @@ object OkHttpSingletons {
                     ),
                 ).addAttributesExtractor(
                     OkHttpErrorCategoryAttributesExtractor,
+                ).addAttributesExtractor(
+                    // Must follow the built-in HTTP attributes extractor, which skips the status
+                    // code when it is not positive, leaving failed calls with no status at all.
+                    OkHttpNoResponseStatusCodeAttributesExtractor,
                 ).setEmitExperimentalHttpClientTelemetry(
                     instrumentation.emitExperimentalHttpClientTelemetry(),
                 )
