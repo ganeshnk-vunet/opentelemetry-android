@@ -98,12 +98,14 @@ internal object OkHttpCallCompletionCoordinator {
         val spanEnricher = spanEnricher ?: return
 
         spanEnricher.enrich(pending.span, call)
-        val error = pending.error
-        if (error != null) {
-            instrumenter.end(pending.context, pending.chain, null, error)
-        } else {
-            instrumenter.end(pending.context, pending.chain, pending.response, null)
-        }
+        // The response is reported even alongside an error. TimingTracingInterceptor sets it as
+        // soon as chain.proceed() returns, so a call that received a 200 and then failed while
+        // streaming the body still has one — discarding it here dropped the real status code and
+        // made this path disagree with the plain TracingInterceptor used when
+        // captureNetworkTimingPhases is off, which ends the span with the response before the body
+        // is read. It also left the failure indistinguishable from a connection that was never
+        // established. Both are passed so the span carries the status code *and* the error.
+        instrumenter.end(pending.context, pending.chain, pending.response, pending.error)
     }
 
     fun clear() {

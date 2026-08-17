@@ -13,12 +13,16 @@ import io.opentelemetry.semconv.HttpAttributes
 import java.io.IOException
 import java.io.InterruptedIOException
 import java.net.ConnectException
+import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import javax.net.ssl.SSLException
 import javax.net.ssl.SSLHandshakeException
 import okhttp3.Call
 import okhttp3.Interceptor
 import okhttp3.Response
+import okhttp3.internal.http2.ErrorCode
+import okhttp3.internal.http2.StreamResetException
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -63,8 +67,32 @@ internal class OkHttpNoResponseStatusCodeAttributesExtractorTest {
     }
 
     @Test
-    fun genericIoFailureReportsZero() {
-        assertThat(statusCodeFor(null, IOException("socket closed"))).isEqualTo(0L)
+    fun genericIoFailureLeavesStatusCodeAbsent() {
+        // A bare IOException does not prove the server was never reached — it covers connection
+        // resets and body-stream failures, which prove the opposite.
+        assertThat(statusCodeFor(null, IOException("socket closed"))).isNull()
+    }
+
+    @Test
+    fun midBodyFailureAfterAResponseLeavesStatusCodeAbsent() {
+        // The real shape of "200 then socket reset while streaming": on the default
+        // captureNetworkTimingPhases path OkHttpCallCompletionCoordinator discards the response
+        // when an error is present, so this arrives as (null, IOException). Reporting 0 here would
+        // claim the request never reached a server that had already sent 200 and a partial body.
+        assertThat(statusCodeFor(null, SocketException("Connection reset"))).isNull()
+    }
+
+    @Test
+    fun http2StreamResetLeavesStatusCodeAbsent() {
+        // An RST_STREAM is proof the server was reached: it sent the reset.
+        assertThat(statusCodeFor(null, StreamResetException(ErrorCode.CANCEL))).isNull()
+    }
+
+    @Test
+    fun midStreamSslFailureLeavesStatusCodeAbsent() {
+        // SSLException raised during a read is not a handshake failure, so it says nothing about
+        // whether the request was delivered.
+        assertThat(statusCodeFor(null, SSLException("read error"))).isNull()
     }
 
     @Test
@@ -90,11 +118,11 @@ internal class OkHttpNoResponseStatusCodeAttributesExtractorTest {
     }
 
     @Test
-    fun aGenuineIoFailureStillReportsZeroWhenTheCallWasNotCanceled() {
+    fun aGenuinePreRequestFailureStillReportsZeroWhenTheCallWasNotCanceled() {
         // Guards the cancel carve-out against over-reaching: only an actually-cancelled call is
-        // exempt, not every IOException whose message happens to look like one.
+        // exempt, not every failure on a call whose message happens to look like one.
         assertThat(
-            statusCodeFor(null, IOException("Canceled"), chain(canceled = false)),
+            statusCodeFor(null, ConnectException("Canceled"), chain(canceled = false)),
         ).isEqualTo(0L)
     }
 
@@ -125,8 +153,11 @@ internal class OkHttpNoResponseStatusCodeAttributesExtractorTest {
     }
 
     @Test
-    fun responseAccompaniedByAnErrorIsNotOverwritten() {
-        assertThat(statusCodeFor(responseWithCode(500), IOException("body read failed"))).isNull()
+    fun bodyReadFailureAfterAnErrorResponseIsNotReportedAsZero() {
+        // Deliberately (null, IOException) rather than (Response(500), IOException): the
+        // coordinator nulls the response whenever an error is present, so the latter never reaches
+        // onEnd and asserting on it would guard a path that cannot occur.
+        assertThat(statusCodeFor(null, IOException("body read failed"))).isNull()
     }
 
     @Test

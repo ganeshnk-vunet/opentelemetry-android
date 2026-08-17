@@ -9,9 +9,11 @@ import io.mockk.mockk
 import io.opentelemetry.api.common.Attributes
 import io.opentelemetry.context.Context
 import io.opentelemetry.semconv.HttpAttributes
+import java.io.FileNotFoundException
 import java.io.IOException
 import java.io.InterruptedIOException
 import java.net.ConnectException
+import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.net.URLConnection
 import java.net.UnknownHostException
@@ -57,8 +59,29 @@ internal class HttpUrlNoResponseStatusCodeAttributesExtractorTest {
     }
 
     @Test
-    fun genericIoFailureReportsZero() {
-        assertThat(statusCodeFor(UNKNOWN_RESPONSE_CODE, IOException("stream closed"))).isEqualTo(0L)
+    fun genericIoFailureLeavesStatusCodeAbsent() {
+        // A bare IOException does not prove the server was never reached.
+        assertThat(statusCodeFor(UNKNOWN_RESPONSE_CODE, IOException("stream closed"))).isNull()
+    }
+
+    @Test
+    fun notFoundViaGetInputStreamLeavesStatusCodeAbsent() {
+        // The regression this file exists to prevent. On Android
+        // HttpURLConnectionImpl.getInputStream() throws FileNotFoundException for any response
+        // >= 400, and reportWithThrowable passes -1 on every throwable path — so a plain 404
+        // arrives here as (-1, FileNotFoundException). Reporting 0 would claim a request that got
+        // a 404 never reached the server.
+        assertThat(
+            statusCodeFor(UNKNOWN_RESPONSE_CODE, FileNotFoundException("https://example/missing")),
+        ).isNull()
+    }
+
+    @Test
+    fun midBodyReadFailureLeavesStatusCodeAbsent() {
+        // InstrumentedInputStream.read failing after a 200 also reports (-1, IOException).
+        assertThat(
+            statusCodeFor(UNKNOWN_RESPONSE_CODE, SocketException("Connection reset")),
+        ).isNull()
     }
 
     @Test
@@ -104,8 +127,10 @@ internal class HttpUrlNoResponseStatusCodeAttributesExtractorTest {
     }
 
     @Test
-    fun responseAccompaniedByAnErrorIsNotOverwritten() {
-        assertThat(statusCodeFor(500, IOException("body read failed"))).isNull()
+    fun bodyReadFailureAfterAnErrorResponseIsNotReportedAsZero() {
+        // Deliberately -1 rather than 500: reportWithThrowable always passes -1, so (500,
+        // IOException) never reaches onEnd and asserting on it would guard an impossible path.
+        assertThat(statusCodeFor(UNKNOWN_RESPONSE_CODE, IOException("body read failed"))).isNull()
     }
 
     @Test

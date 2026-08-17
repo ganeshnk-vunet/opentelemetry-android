@@ -5,12 +5,16 @@
 
 package io.opentelemetry.android.common.internal.http
 
+import java.io.FileNotFoundException
 import java.io.IOException
 import java.io.InterruptedIOException
 import java.net.ConnectException
+import java.net.NoRouteToHostException
+import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.security.cert.CertificateException
+import javax.net.ssl.SSLException
 import javax.net.ssl.SSLHandshakeException
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -81,9 +85,29 @@ internal class HttpErrorCategoryTest {
     fun reportsZeroStatusCode_trueForFailuresThatNeverReachedTheServer() {
         assertThat(HttpErrorCategory.reportsZeroStatusCode(UnknownHostException())).isTrue()
         assertThat(HttpErrorCategory.reportsZeroStatusCode(ConnectException("refused"))).isTrue()
+        assertThat(HttpErrorCategory.reportsZeroStatusCode(NoRouteToHostException("no route"))).isTrue()
         assertThat(HttpErrorCategory.reportsZeroStatusCode(SSLHandshakeException("bad cert"))).isTrue()
-        assertThat(HttpErrorCategory.reportsZeroStatusCode(CertificateException("untrusted"))).isTrue()
-        assertThat(HttpErrorCategory.reportsZeroStatusCode(IOException("read failed"))).isTrue()
+        // The realistic shape of a certificate failure: the handshake exception wraps it.
+        assertThat(
+            HttpErrorCategory.reportsZeroStatusCode(
+                SSLHandshakeException("bad cert").initCause(CertificateException("untrusted")),
+            ),
+        ).isTrue()
+    }
+
+    @Test
+    fun reportsZeroStatusCode_falseForFailuresThatProveTheServerWasReached() {
+        // The bug this narrowing fixes: these all classified as `io`/`ssl` and reported 0, while
+        // each is evidence the server *was* reached.
+        assertThat(HttpErrorCategory.reportsZeroStatusCode(IOException("read failed"))).isFalse()
+        assertThat(
+            HttpErrorCategory.reportsZeroStatusCode(SocketException("Connection reset")),
+        ).isFalse()
+        assertThat(
+            HttpErrorCategory.reportsZeroStatusCode(FileNotFoundException("https://example/x")),
+        ).isFalse()
+        // SSLException raised mid-stream is not a handshake failure.
+        assertThat(HttpErrorCategory.reportsZeroStatusCode(SSLException("read error"))).isFalse()
     }
 
     @Test

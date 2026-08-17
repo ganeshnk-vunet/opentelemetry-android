@@ -64,22 +64,32 @@ When a request fails before any response arrives, the OpenTelemetry HTTP attribu
 `http.response.status_code` entirely, which is indistinguishable downstream from a request that was
 never instrumented. This instrumentation fills that gap:
 
-| Failure | `http.error.category` | `http.response.status_code` |
-|---------|-----------------------|-----------------------------|
-| DNS resolution failure | `dns` | `0` |
-| Connection refused / transport I/O failure | `io` | `0` |
-| TLS or certificate failure | `ssl` | `0` |
-| Timeout | `timeout` | *absent* |
-| Any other failure | `unknown` | *absent* |
+| Failure | Exception | `http.response.status_code` |
+|---------|-----------|-----------------------------|
+| DNS resolution failure | `UnknownHostException` | `0` |
+| Connection refused / no route | `ConnectException`, `NoRouteToHostException` | `0` |
+| TLS handshake failure | `SSLHandshakeException` (including a wrapped `CertificateException`) | `0` |
+| Timeout | `SocketTimeoutException`, `InterruptedIOException` | *absent* |
+| Failure after the server answered | `FileNotFoundException` (any response `>= 400`), `SocketException("Connection reset")` mid-body | actual status (`404`, `500`, …) |
+| Any other failure | — | *absent* |
 | Response received (any status) | — | actual status (`200`, `404`, `500`, …) |
 
-Reporting `0` asserts "the request never reached the server", so only the categories that justify
-that claim report it. Everything else keeps the attribute absent:
+Reporting `0` asserts "the request never reached the server", so the match is on the specific
+exception types that prove it — **not** on the coarse `http.error.category` buckets above. The `io`
+category maps *any* unmatched `IOException`, which includes failures proving the opposite: an HTTP/2
+`StreamResetException` means the server sent the reset, and a connection reset mid-body means it had
+already answered. Everything outside the pre-request set keeps the attribute absent:
 
 * **Timeouts** — the request may well have reached the server and been processed; the response
   simply did not arrive in time.
-* **`unknown`** — by definition it is not known whether the server was reached, which is exactly
-  where claiming "never got there" is least defensible.
+* **Failures after the server answered** — `0` would be a lie, and so would *absent*.
+  `HttpURLConnection.getInputStream()` raises `FileNotFoundException` for any response `>= 400`, so
+  a plain 404 reaches the instrumentation on the throwable path. `reportWithThrowable` asks the
+  connection for the code it already holds rather than reporting the `-1` sentinel, so the real
+  `404`/`500` is recorded alongside the error. When the request genuinely never reached a server
+  there is no code to retrieve and the sentinel still applies.
+* **Unrecognised failures** — by definition it is not known whether the server was reached, which
+  is exactly where claiming "never got there" is least defensible.
 
 > **Note:** reporting `0` is a deliberate deviation from the OpenTelemetry semantic conventions,
 > which leave `http.response.status_code` unset when no response was received.

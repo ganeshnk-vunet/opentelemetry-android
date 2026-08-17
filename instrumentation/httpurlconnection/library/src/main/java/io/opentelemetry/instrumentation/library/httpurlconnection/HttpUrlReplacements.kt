@@ -288,8 +288,28 @@ object HttpUrlReplacements {
         connection: URLConnection,
         exception: IOException,
     ) {
-        endTracing(connection, UNKNOWN_RESPONSE_CODE, exception)
+        endTracing(connection, responseCodeOrUnknown(connection), exception)
     }
+
+    /**
+     * The response code the connection already holds, or [UNKNOWN_RESPONSE_CODE] when there is
+     * none.
+     *
+     * A throwable does not imply the server never answered. `HttpURLConnection.getInputStream()`
+     * raises `FileNotFoundException` for *every* response `>= 400`, and a body read can fail long
+     * after a 200. Reporting the `-1` sentinel on those paths discarded a status code the
+     * connection already knew, leaving a real 404 with no status at all.
+     *
+     * When the request genuinely never reached a server this re-throws the original failure
+     * internally and yields [UNKNOWN_RESPONSE_CODE], so those spans are unaffected.
+     */
+    private fun responseCodeOrUnknown(connection: URLConnection): Int =
+        try {
+            (connection as? HttpURLConnection)?.responseCode ?: UNKNOWN_RESPONSE_CODE
+        } catch (exception: IOException) {
+            logger.log(Level.FINE, "No response code available for failed connection", exception)
+            UNKNOWN_RESPONSE_CODE
+        }
 
     private fun reportWithResponseCode(connection: HttpURLConnection) {
         try {

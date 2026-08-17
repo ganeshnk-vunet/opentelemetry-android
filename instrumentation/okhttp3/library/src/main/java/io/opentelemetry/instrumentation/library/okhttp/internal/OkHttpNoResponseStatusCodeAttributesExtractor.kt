@@ -22,8 +22,16 @@ import okhttp3.Response
  * never reached the server (DNS, connection refused, TLS) — see
  * [HttpErrorCategory.reportsZeroStatusCode] for which categories qualify.
  *
- * **Cancelled calls are excluded.** OkHttp raises cancellation as a plain `IOException("Canceled")`
- * rather than an `InterruptedIOException`, so it classifies as `io` and would otherwise report `0`.
+ * **A null response does not mean no response arrived.** On the default path
+ * (`captureNetworkTimingPhases = true`) the span is ended by `OkHttpCallCompletionCoordinator`,
+ * which discards `pending.response` whenever an error is present and calls `instrumenter.end(...,
+ * null, error)`. So a call that received a 200 and then failed mid-body — a socket reset while
+ * streaming — arrives here as `(null, IOException)`, indistinguishable by shape from a connection
+ * that was never established. The throwable is the only thing that separates them, which is why
+ * [HttpErrorCategory.reportsZeroStatusCode] matches pre-request failure types exactly rather than
+ * treating any `IOException` as "never got there".
+ *
+ * **Cancelled calls are excluded.** OkHttp raises cancellation as a plain `IOException("Canceled")`.
  * Cancellation is routine on mobile — list scrolling, rapid navigation, a cancelled coroutine scope
  * — and can land after the request reached the server, so [okhttp3.Call.isCanceled] is checked
  * directly rather than inferred from the exception type.
@@ -51,9 +59,10 @@ internal object OkHttpNoResponseStatusCodeAttributesExtractor :
         response: Response?,
         error: Throwable?,
     ) {
-        // A response means the server answered; its real status is already recorded upstream.
+        // A response means the server answered; its real status is already recorded upstream. Its
+        // absence proves nothing on the default path (see the class KDoc), so the throwable decides.
         if (response != null) return
-        // Cancellation arrives as a plain IOException, so the category alone cannot rule it out.
+        // Cancellation arrives as a plain IOException, so the throwable alone cannot rule it out.
         if (isCanceled(request)) return
         if (!HttpErrorCategory.reportsZeroStatusCode(error)) return
         attributes.put(HttpAttributes.HTTP_RESPONSE_STATUS_CODE, NO_RESPONSE_STATUS_CODE)

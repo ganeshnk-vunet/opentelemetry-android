@@ -13,6 +13,7 @@ import java.net.SocketTimeoutException
 import java.time.Duration
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
+import mockwebserver3.SocketEffect
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.assertj.core.api.Assertions.assertThat
@@ -138,6 +139,37 @@ class NoResponseStatusCodeTest {
         client.newCall(Request.Builder().url(server.url("/boom/")).build()).execute().close()
 
         assertThat(statusCodeOfHttpSpan()).isEqualTo(500L)
+    }
+
+    @Test
+    fun midBodyFailureAfterA200ReportsTheRealStatusCode() {
+        // The regression behind the coordinator fix. TimingTracingInterceptor records the response
+        // as soon as chain.proceed() returns, but OkHttpCallCompletionCoordinator used to discard
+        // it whenever an error was present — so a 200 that died mid-body reached the extractors as
+        // (null, IOException), shaped exactly like a connection that was never established. It has
+        // to keep the 200 it already received.
+        server.enqueue(
+            MockResponse
+                .Builder()
+                .code(200)
+                .body("a".repeat(1024))
+                .onResponseBody(SocketEffect.CloseSocket())
+                .build(),
+        )
+
+        val client = OkHttpClient.Builder().build()
+        val request = Request.Builder().url(server.url("/truncated/")).build()
+
+        val failure =
+            runCatching {
+                client.newCall(request).execute().use { it.body.string() }
+            }.exceptionOrNull()
+
+        // Guard the premise: the body read must actually fail, or the assertion proves nothing.
+        assertThat(failure).isInstanceOf(IOException::class.java)
+        assertThat(statusCodeOfHttpSpan())
+            .`as`("a 200 that failed mid-body must keep its status code, never report 0")
+            .isEqualTo(200L)
     }
 
     /** Status code recorded on the emitted HTTP client span, or null when the attribute is absent. */
