@@ -74,11 +74,16 @@ internal class OkHttpNoResponseStatusCodeAttributesExtractorTest {
     }
 
     @Test
-    fun midBodyFailureAfterAResponseLeavesStatusCodeAbsent() {
-        // The real shape of "200 then socket reset while streaming": on the default
-        // captureNetworkTimingPhases path OkHttpCallCompletionCoordinator discards the response
-        // when an error is present, so this arrives as (null, IOException). Reporting 0 here would
-        // claim the request never reached a server that had already sent 200 and a partial body.
+    fun transportFailureWithNoRecordedResponseLeavesStatusCodeAbsent() {
+        // Defence in depth, not the production shape of a mid-body failure. On the default
+        // captureNetworkTimingPhases path OkHttpCallCompletionCoordinator now reports the response
+        // it already recorded alongside the error, so "200 then socket reset while streaming"
+        // reaches onEnd as (Response(200), IOException) and exits on the `response != null` branch
+        // — see midBodyFailureAfterA200ReportsTheRealStatusCode in the testing module.
+        //
+        // This covers the case where no response was ever recorded, e.g. the failure landed before
+        // chain.proceed() returned. A connection reset still is not evidence the server was never
+        // reached, so the attribute stays absent rather than claiming 0.
         assertThat(statusCodeFor(null, SocketException("Connection reset"))).isNull()
     }
 
@@ -154,9 +159,10 @@ internal class OkHttpNoResponseStatusCodeAttributesExtractorTest {
 
     @Test
     fun bodyReadFailureAfterAnErrorResponseIsNotReportedAsZero() {
-        // Deliberately (null, IOException) rather than (Response(500), IOException): the
-        // coordinator nulls the response whenever an error is present, so the latter never reaches
-        // onEnd and asserting on it would guard a path that cannot occur.
+        // (null, IOException) rather than (Response(500), IOException) because this asserts the
+        // no-recorded-response path specifically: when the coordinator has a response it now
+        // passes it through, and the `response != null` branch handles it (covered by
+        // errorResponseIsLeftToTheUpstreamExtractor).
         assertThat(statusCodeFor(null, IOException("body read failed"))).isNull()
     }
 

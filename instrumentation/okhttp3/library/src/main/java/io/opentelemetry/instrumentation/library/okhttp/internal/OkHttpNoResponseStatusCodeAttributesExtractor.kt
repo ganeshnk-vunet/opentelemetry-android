@@ -24,10 +24,13 @@ import okhttp3.Response
  *
  * **A null response does not mean no response arrived.** On the default path
  * (`captureNetworkTimingPhases = true`) the span is ended by `OkHttpCallCompletionCoordinator`,
- * which discards `pending.response` whenever an error is present and calls `instrumenter.end(...,
- * null, error)`. So a call that received a 200 and then failed mid-body — a socket reset while
- * streaming — arrives here as `(null, IOException)`, indistinguishable by shape from a connection
- * that was never established. The throwable is the only thing that separates them, which is why
+ * which reports the response it recorded *alongside* any error — so a call that received a 200 and
+ * then failed mid-body arrives here as `(Response(200), IOException)` and exits on the
+ * `response != null` branch.
+ *
+ * A null response therefore means "no response was ever recorded", which still is not proof the
+ * server went unreached: the failure may simply have landed before `chain.proceed()` returned. The
+ * throwable is the only thing that separates the two, which is why
  * [HttpErrorCategory.reportsZeroStatusCode] matches pre-request failure types exactly rather than
  * treating any `IOException` as "never got there".
  *

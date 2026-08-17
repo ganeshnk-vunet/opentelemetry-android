@@ -21,15 +21,18 @@ import java.net.URLConnection
  * gap for client-side failures (DNS, connection refused, TLS), leaving timeouts absent — see
  * [HttpErrorCategory.reportsZeroStatusCode].
  *
- * **The response code alone cannot be trusted to mean "no response".** `HttpUrlReplacements
- * .reportWithThrowable` passes `-1` on *every* throwable path, including ones where the server
- * demonstrably answered: on Android `HttpURLConnection.getInputStream()` raises
- * `FileNotFoundException` for any response `>= 400`, so a plain 404 arrives here as `(-1,
- * FileNotFoundException)`. A mid-body read failure after a 200 and a request-body write failure
- * arrive the same way. The `-1` therefore means "no code available", not "no response received",
- * and the throwable is the only signal that separates the two —
- * [HttpErrorCategory.reportsZeroStatusCode] matches pre-request failure types exactly so those
- * cases stay absent rather than being reported as zero.
+ * **A non-positive response code does not mean "no response".** A throwable does not imply the
+ * server stayed silent: on Android `HttpURLConnection.getInputStream()` raises
+ * `FileNotFoundException` for any response `>= 400`, and a body read can fail long after a 200.
+ * `HttpUrlReplacements.reportWithThrowable` recovers the code the connection already holds, so
+ * those cases normally arrive here with the real status (`404`, `500`, `200`) and exit on the
+ * `response > 0` branch.
+ *
+ * The `-1` sentinel therefore means "no code available", which is *not* the same as "no response
+ * received" — it also covers the connection failing again while the code is being retrieved. The
+ * throwable is the only signal that separates the two, so
+ * [HttpErrorCategory.reportsZeroStatusCode] matches pre-request failure types exactly rather than
+ * treating any transport error as proof the server was never reached.
  *
  * Note this deviates from the OpenTelemetry semantic conventions, which leave the attribute unset
  * when no response was received. It is intentional: the ingest contract distinguishes "reached the

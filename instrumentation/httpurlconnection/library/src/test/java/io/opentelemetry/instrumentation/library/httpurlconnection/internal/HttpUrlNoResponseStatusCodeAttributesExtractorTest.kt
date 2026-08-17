@@ -65,20 +65,26 @@ internal class HttpUrlNoResponseStatusCodeAttributesExtractorTest {
     }
 
     @Test
-    fun notFoundViaGetInputStreamLeavesStatusCodeAbsent() {
-        // The regression this file exists to prevent. On Android
-        // HttpURLConnectionImpl.getInputStream() throws FileNotFoundException for any response
-        // >= 400, and reportWithThrowable passes -1 on every throwable path — so a plain 404
-        // arrives here as (-1, FileNotFoundException). Reporting 0 would claim a request that got
-        // a 404 never reached the server.
+    fun fileNotFoundWithNoRetrievableCodeLeavesStatusCodeAbsent() {
+        // Defence in depth, not the production shape of a 404. `getInputStream()` raises
+        // FileNotFoundException for any response >= 400, but `responseCodeOrUnknown` then supplies
+        // the real code, so a 404 reaches onEnd as (404, FileNotFoundException) and exits on the
+        // `response > 0` branch — see NoResponseStatusCodeTest in the testing module, which
+        // exercises that against a real server.
+        //
+        // This covers the remaining fallback: `getResponseCode()` itself throwing, leaving only
+        // the -1 sentinel. Even then FileNotFoundException means a response existed, so claiming
+        // the request never reached the server would be wrong.
         assertThat(
             statusCodeFor(UNKNOWN_RESPONSE_CODE, FileNotFoundException("https://example/missing")),
         ).isNull()
     }
 
     @Test
-    fun midBodyReadFailureLeavesStatusCodeAbsent() {
-        // InstrumentedInputStream.read failing after a 200 also reports (-1, IOException).
+    fun transportFailureWithNoRetrievableCodeLeavesStatusCodeAbsent() {
+        // Same fallback as above for a mid-body failure: normally the 200 is recovered and this
+        // exits on `response > 0`, so -1 only survives when no code can be retrieved at all. A
+        // connection reset is not evidence the server was never reached either way.
         assertThat(
             statusCodeFor(UNKNOWN_RESPONSE_CODE, SocketException("Connection reset")),
         ).isNull()
@@ -128,8 +134,9 @@ internal class HttpUrlNoResponseStatusCodeAttributesExtractorTest {
 
     @Test
     fun bodyReadFailureAfterAnErrorResponseIsNotReportedAsZero() {
-        // Deliberately -1 rather than 500: reportWithThrowable always passes -1, so (500,
-        // IOException) never reaches onEnd and asserting on it would guard an impossible path.
+        // -1 rather than 500 because this asserts the sentinel path specifically: when a code is
+        // available `reportWithThrowable` now passes it and the `response > 0` branch handles it
+        // (covered by errorResponseIsLeftToTheUpstreamExtractor).
         assertThat(statusCodeFor(UNKNOWN_RESPONSE_CODE, IOException("body read failed"))).isNull()
     }
 
