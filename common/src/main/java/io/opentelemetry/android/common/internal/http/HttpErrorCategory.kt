@@ -42,20 +42,30 @@ object HttpErrorCategory {
     /**
      * Whether a client-side failure should report `http.response.status_code = 0`.
      *
-     * A request that fails before any response is received (DNS resolution failure, connection
-     * refused, TLS handshake failure, other I/O errors) reports `0` so the backend can distinguish
-     * "never reached the server" from "no telemetry at all".
+     * Reporting `0` asserts "the request never reached the server", so this is an allowlist of the
+     * categories that actually justify that claim — [DNS], [SSL] and [IO]. Anything else keeps the
+     * attribute absent, which is what the OpenTelemetry semantic conventions prescribe when no
+     * response arrives.
      *
-     * Timeouts and aborts are deliberately excluded: the request may well have reached the server
-     * and been processed, so claiming a status is misleading. Those keep the attribute absent,
-     * which is what the OpenTelemetry semantic conventions prescribe when no response arrives.
+     * Excluded deliberately:
+     * - [TIMEOUT] — the request may well have reached the server and been processed; the response
+     *   simply did not arrive in time.
+     * - [UNKNOWN] — by definition we cannot tell whether the server was reached, and that is
+     *   exactly where asserting "never got there" is least defensible. A non-transport failure
+     *   (an interceptor throwing, say) can be raised long after the server responded.
+     *
+     * [IO] covers transport failures, but note that some clients surface *cancellation* as a plain
+     * `IOException`: OkHttp throws `IOException("Canceled")`. A cancelled call may have reached the
+     * server, so callers that can detect cancellation must check for it before consulting this —
+     * see `OkHttpNoResponseStatusCodeAttributesExtractor`.
      *
      * Only meaningful when no response was received — callers must check that first.
      */
-    fun reportsZeroStatusCode(throwable: Throwable?): Boolean {
-        val category = fromThrowable(throwable) ?: return false
-        return category != TIMEOUT
-    }
+    fun reportsZeroStatusCode(throwable: Throwable?): Boolean =
+        when (fromThrowable(throwable)) {
+            DNS, SSL, IO -> true
+            else -> false
+        }
 
     private fun classifyThrowable(throwable: Throwable): String {
         var ioCategory: String? = null

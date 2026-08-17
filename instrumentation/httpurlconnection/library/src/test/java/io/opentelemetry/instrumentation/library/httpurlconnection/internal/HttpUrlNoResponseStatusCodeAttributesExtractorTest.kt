@@ -86,6 +86,13 @@ internal class HttpUrlNoResponseStatusCodeAttributesExtractorTest {
     }
 
     @Test
+    fun nonTransportFailureLeavesStatusCodeAbsent() {
+        // Classifies as `unknown`: we cannot tell whether the server was reached, so claiming
+        // "never got there" is not justified.
+        assertThat(statusCodeFor(UNKNOWN_RESPONSE_CODE, IllegalStateException("boom"))).isNull()
+    }
+
+    @Test
     fun successfulResponseIsLeftToTheUpstreamExtractor() {
         assertThat(statusCodeFor(200, null)).isNull()
     }

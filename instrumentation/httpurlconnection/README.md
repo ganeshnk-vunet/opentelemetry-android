@@ -69,12 +69,17 @@ never instrumented. This instrumentation fills that gap:
 | DNS resolution failure | `dns` | `0` |
 | Connection refused / transport I/O failure | `io` | `0` |
 | TLS or certificate failure | `ssl` | `0` |
-| Timeout or aborted request | `timeout` | *absent* |
+| Timeout | `timeout` | *absent* |
+| Any other failure | `unknown` | *absent* |
 | Response received (any status) | — | actual status (`200`, `404`, `500`, …) |
 
-Timeouts are deliberately excluded: the request may well have reached the server and been processed,
-so reporting a status would be misleading. Failures that never reached the server report `0`, which
-lets a backend separate "never got there" from "no telemetry at all".
+Reporting `0` asserts "the request never reached the server", so only the categories that justify
+that claim report it. Everything else keeps the attribute absent:
+
+* **Timeouts** — the request may well have reached the server and been processed; the response
+  simply did not arrive in time.
+* **`unknown`** — by definition it is not known whether the server was reached, which is exactly
+  where claiming "never got there" is least defensible.
 
 > **Note:** reporting `0` is a deliberate deviation from the OpenTelemetry semantic conventions,
 > which leave `http.response.status_code` unset when no response was received.

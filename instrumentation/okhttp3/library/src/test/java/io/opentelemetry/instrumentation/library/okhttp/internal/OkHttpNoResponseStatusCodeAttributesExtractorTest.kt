@@ -16,17 +16,22 @@ import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import javax.net.ssl.SSLHandshakeException
+import okhttp3.Call
 import okhttp3.Interceptor
 import okhttp3.Response
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 internal class OkHttpNoResponseStatusCodeAttributesExtractorTest {
-    private val chain = mockk<Interceptor.Chain>(relaxed = true)
+    private fun chain(canceled: Boolean = false): Interceptor.Chain {
+        val call = mockk<Call>(relaxed = true).also { every { it.isCanceled() } returns canceled }
+        return mockk<Interceptor.Chain>(relaxed = true).also { every { it.call() } returns call }
+    }
 
     private fun statusCodeFor(
         response: Response?,
         error: Throwable?,
+        chain: Interceptor.Chain = chain(),
     ): Long? {
         val attributes = Attributes.builder()
         OkHttpNoResponseStatusCodeAttributesExtractor.onEnd(
@@ -71,6 +76,33 @@ internal class OkHttpNoResponseStatusCodeAttributesExtractorTest {
     @Test
     fun abortedRequestLeavesStatusCodeAbsent() {
         assertThat(statusCodeFor(null, InterruptedIOException("canceled"))).isNull()
+    }
+
+    @Test
+    fun canceledCallLeavesStatusCodeAbsent() {
+        // OkHttp raises cancellation as a plain IOException("Canceled") — not an
+        // InterruptedIOException — so it classifies as `io` and the exception type alone cannot
+        // distinguish it from a genuine transport failure. A cancelled call may have reached the
+        // server, so it must not claim status 0.
+        assertThat(
+            statusCodeFor(null, IOException("Canceled"), chain(canceled = true)),
+        ).isNull()
+    }
+
+    @Test
+    fun aGenuineIoFailureStillReportsZeroWhenTheCallWasNotCanceled() {
+        // Guards the cancel carve-out against over-reaching: only an actually-cancelled call is
+        // exempt, not every IOException whose message happens to look like one.
+        assertThat(
+            statusCodeFor(null, IOException("Canceled"), chain(canceled = false)),
+        ).isEqualTo(0L)
+    }
+
+    @Test
+    fun nonTransportFailureLeavesStatusCodeAbsent() {
+        // Classifies as `unknown`: we cannot tell whether the server was reached, so claiming
+        // "never got there" is not justified. An interceptor can throw well after a response.
+        assertThat(statusCodeFor(null, IllegalStateException("interceptor blew up"))).isNull()
     }
 
     @Test

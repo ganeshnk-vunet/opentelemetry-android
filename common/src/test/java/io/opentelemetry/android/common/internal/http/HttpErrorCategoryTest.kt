@@ -87,6 +87,17 @@ internal class HttpErrorCategoryTest {
     }
 
     @Test
+    fun reportsZeroStatusCode_falseForUnknownFailures() {
+        // `unknown` is precisely where we cannot tell whether the server was reached, so asserting
+        // "never got there" is least defensible. A non-transport failure can be raised long after
+        // the response arrived (an interceptor throwing, for instance).
+        assertThat(HttpErrorCategory.reportsZeroStatusCode(IllegalStateException("boom"))).isFalse()
+        assertThat(HttpErrorCategory.reportsZeroStatusCode(RuntimeException("boom"))).isFalse()
+        assertThat(HttpErrorCategory.fromThrowable(IllegalStateException("boom")))
+            .isEqualTo(HttpErrorCategory.UNKNOWN)
+    }
+
+    @Test
     fun reportsZeroStatusCode_falseForTimeouts() {
         // A timeout may still have reached and been processed by the server, so claiming a
         // status would be misleading; semconv leaves the attribute absent.
