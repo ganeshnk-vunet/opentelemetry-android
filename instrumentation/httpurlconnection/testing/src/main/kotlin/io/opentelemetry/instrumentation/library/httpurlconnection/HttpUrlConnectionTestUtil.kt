@@ -38,6 +38,31 @@ object HttpUrlConnectionTestUtil {
         }
     }
 
+    /**
+     * Reads the body through `getInputStream()` **without** calling `getResponseCode()` first.
+     *
+     * [executeGet] always reads `responseCode` before the stream, and `HttpUrlReplacements
+     * .endTracing` reports only once — so for a `>= 400` response that path ends the span with the
+     * real code and hides what happens when an app goes straight to the stream. That is the common
+     * shape in real code, and the one where `getInputStream()` raises `FileNotFoundException` and
+     * the connection is reported with the `-1` sentinel instead.
+     *
+     * Lives here rather than in `androidTest` because the ByteBuddy plugin only weaves `src/main`;
+     * a connection opened directly from a test class is never instrumented.
+     */
+    fun executeGetReadingInputStreamOnly(inputUrl: String) {
+        var connection: HttpURLConnection? = null
+        try {
+            connection = URL(inputUrl).openConnection() as HttpURLConnection
+            val readInput = connection.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
+            Log.d(TAG, "input stream: $readInput")
+        } catch (e: IOException) {
+            Log.e(TAG, "Exception occurred while reading the input stream", e)
+        } finally {
+            connection?.disconnect()
+        }
+    }
+
     fun post(inputUrl: String) {
         var connection: HttpURLConnection? = null
         try {

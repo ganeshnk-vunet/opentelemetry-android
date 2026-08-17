@@ -14,4 +14,5 @@ dependencies {
     implementation(project(":test-common"))
     androidTestImplementation(project(":core"))
     androidTestImplementation(libs.assertj.core)
+    androidTestImplementation(libs.okhttp.mockwebserver)
 }
