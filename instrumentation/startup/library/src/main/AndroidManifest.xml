@@ -26,7 +26,7 @@
           EarlyStartupContentProvider runs as late as possible (initOrder = MIN_INT).
           It captures the wall-clock time just before Application.onCreate() is called,
           storing it in ProcessStartTimestamps.contentProviderEpochMs.
-          This timestamp is later emitted as the "app.content_providers.end" event on the AppStart span.
+          This timestamp is later emitted as the "app.start.phase.extensions" event on the AppStart span.
           Ordering among providers with equal initOrder is not guaranteed.
         -->
         <provider

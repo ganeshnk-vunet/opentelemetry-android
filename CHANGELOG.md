@@ -11,6 +11,27 @@
 
 ### ⚠️⚠️ Breaking changes
 
+- `app.start` attribute and startup-phase span events renamed to the canonical `app.start.*`
+  names. Update dashboards, alerts, and queries keyed on the old names:
+
+  | Old | New |
+  |-----|-----|
+  | `start.type` (attribute) | `app.start.type` |
+  | `app.process.creation` | `app.start.phase.process` |
+  | `app.attach_base_context.end` | `app.start.phase.runtime_init` |
+  | `applicationCreated` | `app.start.phase.application` |
+  | `app.content_providers.end` | `app.start.phase.extensions` |
+  | `applicationPostCreated` | `app.start.phase.ui_ready` |
+  | `ttid` | `app.start.phase.initial_display` |
+
+  The `app.attach_base_context.start` and `app.content_providers.start` boundary markers keep
+  their names: the canonical phase model defines a milestone only at the end of each phase.
+  `RumConstants.START_TYPE_KEY` and the `AppStartupTimer.EVENT_*` constants keep their identifiers,
+  so this changes the emitted wire keys only and is source- and binary-compatible for callers.
+
+- Hybrid-click span renamed from `ui.click` to `ui.interaction`
+  (`RumConstants.UI_INTERACTION_SPAN_NAME`). Update dashboards, alerts, and queries keyed on the
+  old name. Span attributes and the derived `app.action.summary` value are unchanged.
 - Trace spans no longer repeat full device/OS resource attributes on every export. Only the first
   cold `app.start` span includes the full OTLP resource block; other trace spans use a minimal
   resource (`service.name` + SDK defaults). Logs and metrics are unchanged. Query `device.*` /
