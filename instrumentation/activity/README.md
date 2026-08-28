@@ -19,14 +19,19 @@ This instrumentation produces the following telemetry:
   installed. It is ended when the first frame is drawn (TTID) or when the initial activity
   reaches PostPaused, PostStopped, or PostDestroyed.
 * Attributes:
-  * `start.type`: { `cold` | `hot` | `warm` }
+  * `app.start.type`: { `cold` | `hot` | `warm` }
 * Resource (trace export): the **first cold** `app.start` span includes the full OTLP resource block
   (`device.*`, `os.*`, `app.installation.id`, `service.*`, etc.). All other trace spans carry a
   minimal resource (`service.name` only). Logs and metrics always use the full resource.
-* Span events (cold start): `app.process.creation`, `app.attach_base_context.start`,
-  `app.attach_base_context.end` (require [startup-agent](../startup/README.md) and a declared
+* Span events (cold start): `app.start.phase.process`, `app.attach_base_context.start`,
+  `app.start.phase.runtime_init` (require [startup-agent](../startup/README.md) and a declared
   `attachBaseContext` override on your `Application` subclass), `app.content_providers.start`,
-  `app.content_providers.end`, `applicationCreated`, `applicationPostCreated`, `ttid`
+  `app.start.phase.extensions`, `app.start.phase.application`, `app.start.phase.ui_ready`,
+  `app.start.phase.initial_display`
+
+  The `app.start.phase.*` names are the canonical startup-phase milestones. The two
+  `*.start` boundary markers keep their original names because the canonical phase model
+  defines a milestone only at the *end* of each phase.
 
 ### Activity state change
 

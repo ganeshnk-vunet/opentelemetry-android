@@ -17,8 +17,12 @@ object RumConstants {
     @JvmField
     val SCREEN_NAME_KEY: AttributeKey<String> = AttributeKey.stringKey("screen.name")
 
+    /**
+     * Canonical app-start type (cold / warm / hot). Supersedes the legacy `start.type` wire key;
+     * the constant name is unchanged so this stays binary-compatible for existing callers.
+     */
     @JvmField
-    val START_TYPE_KEY: AttributeKey<String> = AttributeKey.stringKey("start.type")
+    val START_TYPE_KEY: AttributeKey<String> = AttributeKey.stringKey("app.start.type")
 
     /** App framework the host application is built with (e.g. native_android, flutter, react_native). */
     @JvmField

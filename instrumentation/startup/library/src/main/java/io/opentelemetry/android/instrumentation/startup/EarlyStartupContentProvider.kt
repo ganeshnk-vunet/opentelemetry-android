@@ -22,7 +22,7 @@ import android.net.Uri
  * so another provider declaring [Int.MIN_VALUE] may run concurrently or after this one.
  *
  * The captured value is stored in [ProcessStartTimestamps.contentProviderEpochMs] and later
- * emitted as `app.content_providers.end` on the AppStart span
+ * emitted as `app.start.phase.extensions` on the AppStart span
  * events on the AppStart span by AppStartupTimer.
  *
  * This provider is registered in the startup artifact's AndroidManifest and is automatically
