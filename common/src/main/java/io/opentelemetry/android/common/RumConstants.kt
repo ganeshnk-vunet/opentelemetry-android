@@ -36,16 +36,33 @@ object RumConstants {
     /**
      * Language runtime that produced a fault, set on `device.crash` and `device.anr`.
      *
-     * Always [ERROR_RUNTIME_JVM] on Android. It exists so a backend can tell JVM faults apart from
-     * those reported by other runtimes in the same app — a Flutter/Dart or React Native error
-     * reaches the same signals through the host SDK, and without this the two are
-     * indistinguishable once the stack trace has been stringified.
+     * This SDK only ever emits [ERROR_RUNTIME_JVM]. The attribute exists so a backend can tell JVM
+     * faults apart from those reported by another runtime in the same app — a Flutter/Dart or
+     * React Native error reaches the same signals through the host SDK, and without this the two
+     * are indistinguishable once the stack trace has been stringified.
+     *
+     * Because the whole point is comparing runtimes, the value space is fixed here rather than left
+     * to each wrapper: [ERROR_RUNTIME_JVM], [ERROR_RUNTIME_DART], [ERROR_RUNTIME_JS]. Wrappers that
+     * emit their own `device.crash` should reference these constants — independently chosen spellings
+     * (`dart` vs `Dart` vs `dartvm`) would make the attribute ungroupable and defeat its purpose.
+     * Values are lowercase and name the *runtime*, not the UI framework; the framework is reported
+     * separately by [APP_FRAMEWORK_KEY].
+     *
+     * Note this key is a deliberate extension: OpenTelemetry semantic conventions own the `error.*`
+     * namespace but define only `error.type`, so `error.runtime` is non-standard by choice. If OTel
+     * later defines it with different semantics, this becomes a conflict to resolve.
      */
     @JvmField
     val ERROR_RUNTIME_KEY: AttributeKey<String> = AttributeKey.stringKey("error.runtime")
 
     /** Value of [ERROR_RUNTIME_KEY] for faults raised by the Android JVM runtime. */
     const val ERROR_RUNTIME_JVM: String = "jvm"
+
+    /** Value of [ERROR_RUNTIME_KEY] for faults raised by the Dart runtime (Flutter). */
+    const val ERROR_RUNTIME_DART: String = "dart"
+
+    /** Value of [ERROR_RUNTIME_KEY] for faults raised by a JavaScript runtime (React Native). */
+    const val ERROR_RUNTIME_JS: String = "js"
 
     const val APP_START_SPAN_NAME: String = "app.start"
 
