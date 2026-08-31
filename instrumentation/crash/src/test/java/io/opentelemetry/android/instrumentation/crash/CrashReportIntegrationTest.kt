@@ -218,6 +218,7 @@ internal class CrashReportIntegrationTest {
         assertEquals(expectedExcMessage, attrs[ExceptionAttributes.EXCEPTION_MESSAGE.key])
         assertEquals(thread.threadIdCompat, attrs[ThreadIncubatingAttributes.THREAD_ID.key])
         assertEquals(thread.name, attrs[ThreadIncubatingAttributes.THREAD_NAME.key])
+        assertEquals("jvm", attrs["error.runtime"])
         assertNotNull(attrs["heap.free"])
         assertNotNull(attrs["storage.free"])
     }

@@ -37,6 +37,20 @@ object RumConstants {
     @JvmField
     val BATTERY_PERCENT_KEY: AttributeKey<Double> = AttributeKey.doubleKey("battery.percent")
 
+    /**
+     * Language runtime that produced a fault, set on `device.crash` and `device.anr`.
+     *
+     * Always [ERROR_RUNTIME_JVM] on Android. It exists so a backend can tell JVM faults apart from
+     * those reported by other runtimes in the same app — a Flutter/Dart or React Native error
+     * reaches the same signals through the host SDK, and without this the two are
+     * indistinguishable once the stack trace has been stringified.
+     */
+    @JvmField
+    val ERROR_RUNTIME_KEY: AttributeKey<String> = AttributeKey.stringKey("error.runtime")
+
+    /** Value of [ERROR_RUNTIME_KEY] for faults raised by the Android JVM runtime. */
+    const val ERROR_RUNTIME_JVM: String = "jvm"
+
     const val APP_START_SPAN_NAME: String = "app.start"
 
     /**
