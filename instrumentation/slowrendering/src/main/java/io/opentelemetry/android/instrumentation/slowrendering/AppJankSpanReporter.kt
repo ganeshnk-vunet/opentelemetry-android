@@ -52,7 +52,7 @@ internal class AppJankSpanReporter(
             if ((durationMillis / 1000.0) > threshold) {
                 val count = entry.value
                 if (debugVerbose || RumDiagnostics.verbose) {
-                    RumDiagnostics.d { "slowRendering: slow frame ${durationMillis}ms count=$count" }
+                    RumDiagnostics.d { "slowRendering: $jankType frame ${durationMillis}ms count=$count" }
                 }
                 frameCount += count
             }

@@ -52,6 +52,12 @@ Generated when rendering takes more than 700ms within a polling period.
 > **Deprecated.** Zero-duration spans are no longer emitted by default. They can be re-enabled
 > via `enableDeprecatedZeroDurationSpan()` for backwards compatibility, but this is discouraged.
 > Use the `app.jank` spans above instead.
+>
+> **Bucketing is not equivalent.** `slowRenders`/`frozenRenders` are exclusive — a frame counts as
+> `slowRenders` only if it is *not* also over the frozen threshold — while `app.jank.type="slow"`
+> is cumulative and includes frozen frames (see above). A count that was `slowRenders` under the
+> old spans will be **higher** as `app.jank.type="slow"`; they are not directly comparable without
+> subtracting `app.jank.type="frozen"` first.
 
 When enabled via `enableDeprecatedZeroDurationSpan()`, the instrumentation additionally produces
 spans named `slowRenders`/`frozenRenders` with an instrumentation scope of
