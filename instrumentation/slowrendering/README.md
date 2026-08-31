@@ -27,6 +27,7 @@ Generated when rendering takes more than 16ms within a polling period.
   * `app.jank.frame_count` - the number of frames that exceeded the threshold
   * `app.jank.period` - the polling period duration in seconds during which the frames were detected
   * `app.jank.threshold` - the threshold in seconds above which a frame is considered slow (e.g. `0.016`)
+  * `app.jank.type` - `slow`
 
 ### Frozen Renders (Span)
 
@@ -40,6 +41,11 @@ Generated when rendering takes more than 700ms within a polling period.
   * `app.jank.frame_count` - the number of frames that exceeded the threshold
   * `app.jank.period` - the polling period duration in seconds during which the frames were detected
   * `app.jank.threshold` - the threshold in seconds above which a frame is considered frozen (e.g. `0.7`)
+  * `app.jank.type` - `frozen`
+
+> **Bucketing is cumulative.** A frozen frame exceeds both thresholds, so it is reported by both
+> the slow and the frozen span. Group or filter by `app.jank.type` rather than counting `app.jank`
+> spans, which double-counts frozen frames; "slow but not frozen" is `slow` minus `frozen`.
 
 ### Deprecated: Zero-Duration Spans
 
