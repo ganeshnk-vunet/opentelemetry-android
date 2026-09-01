@@ -3,8 +3,8 @@
 Status: development
 
 This instrumentation periodically captures a snapshot of CPU, memory, thread, and device
-metrics for the running process and device, and always emits them as a named event `"app.metrics"`
-on a standalone `"app.metrics"` span. The collection interval defaults to 30 seconds and is
+metrics for the running process and device, and always emits them as attributes directly on a
+standalone `"app.metrics"` span. The collection interval defaults to 30 seconds and is
 configurable via the `android-agent` DSL.
 
 This instrumentation is **not** included in `android-agent` by default. It must be added
@@ -17,7 +17,7 @@ Data produced by this instrumentation uses instrumentation scope name
 
 ### Metrics snapshot
 
-* Type: Standalone Span with an `"app.metrics"` event
+* Type: Standalone Span with metrics as span attributes
 * Name: `app.metrics`
 * Description: A point-in-time snapshot of process and device health metrics, emitted
   every 30 seconds by default (configurable).
@@ -49,7 +49,7 @@ Data produced by this instrumentation uses instrumentation scope name
 ## How it works
 
 On each collection tick the emitter creates an instant span named `"app.metrics"`, attaches
-the metrics snapshot as an event with the same name, and immediately ends the span.
+the metrics snapshot directly as span attributes, and immediately ends the span.
 
 CPU min/max are tracked by a 1-second sub-sampler that runs between collection ticks,
 so each emission includes the full min/max window rather than a single instantaneous reading.

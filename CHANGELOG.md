@@ -15,6 +15,21 @@
 
 ### ⚠️⚠️ Breaking changes
 
+- **`app.metrics` no longer carries its data on a span event — this is not a rename, and a
+  rename-style fix does not apply.** All 16 metric attributes (`process.cpu.usage`,
+  `process.memory.*`, `process.thread.count`, `system.memory.*`, `battery.percent`,
+  `system.battery.temperature`, `storage.free`, `system.disk.total`, etc.) move from the
+  `"app.metrics"` **event** attached to the `app.metrics` span to direct **attributes on the span
+  itself**. The `"app.metrics"` event is removed entirely, not left empty.
+
+  Every attribute keeps its existing name and value — nothing to search-and-replace. Any
+  dashboard, alert, or query reading these values via `event.attributes` for the `app.metrics`
+  span sees the data disappear, not move under a new key, because it's no longer in that OTLP
+  location at all. Consumers must instead read `span.attributes` directly on the `app.metrics`
+  span. Span name, span kind, and emission timing (default 30s) are unchanged.
+
+  `SystemMetricsSpanEmitter` is `internal`; no public API / `apiCheck` impact.
+
 - `app.start` attribute and startup-phase span events renamed to the canonical `app.start.*`
   names. Update dashboards, alerts, and queries keyed on the old names:
 
