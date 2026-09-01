@@ -10,7 +10,7 @@
           AppAnchorContentProvider runs as early as possible (initOrder = MAX_INT).
           It captures the wall-clock time at the start of the ContentProvider init phase,
           storing it in ProcessStartTimestamps.contentProvidersPhaseStartEpochMs.
-          This timestamp is later emitted as the "app.content_providers.start" event on AppStart.
+          This timestamp is later emitted as the "app.start.phase.content_providers.start" event on AppStart.
           Ordering among providers with equal initOrder is not guaranteed.
 
           The authority uses ${applicationId} to ensure uniqueness across apps that depend on
@@ -26,7 +26,7 @@
           EarlyStartupContentProvider runs as late as possible (initOrder = MIN_INT).
           It captures the wall-clock time just before Application.onCreate() is called,
           storing it in ProcessStartTimestamps.contentProviderEpochMs.
-          This timestamp is later emitted as the "app.content_providers.end" event on the AppStart span.
+          This timestamp is later emitted as the "app.start.phase.content_providers.end" event on the AppStart span.
           Ordering among providers with equal initOrder is not guaranteed.
         -->
         <provider

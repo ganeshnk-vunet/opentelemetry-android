@@ -5,6 +5,7 @@
 
 package io.opentelemetry.android.instrumentation.crash
 
+import io.opentelemetry.android.common.RumConstants
 import io.opentelemetry.android.common.RumDiagnostics
 import io.opentelemetry.android.common.internal.utils.threadIdCompat
 import io.opentelemetry.android.instrumentation.common.EventAttributesExtractor
@@ -44,6 +45,7 @@ internal class CrashReporter(
         val attributesBuilder =
             Attributes
                 .builder()
+                .put(RumConstants.ERROR_RUNTIME_KEY, RumConstants.ERROR_RUNTIME_JVM)
                 .put(THREAD_ID, thread.threadIdCompat)
                 .put(THREAD_NAME, thread.name)
                 .put(EXCEPTION_MESSAGE, throwable.message)
@@ -51,6 +53,8 @@ internal class CrashReporter(
                     EXCEPTION_STACKTRACE,
                     throwable.stackTraceToString(),
                 ).put(EXCEPTION_TYPE, throwable.javaClass.name)
+        // Extractors run after this write and may replace error.runtime; that is the
+        // supported in-process override for a wrapper that still goes through this reporter.
         for (extractor in extractors) {
             val extractedAttributes = extractor.extract(Context.current(), crashDetails)
             attributesBuilder.putAll(extractedAttributes)

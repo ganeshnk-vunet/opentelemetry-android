@@ -17,8 +17,12 @@ object RumConstants {
     @JvmField
     val SCREEN_NAME_KEY: AttributeKey<String> = AttributeKey.stringKey("screen.name")
 
+    /**
+     * Canonical app-start type (cold / warm / hot). Supersedes the legacy `start.type` wire key;
+     * the constant name is unchanged so this stays binary-compatible for existing callers.
+     */
     @JvmField
-    val START_TYPE_KEY: AttributeKey<String> = AttributeKey.stringKey("start.type")
+    val START_TYPE_KEY: AttributeKey<String> = AttributeKey.stringKey("app.start.type")
 
     /** App framework the host application is built with (e.g. native_android, flutter, react_native). */
     @JvmField
@@ -32,6 +36,44 @@ object RumConstants {
 
     @JvmField
     val BATTERY_PERCENT_KEY: AttributeKey<Double> = AttributeKey.doubleKey("battery.percent")
+
+    /**
+     * Language runtime that produced a fault, set on `device.crash` and `device.anr`.
+     *
+     * This SDK always emits [ERROR_RUNTIME_JVM]. Anything that goes through the crash or ANR
+     * reporter — including a Dart `FlutterError` or React Native exception rethrown into the
+     * Android uncaught handler — is `jvm` by definition. Grouping by runtime only works if
+     * wrappers emit their own `device.crash` / `device.anr`, or overwrite this attribute via
+     * `addAttributesExtractor`, using [ERROR_RUNTIME_DART] or [ERROR_RUNTIME_JS].
+     *
+     * The value space is documented here as [ERROR_RUNTIME_JVM], [ERROR_RUNTIME_DART],
+     * [ERROR_RUNTIME_JS] so wrappers that emit their own spans can copy the same lowercase
+     * runtime names (`dart` vs `Dart` vs `dartvm` would make the attribute ungroupable).
+     * Wrappers typically copy these string values rather than importing this class. Values
+     * name the *runtime*, not the UI framework; the framework is reported separately by
+     * [APP_FRAMEWORK_KEY].
+     *
+     * Note this key is a deliberate extension: OpenTelemetry semantic conventions own the `error.*`
+     * namespace but define only `error.type`, so `error.runtime` is non-standard by choice. If OTel
+     * later defines it with different semantics, this becomes a conflict to resolve.
+     */
+    @JvmField
+    val ERROR_RUNTIME_KEY: AttributeKey<String> = AttributeKey.stringKey("error.runtime")
+
+    /** Value of [ERROR_RUNTIME_KEY] for faults raised by the Android JVM runtime. */
+    const val ERROR_RUNTIME_JVM: String = "jvm"
+
+    /**
+     * Value of [ERROR_RUNTIME_KEY] for faults raised by the Dart runtime (Flutter).
+     * Unused by this SDK; for wrappers that emit their own `device.crash` / `device.anr`.
+     */
+    const val ERROR_RUNTIME_DART: String = "dart"
+
+    /**
+     * Value of [ERROR_RUNTIME_KEY] for faults raised by a JavaScript runtime (React Native).
+     * Unused by this SDK; for wrappers that emit their own `device.crash` / `device.anr`.
+     */
+    const val ERROR_RUNTIME_JS: String = "js"
 
     const val APP_START_SPAN_NAME: String = "app.start"
 
