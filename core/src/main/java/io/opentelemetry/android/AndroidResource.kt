@@ -10,6 +10,9 @@ import android.content.Context
 import android.os.Build
 import androidx.annotation.VisibleForTesting
 import io.opentelemetry.android.common.RumConstants.APP_FRAMEWORK_KEY
+import io.opentelemetry.android.internal.services.DefaultDeviceCapacityReader
+import io.opentelemetry.android.internal.services.DeviceCapacityReader
+import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.sdk.resources.Resource
 import io.opentelemetry.semconv.ServiceAttributes.SERVICE_NAME
 import io.opentelemetry.semconv.ServiceAttributes.SERVICE_VERSION
@@ -47,8 +50,25 @@ private val FRAMEWORK_MARKERS: List<Pair<String, String>> =
     )
 
 object AndroidResource {
+    /**
+     * Total device RAM in bytes. Not an OTel semconv key — matches the wire-key string
+     * `instrumentation/system-metrics` used to emit as an `app.metrics` span attribute before that
+     * value moved to the resource, so existing queries on the key name are unaffected; only its
+     * OTLP location changed.
+     */
+    @JvmField
+    val SYSTEM_MEMORY_TOTAL: AttributeKey<Long> = AttributeKey.longKey("system.memory.total")
+
+    /** Total disk space of the internal data partition in bytes. Same rename history as above. */
+    @JvmField
+    val SYSTEM_DISK_TOTAL: AttributeKey<Long> = AttributeKey.longKey("system.disk.total")
+
+    @JvmOverloads
     @JvmStatic
-    fun createDefault(context: Context): Resource {
+    fun createDefault(
+        context: Context,
+        deviceCapacityReader: DeviceCapacityReader = DefaultDeviceCapacityReader,
+    ): Resource {
         val appName = readAppName(context)
         val resourceBuilder = Resource.builder().put(SERVICE_NAME, appName)
         val appVersion = readAppVersion(context)
@@ -65,6 +85,8 @@ object AndroidResource {
             .put(OS_DESCRIPTION, oSDescription)
             .put(APP_INSTALLATION_ID, readInstallId(context))
             .put(APP_FRAMEWORK_KEY, appFramework)
+            .put(SYSTEM_MEMORY_TOTAL, deviceCapacityReader.readTotalRamBytes(context))
+            .put(SYSTEM_DISK_TOTAL, deviceCapacityReader.readTotalDiskBytes())
             .build()
     }
 

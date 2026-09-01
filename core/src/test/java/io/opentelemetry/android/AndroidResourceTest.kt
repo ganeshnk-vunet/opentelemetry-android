@@ -15,6 +15,7 @@ import io.mockk.impl.annotations.RelaxedMockK
 import io.mockk.mockk
 import io.mockk.slot
 import io.opentelemetry.android.common.RumConstants
+import io.opentelemetry.android.internal.services.DeviceCapacityReader
 import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.sdk.resources.Resource
 import io.opentelemetry.sdk.resources.ResourceBuilder
@@ -31,10 +32,22 @@ import org.junit.jupiter.api.assertNotNull
 import org.assertj.core.api.Assertions.assertThat
 import java.util.UUID
 
+/** Deterministic stand-in for [DefaultDeviceCapacityReader][io.opentelemetry.android.internal.services.DefaultDeviceCapacityReader]. */
+private class FakeDeviceCapacityReader(
+    private val totalRamBytes: Long,
+    private val totalDiskBytes: Long,
+) : DeviceCapacityReader {
+    override fun readTotalRamBytes(context: Context): Long = totalRamBytes
+
+    override fun readTotalDiskBytes(): Long = totalDiskBytes
+}
+
 internal class AndroidResourceTest {
     private val appName: String = "robotron"
     private val prefsName: String = "opentelemetry-android"
     private val installId: String = "install-id"
+    private val totalRamBytes: Long = 4_000_000_000L
+    private val totalDiskBytes: Long = 64_000_000_000L
     private val osDescription: String =
         "Android Version " +
             Build.VERSION.RELEASE +
@@ -48,6 +61,7 @@ internal class AndroidResourceTest {
     private lateinit var ctx: Context
     private lateinit var expectedResourceBuilder: ResourceBuilder
     private lateinit var appInfo: ApplicationInfo
+    private val deviceCapacityReader = FakeDeviceCapacityReader(totalRamBytes, totalDiskBytes)
 
     @BeforeEach
     fun setUp() {
@@ -86,12 +100,14 @@ internal class AndroidResourceTest {
                 ).put(OsIncubatingAttributes.OS_DESCRIPTION, osDescription)
                 .put(AppIncubatingAttributes.APP_INSTALLATION_ID, installId)
                 .put(RumConstants.APP_FRAMEWORK_KEY, "native_android")
+                .put(AndroidResource.SYSTEM_MEMORY_TOTAL, totalRamBytes)
+                .put(AndroidResource.SYSTEM_DISK_TOTAL, totalDiskBytes)
     }
 
     @Test
     fun testFullResource() {
         assertResourceMatches()
-        assertTelemetrySdkAttributesAbsent(AndroidResource.createDefault(ctx))
+        assertTelemetrySdkAttributesAbsent(AndroidResource.createDefault(ctx, deviceCapacityReader))
     }
 
     @Test
@@ -181,14 +197,14 @@ internal class AndroidResourceTest {
         } returns editor
 
         assertResourceMatches(
-            resource = AndroidResource.createDefault(ctx),
+            resource = AndroidResource.createDefault(ctx, deviceCapacityReader),
             extraAttributes = mapOf(AppIncubatingAttributes.APP_INSTALLATION_ID to slot.captured),
         )
         assertNotNull(UUID.fromString(slot.captured))
     }
 
     private fun assertResourceMatches(
-        resource: Resource = AndroidResource.createDefault(ctx),
+        resource: Resource = AndroidResource.createDefault(ctx, deviceCapacityReader),
         extraAttributes: Map<AttributeKey<*>, String> = emptyMap(),
     ) {
         extraAttributes.forEach { entry ->

@@ -35,13 +35,18 @@ Data produced by this instrumentation uses instrumentation scope name
 | `process.memory.native.used` | Long | Native heap bytes allocated via malloc/JNI (not canonical `process.memory.resident` — see note below) |
 | `process.memory.footprint` | Long | Proportional Set Size in **bytes** (cached; refreshed every 60 s) |
 | `process.thread.count` | Long | Total live threads in this process |
-| `system.memory.total` | Long | Total physical RAM on the device (bytes) |
 | `system.memory.available` | Long | Available (free) RAM on the device (bytes) |
 | `system.memory.low` | Long | `1` if the device is in a low-memory state, `0` otherwise |
 | `battery.percent` | Double | Battery charge level % (0–100) |
 | `system.battery.temperature` | Double | Battery temperature in °C |
 | `storage.free` | Long | Free disk space on the internal data partition (bytes) |
-| `system.disk.total` | Long | Total disk space on the internal data partition (bytes) |
+
+> `system.memory.total` (total device RAM) and `system.disk.total` (total disk capacity) are
+> **not** in this table — they are static device facts, not per-sample metrics, so they moved to
+> the OTel resource (`AndroidResource.SYSTEM_MEMORY_TOTAL`/`SYSTEM_DISK_TOTAL`) and are read once
+> per process instead of on every `app.metrics` emission. Per the resource-export rules, they are
+> present on logs and metrics always, and on trace spans only via the first cold `app.start` span
+> — not on `app.metrics` or any other trace span.
 
 > `heap.free`, `battery.percent`, and `storage.free` reuse the attribute keys already
 > defined in `RumConstants` so they align with the crash instrumentation schema.

@@ -5,6 +5,7 @@
 
 package io.opentelemetry.android.instrumentation.systemmetrics
 
+import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.sdk.OpenTelemetrySdk
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
 import io.opentelemetry.sdk.trace.SdkTracerProvider
@@ -41,6 +42,39 @@ class SystemMetricsSpanEmitterTest {
             OpenTelemetrySdk.builder()
                 .setTracerProvider(tracerProvider)
                 .build()
+    }
+
+    /**
+     * `system.memory.total` / `system.disk.total` moved to the OTel resource
+     * (`AndroidResource.SYSTEM_MEMORY_TOTAL`/`SYSTEM_DISK_TOTAL`) — they are static device facts,
+     * not per-sample metrics, and canonical places static facts on the resource rather than
+     * repeating them on every span. This asserts the removal side of that move directly: nothing
+     * else in this file would fail if a stray `.put(ATTR_SYS_MEM_TOTAL, ...)` crept back in, since
+     * the other tests only check a representative subset of keys, not an exhaustive absence list.
+     */
+    @Test
+    fun `app-metrics span no longer carries total RAM or total disk`() {
+        val scheduler = Executors.newSingleThreadScheduledExecutor()
+        val emitter =
+            SystemMetricsSpanEmitter(
+                openTelemetry = openTelemetry,
+                scheduler = scheduler,
+                intervalSeconds = 2L,
+                deviceReader = StubDeviceMetricsReader(),
+            )
+
+        emitter.start()
+        scheduler.awaitTermination(3_500, TimeUnit.MILLISECONDS)
+        scheduler.shutdownNow()
+
+        // Metrics ride directly on the "app.metrics" span's attributes (WP6d, merged) — read
+        // span.attributes, matching every other test in this file.
+        val metricsSpan = spanExporter.finishedSpanItems.first { it.name == "app.metrics" }
+        assertThat(metricsSpan.attributes.get(AttributeKey.longKey("system.memory.total"))).isNull()
+        assertThat(metricsSpan.attributes.get(AttributeKey.longKey("system.disk.total"))).isNull()
+        // Confirm the span is otherwise still populated, so a bug that dropped ALL attributes
+        // (not just these two) would not slip past this test as a false pass.
+        assertThat(metricsSpan.attributes.get(SystemMetricsSpanEmitter.ATTR_CPU_USAGE)).isNotNull
     }
 
     @Test

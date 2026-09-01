@@ -42,13 +42,11 @@ internal class SystemMetricsSpanEmitter(
     // Device metrics cache — refreshed at startup then every 60 s by the cache timer.
     // Defaults are -1 to indicate "not yet sampled" rather than 0 which is a valid reading.
     @Volatile private var cachedFootprintBytes = -1L
-    @Volatile private var cachedTotalRamBytes = -1L
     @Volatile private var cachedAvailableRamBytes = -1L
     @Volatile private var cachedLowMemoryFlag = -1L
     @Volatile private var cachedBatteryPercent = -1.0
     @Volatile private var cachedBatteryTempCelsius = -1.0
     @Volatile private var cachedDiskFreeBytes = -1L
-    @Volatile private var cachedDiskTotalBytes = -1L
 
     // CPU sub-sampling window — accessed exclusively from the single scheduler thread.
     private var lastCpuSample = 0.0
@@ -123,21 +121,22 @@ internal class SystemMetricsSpanEmitter(
             .put(ATTR_NATIVE_USED, sample.nativeUsed)
             .put(ATTR_THREAD_COUNT, sample.threadCount)
             .put(ATTR_FOOTPRINT, cachedFootprintBytes)
-            .put(ATTR_SYS_MEM_TOTAL, cachedTotalRamBytes)
             .put(ATTR_SYS_MEM_AVAILABLE, cachedAvailableRamBytes)
             .put(ATTR_SYS_MEM_LOW, cachedLowMemoryFlag)
             .put(ATTR_BATTERY_LEVEL, cachedBatteryPercent)
             .put(ATTR_BATTERY_TEMP, cachedBatteryTempCelsius)
             .put(ATTR_DISK_FREE, cachedDiskFreeBytes)
-            .put(ATTR_DISK_TOTAL, cachedDiskTotalBytes)
             .build()
 
     private fun refreshDeviceCache() {
         try {
             cachedFootprintBytes = memoryReader.readFootprintBytes()
             // Single IPC per resource type instead of one call per individual metric.
+            // mem.totalBytes / disk.totalBytes are intentionally unread here: total RAM/disk are
+            // static device facts now reported once on the resource (AndroidResource), not on
+            // this per-sample span — see the "system.memory.total" / "system.disk.total" removal
+            // below.
             val mem = deviceReader.readDeviceMemoryInfo()
-            cachedTotalRamBytes = mem.totalBytes
             cachedAvailableRamBytes = mem.availableBytes
             cachedLowMemoryFlag = mem.lowMemoryFlag
             val battery = deviceReader.readBatteryInfo()
@@ -145,7 +144,6 @@ internal class SystemMetricsSpanEmitter(
             cachedBatteryTempCelsius = battery.temperatureCelsius
             val disk = deviceReader.readDiskInfo()
             cachedDiskFreeBytes = disk.freeBytes
-            cachedDiskTotalBytes = disk.totalBytes
         } catch (_: Exception) {
             // Silent fail — stale cache values are used until next refresh
         }
@@ -179,11 +177,9 @@ internal class SystemMetricsSpanEmitter(
         const val METRIC_NATIVE_USED = "process.memory.native.used"
         const val METRIC_FOOTPRINT = "process.memory.footprint"
         const val METRIC_THREAD_COUNT = "process.thread.count"
-        const val METRIC_SYS_MEM_TOTAL = "system.memory.total"
         const val METRIC_SYS_MEM_AVAILABLE = "system.memory.available"
         const val METRIC_SYS_MEM_LOW = "system.memory.low"
         const val METRIC_BATTERY_TEMP = "system.battery.temperature"
-        const val METRIC_DISK_TOTAL = "system.disk.total"
 
         // Process — CPU
         val ATTR_CPU_USAGE: AttributeKey<Double> = AttributeKey.doubleKey(METRIC_CPU_USAGE)
@@ -209,7 +205,9 @@ internal class SystemMetricsSpanEmitter(
         val ATTR_THREAD_COUNT: AttributeKey<Long> = AttributeKey.longKey(METRIC_THREAD_COUNT)
 
         // Device
-        val ATTR_SYS_MEM_TOTAL: AttributeKey<Long> = AttributeKey.longKey(METRIC_SYS_MEM_TOTAL)
+        // system.memory.total / system.disk.total moved to the resource (AndroidResource) — they
+        // are static device facts, not per-sample metrics; no ATTR_*/METRIC_* constants for them
+        // remain in this class.
         val ATTR_SYS_MEM_AVAILABLE: AttributeKey<Long> = AttributeKey.longKey(METRIC_SYS_MEM_AVAILABLE)
         val ATTR_SYS_MEM_LOW: AttributeKey<Long> = AttributeKey.longKey(METRIC_SYS_MEM_LOW)
         // Reuse RumConstants.BATTERY_PERCENT_KEY ("battery.percent") — matches crash instrumentation schema.
@@ -217,6 +215,5 @@ internal class SystemMetricsSpanEmitter(
         val ATTR_BATTERY_TEMP: AttributeKey<Double> = AttributeKey.doubleKey(METRIC_BATTERY_TEMP)
         // Reuse RumConstants.STORAGE_SPACE_FREE_KEY ("storage.free") — matches crash instrumentation schema.
         val ATTR_DISK_FREE: AttributeKey<Long> = RumConstants.STORAGE_SPACE_FREE_KEY
-        val ATTR_DISK_TOTAL: AttributeKey<Long> = AttributeKey.longKey(METRIC_DISK_TOTAL)
     }
 }
