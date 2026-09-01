@@ -15,11 +15,24 @@ import io.opentelemetry.sdk.OpenTelemetrySdk
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
 import io.opentelemetry.sdk.trace.SdkTracerProvider
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor
+import io.opentelemetry.android.common.internal.instrumentation.ActiveInteractionContext
+import io.opentelemetry.api.trace.Tracer
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 
 class NavigationSpanEmitterTest {
+    /**
+     * `navigation.is_initial` is backed by process-global state, so without this reset the first
+     * test to run would be the only one seeing `true` and the assertions below would depend on
+     * execution order.
+     */
+    @BeforeEach
+    fun resetColdStart() {
+        NavigationColdStartTracker.resetForTesting()
+    }
+
     @AfterEach
     fun tearDown() {
         NavigationSpanEmitter.clearActiveContext()
@@ -109,4 +122,128 @@ class NavigationSpanEmitterTest {
         assertThat(spans).hasSize(1)
         assertThat(spans[0].attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("back_press")
     }
+
+    @Test
+    fun reports_is_initial_only_for_the_first_navigation_of_the_process() {
+        val exporter = InMemorySpanExporter.create()
+        val emitter = NavigationSpanEmitter(tracerFor(exporter))
+
+        emitter.emit(candidate(destinationName = "First"))
+        emitter.emit(candidate(destinationName = "Second"))
+
+        val spans = exporter.finishedSpanItems
+        assertThat(spans).hasSize(2)
+        assertThat(spans[0].attributes.get(NavigationConstants.NAVIGATION_IS_INITIAL_KEY)).isTrue()
+        assertThat(spans[1].attributes.get(NavigationConstants.NAVIGATION_IS_INITIAL_KEY)).isFalse()
+    }
+
+    @Test
+    fun emits_stack_depths_when_the_navigator_reports_them() {
+        val exporter = InMemorySpanExporter.create()
+        val emitter = NavigationSpanEmitter(tracerFor(exporter))
+
+        emitter.emit(candidate(stackDepthBefore = 2, stackDepthAfter = 3))
+
+        val attributes = exporter.finishedSpanItems.single().attributes
+        assertThat(attributes.get(NavigationConstants.NAVIGATION_STACK_DEPTH_BEFORE_KEY)).isEqualTo(2L)
+        assertThat(attributes.get(NavigationConstants.NAVIGATION_STACK_DEPTH_AFTER_KEY)).isEqualTo(3L)
+    }
+
+    /** Activity transitions have no depth to report, so the attributes must be absent, not zero. */
+    @Test
+    fun omits_stack_depths_when_the_navigator_has_none() {
+        val exporter = InMemorySpanExporter.create()
+        val emitter = NavigationSpanEmitter(tracerFor(exporter))
+
+        emitter.emit(candidate())
+
+        val attributes = exporter.finishedSpanItems.single().attributes
+        assertThat(attributes.get(NavigationConstants.NAVIGATION_STACK_DEPTH_BEFORE_KEY)).isNull()
+        assertThat(attributes.get(NavigationConstants.NAVIGATION_STACK_DEPTH_AFTER_KEY)).isNull()
+    }
+
+    @Test
+    fun upgrades_unknown_trigger_to_user_tap_inside_a_click_interaction() {
+        val exporter = InMemorySpanExporter.create()
+        val tracer = tracerFor(exporter)
+        val emitter = NavigationSpanEmitter(tracer)
+        beginClickInteraction(tracer)
+
+        emitter.emit(candidate(), navigationTrigger = "unknown")
+
+        val attributes = exporter.finishedSpanItems.last().attributes
+        assertThat(attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("user_tap")
+    }
+
+    @Test
+    fun upgrades_absent_trigger_to_user_tap_inside_a_click_interaction() {
+        val exporter = InMemorySpanExporter.create()
+        val tracer = tracerFor(exporter)
+        val emitter = NavigationSpanEmitter(tracer)
+        beginClickInteraction(tracer)
+
+        emitter.emit(candidate())
+
+        val attributes = exporter.finishedSpanItems.last().attributes
+        assertThat(attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("user_tap")
+    }
+
+    /** A back press inside a click window is still a back press; only `unknown` is upgraded. */
+    @Test
+    fun keeps_an_attributed_trigger_inside_a_click_interaction() {
+        val exporter = InMemorySpanExporter.create()
+        val tracer = tracerFor(exporter)
+        val emitter = NavigationSpanEmitter(tracer)
+        beginClickInteraction(tracer)
+
+        emitter.emit(candidate(), navigationTrigger = "back_press")
+
+        val attributes = exporter.finishedSpanItems.last().attributes
+        assertThat(attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("back_press")
+    }
+
+    @Test
+    fun does_not_report_user_tap_without_a_click_interaction() {
+        val exporter = InMemorySpanExporter.create()
+        val emitter = NavigationSpanEmitter(tracerFor(exporter))
+
+        emitter.emit(candidate(), navigationTrigger = "unknown")
+
+        val attributes = exporter.finishedSpanItems.single().attributes
+        assertThat(attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("unknown")
+    }
+
+    private fun tracerFor(exporter: InMemorySpanExporter): Tracer {
+        val tracerProvider =
+            SdkTracerProvider
+                .builder()
+                .addSpanProcessor(SimpleSpanProcessor.create(exporter))
+                .build()
+        return OpenTelemetrySdk
+            .builder()
+            .setTracerProvider(tracerProvider)
+            .build()
+            .getTracer("test-navigation-common")
+    }
+
+    /** Opens a live interaction window, the way `ClickEventGenerator` does on a tap. */
+    private fun beginClickInteraction(tracer: Tracer) {
+        val clickSpan = tracer.spanBuilder("ui.interaction").startSpan()
+        ActiveInteractionContext.begin(clickSpan)
+        clickSpan.end()
+    }
+
+    private fun candidate(
+        destinationName: String = "Details",
+        stackDepthBefore: Int? = null,
+        stackDepthAfter: Int? = null,
+    ) = NavigationTransitionCandidate(
+        source = NavigationNode(type = NavigationNodeType.ACTIVITY, name = "Home"),
+        destination = NavigationNode(type = NavigationNodeType.FRAGMENT, name = destinationName),
+        transitionType = NavigationTransitionType.PUSH,
+        entryType = NavigationEntryType.INTERNAL,
+        timestampNanos = 1234L,
+        stackDepthBefore = stackDepthBefore,
+        stackDepthAfter = stackDepthAfter,
+    )
 }

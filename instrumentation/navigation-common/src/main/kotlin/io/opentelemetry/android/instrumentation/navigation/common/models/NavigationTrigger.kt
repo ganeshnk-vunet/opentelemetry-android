@@ -25,4 +25,11 @@ enum class NavigationTrigger(
 
     /** A forward transition ([NavigationTransitionType.PUSH]/[NavigationTransitionType.REPLACE]). */
     UNKNOWN("unknown"),
+
+    /**
+     * A transition that occurred inside a live click-interaction window, i.e. a tap opened the
+     * screen. Resolved by `NavigationSpanEmitter` rather than by the collectors, which cannot see
+     * the interaction context; it only ever replaces [UNKNOWN].
+     */
+    USER_TAP("user_tap"),
 }

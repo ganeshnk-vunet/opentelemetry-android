@@ -4,6 +4,30 @@
 
 ### Added
 
+- Navigation attribution: `ui.navigation` spans include three new attributes across all three
+  navigators (View, Compose Nav2, Compose Nav3).
+  - `navigation.is_initial` — `true` on the first navigation of the process, a deliberate proxy for
+    "the cold-start first screen" rather than a correlation against `app.start.type`.
+  - `navigation.stack_depth.before` / `.after` — the navigator's tracked stack depth. Absent, rather
+    than zero, where the framework has no depth to report: Activity transitions have no back-stack
+    concept, so only Fragment and Compose transitions carry these. What "depth" counts is
+    framework-specific — Nav3 reports true back-stack sizes, while Nav2 reports its own shadow stack,
+    which *retains* the destination on a pop (3 → 2, not 3 → 1).
+  - `navigation.trigger` gains the value `user_tap`, reported when a navigation occurs inside a live
+    click-interaction window. It only ever replaces `unknown`; `back_press` and `programmatic` are
+    unaffected. Resolved by the span emitter, since the collectors cannot see the interaction context.
+
+  Known vocabulary gap: `back_gesture` (predictive back vs. plain back press) is not yet
+  distinguished — it needs an `OnBackAnimationCallback` integration (API 33+). Also still deferred,
+  as they require the navigation span to stop ending synchronously and instead wait for the
+  destination to render: `navigation.duration_ms`, `navigation.ttid_ms`,
+  `navigation.transition.completed`, and `navigation.is_cancelled`.
+
+  `NavigationTransitionCandidate` gained two optional constructor parameters, so its generated JVM
+  constructor and `copy` signatures changed. Source-compatible for Kotlin callers; navigation-common
+  is an `implementation` dependency of every navigation module, so the type is not transitively
+  visible to consumers.
+
 - OkHttp network phase timing (incubating): DNS, connect, TLS, TTFB, download, and total durations exported as `http.client.timing.*` span attributes and `http.*` span events when `captureNetworkTimingPhases` is enabled (default).
 - HttpURLConnection total request timing (incubating): `http.client.timing.total_ms` and `http.call` span event when `captureNetworkTiming` is enabled (default); `http.client.timing.phases_supported=false` (use OkHttp for phase breakdown).
 - HTTP error taxonomy: OkHttp and HttpURLConnection failed spans include `http.error.category` (`timeout`, `dns`, `ssl`, `io`, `http_client`, `unknown`) alongside existing `error.type`.

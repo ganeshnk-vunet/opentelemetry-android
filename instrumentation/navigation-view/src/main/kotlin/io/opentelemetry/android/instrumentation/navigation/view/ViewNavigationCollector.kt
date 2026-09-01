@@ -21,6 +21,7 @@ import io.opentelemetry.android.instrumentation.navigation.common.models.Navigat
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTransitionCandidate
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTransitionType
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTrigger
+import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTriggerResolver
 import io.opentelemetry.android.instrumentation.navigation.view.models.resolveEntryType
 import io.opentelemetry.sdk.common.Clock
 import java.util.Collections
@@ -78,7 +79,7 @@ internal class ViewNavigationCollector(
     /**
      * Timestamp of the most recent back press recorded via [recordBackPress], used to attribute the
      * next [NavigationTransitionType.POP] to [NavigationTrigger.BACK_PRESS] when it lands within
-     * [BACK_PRESS_SIGNAL_TTL_NANOS].
+     * the back-press TTL enforced by [NavigationTriggerResolver].
      */
     private var pendingBackPressTimestampNanos: Long? = null
 
@@ -169,13 +170,21 @@ internal class ViewNavigationCollector(
         destination: NavigationNode,
         transitionType: NavigationTransitionType,
         entryType: NavigationEntryType,
+        stackDepthBefore: Int? = null,
+        stackDepthAfter: Int? = null,
     ) {
         val source = currentVisibleNode
         if (source != null && source == destination) {
             return
         }
 
-        val navigationTrigger = resolveTrigger(transitionType)
+        val navigationTrigger =
+            NavigationTriggerResolver.resolve(
+                transitionType,
+                pendingBackPressTimestampNanos,
+                clock.now(),
+            )
+        pendingBackPressTimestampNanos = null
         emitter.emit(
             NavigationTransitionCandidate(
                 source = source,
@@ -183,40 +192,12 @@ internal class ViewNavigationCollector(
                 transitionType = transitionType,
                 entryType = entryType,
                 timestampNanos = clock.now(),
+                stackDepthBefore = stackDepthBefore,
+                stackDepthAfter = stackDepthAfter,
             ),
             navigationTrigger = navigationTrigger.value,
         )
         currentVisibleNode = destination
-    }
-
-    /**
-     * Attributes a transition to a [NavigationTrigger]. Only a [NavigationTransitionType.POP]
-     * that follows a recent [recordBackPress] is reported as [NavigationTrigger.BACK_PRESS];
-     * other pops are [NavigationTrigger.PROGRAMMATIC] and forward transitions are
-     * [NavigationTrigger.UNKNOWN].
-     */
-    private fun resolveTrigger(transitionType: NavigationTransitionType): NavigationTrigger =
-        when (transitionType) {
-            NavigationTransitionType.POP -> {
-                if (consumeBackPressSignal()) {
-                    NavigationTrigger.BACK_PRESS
-                } else {
-                    NavigationTrigger.PROGRAMMATIC
-                }
-            }
-
-            NavigationTransitionType.PUSH,
-            NavigationTransitionType.REPLACE,
-            -> {
-                pendingBackPressTimestampNanos = null
-                NavigationTrigger.UNKNOWN
-            }
-        }
-
-    private fun consumeBackPressSignal(): Boolean {
-        val backPressTimestampNanos = pendingBackPressTimestampNanos ?: return false
-        pendingBackPressTimestampNanos = null
-        return clock.now() - backPressTimestampNanos <= BACK_PRESS_SIGNAL_TTL_NANOS
     }
 
     private val fragmentLifecycleCallbacks =
@@ -229,11 +210,14 @@ internal class ViewNavigationCollector(
                     return
                 }
 
+                val transition = inferFragmentTransition(fm)
                 emitTransitionIfNeeded(
                     destination =
                         NavigationNode(NavigationNodeType.FRAGMENT, screenNameExtractor.extract(f)),
-                    transitionType = inferFragmentTransitionType(fm),
+                    transitionType = transition.transitionType,
                     entryType = NavigationEntryType.INTERNAL,
+                    stackDepthBefore = transition.stackDepthBefore,
+                    stackDepthAfter = transition.stackDepthAfter,
                 )
             }
         }
@@ -247,20 +231,31 @@ internal class ViewNavigationCollector(
      * callbacks are intentionally ignored because forward `replace(...)` transactions also
      * destroy the previous Fragment, which would otherwise be misclassified as a back navigation.
      */
-    private fun inferFragmentTransitionType(fragmentManager: FragmentManager): NavigationTransitionType {
+    private fun inferFragmentTransition(fragmentManager: FragmentManager): FragmentTransition {
         val previousCount =
             backstackCountByManager[fragmentManager] ?: fragmentManager.backStackEntryCount
         val currentCount = fragmentManager.backStackEntryCount
         backstackCountByManager[fragmentManager] = currentCount
 
-        if (currentCount < previousCount) {
-            return NavigationTransitionType.POP
-        }
-        if (currentVisibleNode?.type == NavigationNodeType.FRAGMENT) {
-            return NavigationTransitionType.REPLACE
-        }
-        return NavigationTransitionType.PUSH
+        val transitionType =
+            when {
+                currentCount < previousCount -> NavigationTransitionType.POP
+                currentVisibleNode?.type == NavigationNodeType.FRAGMENT -> NavigationTransitionType.REPLACE
+                else -> NavigationTransitionType.PUSH
+            }
+        return FragmentTransition(transitionType, previousCount, currentCount)
     }
+
+    /**
+     * A classified Fragment transition together with the back-stack depths it was derived from, so
+     * the depths reach the span instead of being recomputed (which would double-read
+     * [FragmentManager.getBackStackEntryCount]).
+     */
+    private data class FragmentTransition(
+        val transitionType: NavigationTransitionType,
+        val stackDepthBefore: Int,
+        val stackDepthAfter: Int,
+    )
 
     override fun onActivityStarted(activity: Activity) = Unit
 
@@ -271,12 +266,4 @@ internal class ViewNavigationCollector(
         outState: Bundle,
     ) = Unit
 
-    private companion object {
-        /**
-         * How long a recorded back press stays eligible to be attributed to the next pop. A pop that
-         * arrives later is treated as programmatic, guarding against a stale back-press signal being
-         * misattributed. Implementation detail, intentionally not part of the published API.
-         */
-        const val BACK_PRESS_SIGNAL_TTL_NANOS: Long = 1_000_000_000L
-    }
 }

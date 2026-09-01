@@ -13,7 +13,7 @@ import io.opentelemetry.android.instrumentation.navigation.common.models.Navigat
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationNodeType
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTransitionCandidate
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTransitionType
-import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTrigger
+import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTriggerResolver
 import androidx.navigation3.runtime.NavKey
 
 internal class ComposeNav3Collector(
@@ -44,7 +44,13 @@ internal class ComposeNav3Collector(
         }
 
         val transitionType = inferTransition(previousSnapshot, snapshot)
-        val navigationTrigger = resolveTrigger(transitionType)
+        val navigationTrigger =
+            NavigationTriggerResolver.resolve(
+                transitionType,
+                pendingBackPressTimestampNanos,
+                clock.now(),
+            )
+        pendingBackPressTimestampNanos = null
         val sourceNode = sourceKey?.toNavigationNode()
         val destinationNode = destinationKey?.toNavigationNode()
         if (destinationNode == null) {
@@ -59,6 +65,8 @@ internal class ComposeNav3Collector(
                 transitionType = transitionType,
                 entryType = NavigationEntryType.INTERNAL,
                 timestampNanos = clock.now(),
+                stackDepthBefore = previousSnapshot.size,
+                stackDepthAfter = snapshot.size,
             ),
             navigationTrigger = navigationTrigger.value,
         )
@@ -76,42 +84,9 @@ internal class ComposeNav3Collector(
             else -> NavigationTransitionType.REPLACE
         }
 
-    private fun resolveTrigger(transitionType: NavigationTransitionType): NavigationTrigger =
-        when (transitionType) {
-            NavigationTransitionType.POP -> {
-                if (consumeBackPressSignal()) {
-                    NavigationTrigger.BACK_PRESS
-                } else {
-                    NavigationTrigger.PROGRAMMATIC
-                }
-            }
-
-            NavigationTransitionType.PUSH,
-            NavigationTransitionType.REPLACE,
-            -> {
-                pendingBackPressTimestampNanos = null
-                NavigationTrigger.UNKNOWN
-            }
-        }
-
-    private fun consumeBackPressSignal(): Boolean {
-        val backPressTimestampNanos = pendingBackPressTimestampNanos ?: return false
-        pendingBackPressTimestampNanos = null
-        return clock.now() - backPressTimestampNanos <= BACK_PRESS_SIGNAL_TTL_NANOS
-    }
-
     private fun NavKey.toNavigationNode(): NavigationNode =
         NavigationNode(
             type = NavigationNodeType.COMPOSE_ROUTE,
             name = nameOf(this),
         )
-
-    private companion object {
-        /**
-         * How long a recorded back press stays eligible to be attributed to the next pop. A pop that
-         * arrives later is treated as programmatic, guarding against a stale back-press signal being
-         * misattributed. Implementation detail, intentionally not part of the published API.
-         */
-        const val BACK_PRESS_SIGNAL_TTL_NANOS: Long = 1_000_000_000L
-    }
 }

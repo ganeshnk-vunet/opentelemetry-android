@@ -85,6 +85,9 @@ class ViewNavigationCollectorTest {
         assertThat(spans[1].attributes.get(SCREEN_NAME_KEY)).isEqualTo("DetailsActivity")
         assertThat(spans[1].attributes.get(NavigationConstants.NAVIGATION_TRANSITION_TYPE_KEY)).isEqualTo("push")
         assertThat(spans[1].attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("unknown")
+        // Activity transitions have no back-stack depth to report, so the attributes stay absent.
+        assertThat(spans[1].attributes.get(NavigationConstants.NAVIGATION_STACK_DEPTH_BEFORE_KEY)).isNull()
+        assertThat(spans[1].attributes.get(NavigationConstants.NAVIGATION_STACK_DEPTH_AFTER_KEY)).isNull()
     }
 
     @Test
@@ -261,6 +264,8 @@ class ViewNavigationCollectorTest {
         assertThat(spans).hasSize(4)
         assertThat(spans[3].attributes.get(NavigationConstants.NAVIGATION_TRANSITION_TYPE_KEY)).isEqualTo("pop")
         assertThat(spans[3].attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("programmatic")
+        assertThat(spans[3].attributes.get(NavigationConstants.NAVIGATION_STACK_DEPTH_BEFORE_KEY)).isEqualTo(2L)
+        assertThat(spans[3].attributes.get(NavigationConstants.NAVIGATION_STACK_DEPTH_AFTER_KEY)).isEqualTo(1L)
     }
 
     @Test
