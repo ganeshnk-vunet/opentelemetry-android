@@ -13,7 +13,7 @@ import io.opentelemetry.sdk.trace.data.SpanData
 internal object ActionSummarizer {
     private val WIDGET_TYPE = AttributeKey.stringKey("app.widget.type")
     private val WIDGET_NAME = AttributeKey.stringKey("app.widget.name")
-    private val WIDGET_CHECKED = AttributeKey.booleanKey("app.widget.checked")
+    private val WIDGET_CHECKED = AttributeKey.booleanKey("ui.control.value.checked")
     private val ACTIVITY_NAME = AttributeKey.stringKey("activity.name")
     private val FRAGMENT_NAME = AttributeKey.stringKey("fragment.name")
     private val NAV_SOURCE = AttributeKey.stringKey("navigation.source.name")

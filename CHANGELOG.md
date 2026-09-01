@@ -9,6 +9,18 @@
 - HTTP error taxonomy: OkHttp and HttpURLConnection failed spans include `http.error.category` (`timeout`, `dns`, `ssl`, `io`, `http_client`, `unknown`) alongside existing `error.type`.
 - Network monitoring: `network.connection.metered` boolean on spans and `network.change` events when the active network is known (replaces legacy `net.host.connection.metered`).
 - Image-load target attribution: Glide and Coil `image.load` spans include `image.target.view_id` (resource entry name; `no-id` for views without an `android:id`, `unresolved` for runtime `View.generateViewId()` ids that have no resource-table entry) and `image.target.view_type` when the request has a view-backed target, so a failing image can be traced to a specific widget rather than only to `screen.name`. Compose call sites (`AsyncImage`, `GlideImage`) have no backing `View` and omit both.
+- Hybrid-click gesture attribution: `ui.interaction` spans include `interaction.type`, the canonical
+  discriminator naming the gesture that produced the span. Values are `tap` and `long_press`, split
+  by press duration against `ViewConfiguration.getLongPressTimeout()`. The attribute describes the
+  user's gesture rather than what the app did with it: a slow press on a target with no long-click
+  handler reports `long_press` even though the app handled an ordinary click. Gestures that leave
+  the touch slop are still not reported at all, so span volume is unchanged.
+- Hybrid-click control classification: `ui.interaction` spans include `ui.control.type` (the
+  canonical successor to `app.widget.type`, carrying the identical value — both are emitted) and
+  `ui.control.selection_mode` (`single` for radio/tab/dropdown, `multiple` for switch/checkbox/
+  toggle, omitted for kinds where selection doesn't apply). The selection mode reflects what each
+  widget *kind* means, not per-instance state — a radio button is `single` regardless of whether
+  it's actually grouped with others.
 - Image-load error taxonomy: failed `image.load` spans include the standard semconv `error.type` (fully-qualified class of the failure) as a queryable attribute alongside the existing `recordException` span event, which most back-ends cannot group on. Reusing the semconv key means image failures join the same error breakdowns as the OkHttp and HttpURLConnection instrumentations. Glide reports the first root cause rather than the generic wrapping `GlideException`.
 - Jank type attribution: `app.jank` spans include `app.jank.type` (`slow` or `frozen`). Bucketing is cumulative — a frozen frame exceeds both thresholds and is reported by both spans — so counting `app.jank` spans double-counts frozen frames. Previously the only way to tell the two apart was matching the `app.jank.threshold` float (`0.016` vs `0.7`); this makes it a group-by. Purely additive — no existing attribute changed. Deliberate extension: semconv owns `app.jank.*` but defines only `frame_count`, `period`, and `threshold`. Migrating off deprecated `slowRenders`/`frozenRenders`: those bucket exclusively, so equivalent slow-only frames are `sum(app.jank.frame_count)` where `type="slow"` minus `sum(app.jank.frame_count)` where `type="frozen"` — do not subtract span counts.
 - Fault runtime attribution: `device.crash` and `device.anr` spans include `error.runtime` (`RumConstants.ERROR_RUNTIME_KEY`), always `jvm` from this SDK. A Dart/`FlutterError` or React Native exception rethrown into the Android uncaught handler is still `jvm`. Grouping Flutter/RN faults separately only works if those wrappers emit their own `device.crash` / `device.anr` (or overwrite via `addAttributesExtractor`) using `dart` / `js`. The value space is documented as `jvm` / `dart` / `js` (`ERROR_RUNTIME_JVM`, `ERROR_RUNTIME_DART`, `ERROR_RUNTIME_JS`) so wrappers that emit their own spans can copy the same lowercase runtime names rather than picking their own spelling; the values name the runtime, not the UI framework, which is reported separately as `app.framework`. `error.runtime` is a deliberate extension — semconv owns `error.*` but defines only `error.type`. Purely additive — no existing attribute changed.
@@ -50,6 +62,11 @@
 - Hybrid-click span renamed from `ui.click` to `ui.interaction`
   (`RumConstants.UI_INTERACTION_SPAN_NAME`). Update dashboards, alerts, and queries keyed on the
   old name. Span attributes and the derived `app.action.summary` value are unchanged.
+
+- `ui.interaction` toggle-state attribute renamed from `app.widget.checked` to
+  `ui.control.value.checked` (canonical `ui.control.value.*` family). Update dashboards, alerts,
+  and queries keyed on the old name. Internal-only constant identifier unchanged, so this is a
+  wire-key-only change.
 
 - Trace spans no longer repeat full device/OS resource attributes on every export. Only the first
   cold `app.start` span includes the full OTLP resource block; other trace spans use a minimal
