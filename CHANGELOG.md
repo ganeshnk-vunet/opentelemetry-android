@@ -13,6 +13,37 @@
 
 ### ⚠️⚠️ Breaking changes
 
+- `app.start` attribute and startup-phase span events renamed to the canonical `app.start.*`
+  names. Update dashboards, alerts, and queries keyed on the old names:
+
+  | Old | New |
+  |-----|-----|
+  | `start.type` (attribute) | `app.start.type` |
+  | `app.process.creation` | `app.start.phase.process` |
+  | `app.attach_base_context.start` | `app.start.phase.attach_base_context.start` |
+  | `app.attach_base_context.end` | `app.start.phase.attach_base_context.end` |
+  | `app.content_providers.start` | `app.start.phase.content_providers.start` |
+  | `app.content_providers.end` | `app.start.phase.content_providers.end` |
+  | `applicationCreated` | `app.start.phase.sdk_init` |
+  | `applicationPostCreated` | `app.start.phase.first_activity` |
+  | `ttid` | `app.start.phase.initial_display` |
+
+  Every startup milestone now lives under `app.start.phase.*`, and the two phases that report
+  both a boundary and an end keep them under one shared prefix
+  (`app.start.phase.attach_base_context.*`, `app.start.phase.content_providers.*`) so a duration
+  query can pair them by stripping `.start` / `.end`.
+
+  Each name describes the probe it is taken from rather than a generic startup phase:
+  `attach_base_context.end` is the first `Application` callback completing (the ART runtime is
+  already up well before it), `content_providers.end` is the end of ContentProvider init,
+  `sdk_init` is the instant the OTel SDK finished initialising partway through
+  `Application.onCreate()`, and `first_activity` is the first `onActivityPreCreated` — which
+  fires before `Activity.onCreate`, layout, or first paint. First paint is
+  `app.start.phase.initial_display`.
+
+  `RumConstants.START_TYPE_KEY` and the `AppStartupTimer.EVENT_*` constants keep their identifiers,
+  so this changes the emitted wire keys only and is source- and binary-compatible for callers.
+
 - Hybrid-click span renamed from `ui.click` to `ui.interaction`
   (`RumConstants.UI_INTERACTION_SPAN_NAME`). Update dashboards, alerts, and queries keyed on the
   old name. Span attributes and the derived `app.action.summary` value are unchanged.

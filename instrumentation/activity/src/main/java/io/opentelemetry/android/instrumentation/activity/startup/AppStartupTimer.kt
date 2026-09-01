@@ -50,7 +50,7 @@ internal class AppStartupTimer(
     // accessed only from UI thread
     private var uiInitTooLate = false
 
-    // guards applicationPostCreated so it fires only for the first activity;
+    // guards app.start.phase.first_activity so it fires only for the first activity;
     // in BFSI apps a second activity (biometric/splash) can fire before the first frame
     private val postCreatedFired = AtomicBoolean(false)
 
@@ -59,7 +59,7 @@ internal class AppStartupTimer(
     @Volatile
     private var ttidListenerAttached = false
 
-    // true once the first-frame draw has been detected and the ttid event emitted
+    // true once the first-frame draw has been detected and the initial-display event emitted
     private val ttidFired = AtomicBoolean(false)
 
     // guards ContentProvider end events so they are recorded once when the timestamp becomes available
@@ -77,7 +77,7 @@ internal class AppStartupTimer(
         val sdkInitNanos = startupClock.now()
 
         // On API 24+, compute the process fork time once and reuse it for both the span
-        // start timestamp and the app.process.creation event, so they carry the same value.
+        // start timestamp and the app.start.phase.process event, so they carry the same value.
         // Anchored to the injected clock so start and end timestamps share the same time domain.
         // On API 23, fall back to SDK init time.
         val processStartNanos =
@@ -118,7 +118,7 @@ internal class AppStartupTimer(
         // ContentProvider phase end — may be deferred if SDK init runs before EarlyStartupContentProvider.
         recordContentProviderEndEvents(appStart)
 
-        // applicationCreated — SDK init is complete; all of Application.onCreate() that
+        // app.start.phase.sdk_init — SDK init is complete; all of Application.onCreate() that
         // ran before the OTel SDK initialised has now been accounted for.
         appStart.addEvent(
             EVENT_APPLICATION_CREATED,
@@ -318,45 +318,63 @@ internal class AppStartupTimer(
 
     companion object {
         /** Milestone: Linux process was forked. Backdated via [Process.getStartElapsedRealtime]. */
-        internal const val EVENT_PROCESS_CREATION = "app.process.creation"
+        internal const val EVENT_PROCESS_CREATION = "app.start.phase.process"
 
         /**
          * Milestone: start of [android.app.Application.attachBaseContext]. Requires startup-agent
          * weave and a declared override on the app's [android.app.Application] subclass.
+         *
+         * Shares the `app.start.phase.attach_base_context` prefix with
+         * [EVENT_ATTACH_BASE_CONTEXT_END] so a duration query can pair the two by stripping
+         * `.start` / `.end`.
          */
-        internal const val EVENT_ATTACH_BASE_CONTEXT_START = "app.attach_base_context.start"
+        internal const val EVENT_ATTACH_BASE_CONTEXT_START = "app.start.phase.attach_base_context.start"
 
         /**
          * Milestone: end of [android.app.Application.attachBaseContext]. Requires startup-agent
          * weave and a declared override on the app's [android.app.Application] subclass.
+         *
+         * Named for the probe rather than for a runtime-init phase: the ART runtime is already
+         * running well before `attachBaseContext`, so this marks the first `Application` callback
+         * completing, not the runtime coming up.
          */
-        internal const val EVENT_ATTACH_BASE_CONTEXT_END = "app.attach_base_context.end"
+        internal const val EVENT_ATTACH_BASE_CONTEXT_END = "app.start.phase.attach_base_context.end"
 
         /**
          * Milestone: start of the ContentProvider initialization phase; captured by
          * [io.opentelemetry.android.instrumentation.startup.AppAnchorContentProvider].
+         *
+         * Shares the `app.start.phase.content_providers` prefix with
+         * [EVENT_CONTENT_PROVIDERS_END] so the two can be paired into a duration.
          */
-        internal const val EVENT_CONTENT_PROVIDERS_START = "app.content_providers.start"
+        internal const val EVENT_CONTENT_PROVIDERS_START = "app.start.phase.content_providers.start"
 
         /**
          * Milestone: end of the ContentProvider initialization phase; captured by
          * [io.opentelemetry.android.instrumentation.startup.EarlyStartupContentProvider].
          * Present only when the startup artifact is on the classpath.
          */
-        internal const val EVENT_CONTENT_PROVIDERS_END = "app.content_providers.end"
+        internal const val EVENT_CONTENT_PROVIDERS_END = "app.start.phase.content_providers.end"
 
         /**
          * Milestone: OTel SDK initialisation complete; all of [android.app.Application.onCreate]
          * that ran before the SDK was set up has now been accounted for.
+         *
+         * Named `sdk_init` rather than `application` because it marks the instant the SDK came up,
+         * which is partway through [android.app.Application.onCreate] — not that callback ending.
          */
-        internal const val EVENT_APPLICATION_CREATED = "applicationCreated"
+        internal const val EVENT_APPLICATION_CREATED = "app.start.phase.sdk_init"
 
         /**
          * Milestone: first [android.app.Activity.onActivityPreCreated] fired — the OS hand-off
          * from [android.app.Application.onCreate] to the first Activity. Emitted only once,
          * guarded by [AppStartupTimer.postCreatedFired].
+         *
+         * Named for that probe rather than for UI readiness: it fires before
+         * [android.app.Activity.onCreate], before layout and before the first frame. First paint
+         * is [EVENT_TTID].
          */
-        internal const val EVENT_APPLICATION_POST_CREATED = "applicationPostCreated"
+        internal const val EVENT_APPLICATION_POST_CREATED = "app.start.phase.first_activity"
 
         /**
          * Milestone: first frame committed to SurfaceFlinger — the true end of cold-start
@@ -365,6 +383,6 @@ internal class AppStartupTimer(
          * via [android.view.View.post] so the timestamp falls after the frame is committed.
          * This is the timestamp at which the span ends.
          */
-        internal const val EVENT_TTID = "ttid"
+        internal const val EVENT_TTID = "app.start.phase.initial_display"
     }
 }

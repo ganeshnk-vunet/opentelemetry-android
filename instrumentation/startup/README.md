@@ -14,10 +14,10 @@ When the [activity](../activity) instrumentation is installed, cold-start teleme
 
 | Telemetry | Type | Name | Source |
 |-----------|------|------|--------|
-| Process fork | Event | `app.process.creation` | Backdated from `Process.getStartElapsedRealtime()` (API 24+) |
-| attachBaseContext phase | Event | `app.attach_base_context.start` / `.end` | Requires **startup-agent** (see below) |
-| ContentProvider phase start | Event | `app.content_providers.start` | `AppAnchorContentProvider` |
-| ContentProvider phase end | Event | `app.content_providers.end` | `EarlyStartupContentProvider` |
+| Process fork | Event | `app.start.phase.process` | Backdated from `Process.getStartElapsedRealtime()` (API 24+) |
+| attachBaseContext phase | Event | `app.start.phase.attach_base_context.start` / `.end` | Requires **startup-agent** (see below) |
+| ContentProvider phase start | Event | `app.start.phase.content_providers.start` | `AppAnchorContentProvider` |
+| ContentProvider phase end | Event | `app.start.phase.content_providers.end` | `EarlyStartupContentProvider` |
 
 ### SDK Initialization
 
@@ -33,7 +33,7 @@ Runtime instrumentation comes with the [android agent](../../android-agent) out 
 
 ### attachBaseContext events (startup-agent)
 
-The `app.attach_base_context.start` and `app.attach_base_context.end` events require compile-time weaving of
+The `app.start.phase.attach_base_context.start` and `.end` events require compile-time weaving of
 `Application.attachBaseContext()` via the **startup-agent** artifact.
 
 Your `Application` subclass must **declare** `attachBaseContext` so the Android Byte Buddy

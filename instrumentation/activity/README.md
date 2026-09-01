@@ -19,14 +19,28 @@ This instrumentation produces the following telemetry:
   installed. It is ended when the first frame is drawn (TTID) or when the initial activity
   reaches PostPaused, PostStopped, or PostDestroyed.
 * Attributes:
-  * `start.type`: { `cold` | `hot` | `warm` }
+  * `app.start.type`: { `cold` | `hot` | `warm` }
 * Resource (trace export): the **first cold** `app.start` span includes the full OTLP resource block
   (`device.*`, `os.*`, `app.installation.id`, `service.*`, etc.). All other trace spans carry a
   minimal resource (`service.name` only). Logs and metrics always use the full resource.
-* Span events (cold start): `app.process.creation`, `app.attach_base_context.start`,
-  `app.attach_base_context.end` (require [startup-agent](../startup/README.md) and a declared
-  `attachBaseContext` override on your `Application` subclass), `app.content_providers.start`,
-  `app.content_providers.end`, `applicationCreated`, `applicationPostCreated`, `ttid`
+* Span events (cold start): `app.start.phase.process`,
+  `app.start.phase.attach_base_context.start` / `.end` (require
+  [startup-agent](../startup/README.md) and a declared `attachBaseContext` override on your
+  `Application` subclass), `app.start.phase.content_providers.start` / `.end`,
+  `app.start.phase.sdk_init`, `app.start.phase.first_activity`,
+  `app.start.phase.initial_display`
+
+  Each name describes the probe it is taken from, not a generic phase:
+  * `attach_base_context.end` — the first `Application` callback completing. The ART runtime is
+    already running well before this, so it is not a runtime-init marker.
+  * `content_providers.end` — end of the ContentProvider init phase.
+  * `sdk_init` — the OTel SDK finished initialising, partway through `Application.onCreate()`.
+    Not the end of that callback.
+  * `first_activity` — the first `onActivityPreCreated`. It fires *before* `Activity.onCreate`,
+    layout, and first paint; first paint is `app.start.phase.initial_display`.
+
+  The two phases that report both a boundary and an end keep them under one shared prefix, so a
+  duration query can pair them by stripping `.start` / `.end`.
 
 ### Activity state change
 
