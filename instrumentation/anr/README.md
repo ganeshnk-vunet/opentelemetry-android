@@ -19,15 +19,18 @@ This instrumentation produces the following telemetry:
 ### ANR
 
 * Type: Event
-* Name: `ANR`
+* Event Name: `device.anr`
 * Description: This log event is created when this instrumentation detects an ANR.
 * Status: `ERROR` (always)
 * Attributes:
+  * `error.runtime`: Language runtime that produced the fault. This SDK always emits `jvm`. Wrappers grouping Flutter/RN faults must emit their own `device.anr` or overwrite this via `addAttributesExtractor` using `dart` / `js`. Deliberate `error.*` extension (semconv currently defines only `error.type`).
   * `exception.stacktrace`: A string representation of the call stack of the main thread at the time of the ANR.
     ([see semconv here](https://github.com/open-telemetry/semantic-conventions/blob/0b3babde7ff9f74b03a1a49adcdb319354d47d85/docs/attributes-registry/exception.md#exception-stacktrace))
 
 Note: This instrumentation supports additional user-configurable `AttributeExtractors` that
 may set additional attributes from the given `StackTraceElement[]`.
+Extractors run after the built-in attributes and may replace `error.runtime`; that is the
+supported in-process override for a wrapper that still goes through this reporter.
 
 ## Installation
 

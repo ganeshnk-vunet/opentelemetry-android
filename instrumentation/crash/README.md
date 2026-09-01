@@ -16,6 +16,7 @@ This instrumentation produces the following telemetry:
 * Event Name: `device.crash`
 * Description: An event that is generated for exceptions not handled by user code.
 * Attributes:
+    * `error.runtime`: Language runtime that produced the fault. This SDK always emits `jvm`. A Dart or JS exception rethrown into the Android uncaught handler is still `jvm`. Wrappers grouping Flutter/RN faults must emit their own `device.crash` or overwrite this via `addAttributesExtractor` using `dart` / `js`. Deliberate `error.*` extension (semconv currently defines only `error.type`).
     * `exception.message` ([see semconv here](https://github.com/open-telemetry/semantic-conventions/blob/727700406f9e6cc3f4e4680a81c4c28f2eb71569/docs/attributes-registry/exception.md#exception-message))
     * `exception.stacktrace` ([see semconv here](https://github.com/open-telemetry/semantic-conventions/blob/727700406f9e6cc3f4e4680a81c4c28f2eb71569/docs/attributes-registry/exception.md#exception-stacktrace))
     * `exception.type` ([see semconv here](https://github.com/open-telemetry/semantic-conventions/blob/727700406f9e6cc3f4e4680a81c4c28f2eb71569/docs/attributes-registry/exception.md#exception-type))
@@ -24,6 +25,8 @@ This instrumentation produces the following telemetry:
 
 Note: This instrumentation supports additional user-configurable `AttributeExtractors` that
 may set additional attributes from the given `CrashDetails` (`Thread` and `Throwable`).
+Extractors run after the built-in attributes and may replace `error.runtime`; that is the
+supported in-process override for a wrapper that still goes through this reporter.
 
 ## Installation
 

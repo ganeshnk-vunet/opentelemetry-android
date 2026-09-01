@@ -18,7 +18,13 @@ class CrashReporterInstrumentation : AndroidInstrumentation {
     private val additionalExtractors: MutableList<EventAttributesExtractor<CrashDetails>> =
         mutableListOf()
 
-    /** Adds an [EventAttributesExtractor] that will extract additional attributes.  */
+    /**
+     * Adds an [EventAttributesExtractor] that will extract additional attributes.
+     *
+     * Extractors run after the built-in attributes and may replace `error.runtime`. That is the
+     * supported in-process override for a wrapper that still reports through this instrumentation
+     * (this SDK otherwise always stamps `jvm`).
+     */
     fun addAttributesExtractor(extractor: EventAttributesExtractor<CrashDetails>) {
         additionalExtractors.add(extractor)
     }
