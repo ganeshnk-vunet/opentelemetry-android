@@ -32,8 +32,8 @@ Data produced by this instrumentation uses instrumentation scope name
 | `process.memory.heap.used` | Long | Java heap bytes currently in use |
 | `process.memory.heap.allocated` | Long | Java heap bytes committed from the OS |
 | `process.memory.heap.free` | Long | Java heap bytes committed but unused |
-| `process.memory.resident` | Long | Native heap bytes allocated via malloc/JNI |
-| `process.memory.footprint` | Long | Proportional Set Size in **kB** (cached; refreshed every 60 s) |
+| `process.memory.native.used` | Long | Native heap bytes allocated via malloc/JNI (not canonical `process.memory.resident` — see note below) |
+| `process.memory.footprint` | Long | Proportional Set Size in **bytes** (cached; refreshed every 60 s) |
 | `process.thread.count` | Long | Total live threads in this process |
 | `system.memory.total` | Long | Total physical RAM on the device (bytes) |
 | `system.memory.available` | Long | Available (free) RAM on the device (bytes) |
@@ -45,6 +45,12 @@ Data produced by this instrumentation uses instrumentation scope name
 
 > `heap.free`, `battery.percent`, and `storage.free` reuse the attribute keys already
 > defined in `RumConstants` so they align with the crash instrumentation schema.
+>
+> `process.memory.native.used` is deliberately not renamed to the canonical
+> `process.memory.resident`: the value is native heap allocated via malloc/JNI
+> (`Debug.getNativeHeapAllocatedSize()`), not resident set size — a different, currently
+> unmeasured statistic. Adopting the canonical name for the wrong quantity would make it silently
+> wrong on any chart comparing it against a real RSS value.
 
 ## How it works
 

@@ -19,8 +19,7 @@ import org.junit.jupiter.api.Test
  * The expected value below is a string literal rather than a reference to the constant it pins;
  * referring to the constant would reintroduce exactly the blind spot this test exists to close.
  *
- * Companion to `AppStartWireKeyContractTest`, `FaultWireKeyContractTest` and
- * `JankWireKeyContractTest` — same rationale, same shape.
+ * Companion to `MetricsWireKeyContractTest` — same rationale, same shape.
  */
 class ActionSummaryWireKeyContractTest {
     @Test

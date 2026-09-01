@@ -58,21 +58,27 @@
 
   `RumConstants.START_TYPE_KEY` and the `AppStartupTimer.EVENT_*` constants keep their identifiers,
   so this changes the emitted wire keys only and is source- and binary-compatible for callers.
-- Two `app.metrics` attributes renamed to their canonical names:
+- **`app.metrics`'s `process.memory.pss` renamed to `process.memory.footprint`, in bytes.**
+  Canonical defines footprint in bytes — the same field iOS feeds from `phys_footprint`, itself
+  bytes — so the conversion ships in this same change rather than being deferred: unlike a rename
+  that reuses an already-populated key, `process.memory.footprint` has no existing readers to
+  protect from a silent 1024× shift, since nobody has ever emitted this key name before. Deferring
+  the conversion would instead have made it wrong from day one for anyone building a new query
+  against the canonical name expecting the canonical unit. `process.memory.pss` (kB) is removed;
+  update dashboards, alerts, and queries keyed on it. `SystemMetricsSpanEmitter` is `internal`, so
+  no `apiCheck`/`apiDump` is affected.
 
-  | Old | New |
-  |-----|-----|
-  | `process.memory.native.used` | `process.memory.resident` |
-  | `process.memory.pss` | `process.memory.footprint` |
+  `MemoryMetricsReader.readPssKb()` is renamed to `readFootprintBytes()`; the kB→bytes
+  multiplication is pulled out as `MemoryMetricsReader.pssKbToBytes` so it's directly
+  unit-testable.
 
-  Update dashboards, alerts, and queries keyed on the old names. Both are `internal` constants in
-  `SystemMetricsSpanEmitter`, so no `apiCheck`/`apiDump` is affected.
-
-  **Unit note:** `process.memory.footprint` continues to carry Proportional Set Size in **kB**,
-  not bytes. Canonical defines footprint in bytes, and iOS feeds `phys_footprint` (bytes) to the
-  same field — so a cross-platform chart on this attribute currently compares kB against bytes.
-  This rename does not change the unit; converting it is a separate, deliberate decision since it
-  would silently move every existing value by 1024x.
+- **`process.memory.native.used` is *not* renamed to `process.memory.resident`, on reflection.**
+  An earlier draft of this change proposed that rename, but the value behind it —
+  `Debug.getNativeHeapAllocatedSize()`, native heap allocated via malloc/JNI — is not resident set
+  size (pages currently mapped into physical RAM); those are different statistics. Shipping the
+  canonical name against the wrong quantity would make any chart comparing it against a real RSS
+  value (e.g. iOS `resident_size`) silently wrong. `process.memory.native.used` stays as-is until
+  this SDK can emit a genuine RSS reading under the canonical name.
 
 - Action summary renamed to the canonical `semantic.summary` (was `app.action.summary`). This is the human-readable span description written by `ActionSummarySpanExporter` (e.g. `App cold start`). Update dashboards, alerts, and queries keyed on the old name. `RumConstants.APP_ACTION_SUMMARY_KEY` keeps its identifier, so this changes the emitted wire key only and is source- and binary-compatible for callers.
 
