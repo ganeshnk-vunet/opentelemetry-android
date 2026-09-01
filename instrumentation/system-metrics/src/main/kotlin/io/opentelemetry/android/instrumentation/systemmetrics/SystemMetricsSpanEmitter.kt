@@ -16,7 +16,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Periodically captures a snapshot of all system + device metrics and emits a standalone
- * `"app.metrics"` span containing the data as a named event.
+ * `"app.metrics"` span containing the data as span attributes.
  *
  * **CPU min/max tracking:**
  * A 1-second sub-sampler feeds a rolling window for CPU usage. Each emission includes
@@ -100,13 +100,12 @@ internal class SystemMetricsSpanEmitter(
     }
 
     private fun emitStandaloneSpan(sample: ProcessSample) {
-        val span =
-            tracer
-                .spanBuilder("app.metrics")
-                .setSpanKind(SpanKind.INTERNAL)
-                .startSpan()
-        span.addEvent("app.metrics", buildAttributes(sample))
-        span.end()
+        tracer
+            .spanBuilder("app.metrics")
+            .setSpanKind(SpanKind.INTERNAL)
+            .setAllAttributes(buildAttributes(sample))
+            .startSpan()
+            .end()
         RumDiagnostics.d {
             "systemMetrics: emit cpu=${sample.cpuUsage} threads=${sample.threadCount}"
         }

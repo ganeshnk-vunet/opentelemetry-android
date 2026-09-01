@@ -22,7 +22,7 @@ private const val COLLECTION_INTERVAL_SECONDS = 30L
  * Entry point for system metrics instrumentation.
  *
  * Periodically captures a snapshot of CPU, memory, thread, and device metrics and
- * emits them as an `"app.metrics"` event on a standalone `"app.metrics"` span.
+ * emits them as attributes on a standalone `"app.metrics"` span.
  */
 @AutoService(AndroidInstrumentation::class)
 class SystemMetricsInstrumentation : AndroidInstrumentation, ConfigurableSystemMetricsInstrumentation {

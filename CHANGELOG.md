@@ -27,6 +27,21 @@
 
 ### ⚠️⚠️ Breaking changes
 
+- **`app.metrics` no longer carries its data on a span event — this is not a rename, and a
+  rename-style fix does not apply.** All 16 metric attributes (`process.cpu.usage`,
+  `process.memory.*`, `process.thread.count`, `system.memory.*`, `battery.percent`,
+  `system.battery.temperature`, `storage.free`, `system.disk.total`, etc.) move from the
+  `"app.metrics"` **event** attached to the `app.metrics` span to direct **attributes on the span
+  itself**. The `"app.metrics"` event is removed entirely, not left empty.
+
+  Every attribute keeps its existing name and value — nothing to search-and-replace. Any
+  dashboard, alert, or query reading these values via `event.attributes` for the `app.metrics`
+  span sees the data disappear, not move under a new key, because it's no longer in that OTLP
+  location at all. Consumers must instead read `span.attributes` directly on the `app.metrics`
+  span. Span name, span kind, and emission timing (default 30s) are unchanged.
+
+  `SystemMetricsSpanEmitter` is `internal`; no public API / `apiCheck` impact.
+
 - `app.metrics` renamed `heap.free` to the canonical `process.memory.heap.free`. `device.crash` and `device.anr` keep `heap.free` unchanged — canonical renames this field in `app.metrics` scope only. Both signals previously emitted through a single shared `RumConstants.HEAP_FREE_KEY`, so `SystemMetricsSpanEmitter` now declares its own key, the same way every non-shared metric there already does; `RumConstants.HEAP_FREE_KEY` is untouched, so the crash reporter and any caller using it are unaffected and the public API is unchanged. `storage.free` and `battery.percent` stay shared, as canonical keeps those identical on both signals. Update dashboards, alerts, and queries reading `heap.free` off `app.metrics`.
 - `app.start` attribute and startup-phase span events renamed to the canonical `app.start.*`
   names. Update dashboards, alerts, and queries keyed on the old names:
