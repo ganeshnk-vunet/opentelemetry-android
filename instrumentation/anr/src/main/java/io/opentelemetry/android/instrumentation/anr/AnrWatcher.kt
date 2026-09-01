@@ -6,6 +6,7 @@
 package io.opentelemetry.android.instrumentation.anr
 
 import android.os.Handler
+import io.opentelemetry.android.common.RumConstants
 import io.opentelemetry.android.common.RumDiagnostics
 import io.opentelemetry.android.common.internal.utils.threadIdCompat
 import io.opentelemetry.android.instrumentation.common.EventAttributesExtractor
@@ -81,10 +82,13 @@ internal class AnrWatcher(
         val attributesBuilder =
             Attributes
                 .builder()
+                .put(RumConstants.ERROR_RUNTIME_KEY, RumConstants.ERROR_RUNTIME_JVM)
                 .put(THREAD_ID, id)
                 .put(THREAD_NAME, mainThread.name)
                 .put(EXCEPTION_STACKTRACE, stackTraceToString(stackTrace))
 
+        // Extractors run after this write and may replace error.runtime; that is the
+        // supported in-process override for a wrapper that still goes through this reporter.
         for (extractor in additionalExtractors) {
             val extractedAttributes = extractor.extract(Context.current(), stackTrace)
             attributesBuilder.putAll(extractedAttributes)

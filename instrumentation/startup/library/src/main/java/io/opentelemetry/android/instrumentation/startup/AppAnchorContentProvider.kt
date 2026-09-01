@@ -22,7 +22,7 @@ import android.net.Uri
  * concurrently or first.
  *
  * The captured value is stored in [ProcessStartTimestamps.contentProvidersPhaseStartEpochMs]
- * and later emitted as the `app.content_providers.start` event on the AppStart span.
+ * and later emitted as the `app.start.phase.content_providers.start` event on the AppStart span.
  *
  * This provider is registered in the startup artifact's AndroidManifest and is automatically
  * merged into the app's manifest when the artifact is on the classpath. No manual wiring is

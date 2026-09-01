@@ -11,8 +11,40 @@
 - Image-load target attribution: Glide and Coil `image.load` spans include `image.target.view_id` (resource entry name; `no-id` for views without an `android:id`, `unresolved` for runtime `View.generateViewId()` ids that have no resource-table entry) and `image.target.view_type` when the request has a view-backed target, so a failing image can be traced to a specific widget rather than only to `screen.name`. Compose call sites (`AsyncImage`, `GlideImage`) have no backing `View` and omit both.
 - Image-load error taxonomy: failed `image.load` spans include the standard semconv `error.type` (fully-qualified class of the failure) as a queryable attribute alongside the existing `recordException` span event, which most back-ends cannot group on. Reusing the semconv key means image failures join the same error breakdowns as the OkHttp and HttpURLConnection instrumentations. Glide reports the first root cause rather than the generic wrapping `GlideException`.
 - Jank type attribution: `app.jank` spans include `app.jank.type` (`slow` or `frozen`). Bucketing is cumulative — a frozen frame exceeds both thresholds and is reported by both spans — so counting `app.jank` spans double-counts frozen frames. Previously the only way to tell the two apart was matching the `app.jank.threshold` float (`0.016` vs `0.7`); this makes it a group-by. Purely additive — no existing attribute changed. Deliberate extension: semconv owns `app.jank.*` but defines only `frame_count`, `period`, and `threshold`. Migrating off deprecated `slowRenders`/`frozenRenders`: those bucket exclusively, so equivalent slow-only frames are `sum(app.jank.frame_count)` where `type="slow"` minus `sum(app.jank.frame_count)` where `type="frozen"` — do not subtract span counts.
+- Fault runtime attribution: `device.crash` and `device.anr` spans include `error.runtime` (`RumConstants.ERROR_RUNTIME_KEY`), always `jvm` from this SDK. A Dart/`FlutterError` or React Native exception rethrown into the Android uncaught handler is still `jvm`. Grouping Flutter/RN faults separately only works if those wrappers emit their own `device.crash` / `device.anr` (or overwrite via `addAttributesExtractor`) using `dart` / `js`. The value space is documented as `jvm` / `dart` / `js` (`ERROR_RUNTIME_JVM`, `ERROR_RUNTIME_DART`, `ERROR_RUNTIME_JS`) so wrappers that emit their own spans can copy the same lowercase runtime names rather than picking their own spelling; the values name the runtime, not the UI framework, which is reported separately as `app.framework`. `error.runtime` is a deliberate extension — semconv owns `error.*` but defines only `error.type`. Purely additive — no existing attribute changed.
 
 ### ⚠️⚠️ Breaking changes
+
+- `app.start` attribute and startup-phase span events renamed to the canonical `app.start.*`
+  names. Update dashboards, alerts, and queries keyed on the old names:
+
+  | Old | New |
+  |-----|-----|
+  | `start.type` (attribute) | `app.start.type` |
+  | `app.process.creation` | `app.start.phase.process` |
+  | `app.attach_base_context.start` | `app.start.phase.attach_base_context.start` |
+  | `app.attach_base_context.end` | `app.start.phase.attach_base_context.end` |
+  | `app.content_providers.start` | `app.start.phase.content_providers.start` |
+  | `app.content_providers.end` | `app.start.phase.content_providers.end` |
+  | `applicationCreated` | `app.start.phase.sdk_init` |
+  | `applicationPostCreated` | `app.start.phase.first_activity` |
+  | `ttid` | `app.start.phase.initial_display` |
+
+  Every startup milestone now lives under `app.start.phase.*`, and the two phases that report
+  both a boundary and an end keep them under one shared prefix
+  (`app.start.phase.attach_base_context.*`, `app.start.phase.content_providers.*`) so a duration
+  query can pair them by stripping `.start` / `.end`.
+
+  Each name describes the probe it is taken from rather than a generic startup phase:
+  `attach_base_context.end` is the first `Application` callback completing (the ART runtime is
+  already up well before it), `content_providers.end` is the end of ContentProvider init,
+  `sdk_init` is the instant the OTel SDK finished initialising partway through
+  `Application.onCreate()`, and `first_activity` is the first `onActivityPreCreated` — which
+  fires before `Activity.onCreate`, layout, or first paint. First paint is
+  `app.start.phase.initial_display`.
+
+  `RumConstants.START_TYPE_KEY` and the `AppStartupTimer.EVENT_*` constants keep their identifiers,
+  so this changes the emitted wire keys only and is source- and binary-compatible for callers.
 
 - Hybrid-click span renamed from `ui.click` to `ui.interaction`
   (`RumConstants.UI_INTERACTION_SPAN_NAME`). Update dashboards, alerts, and queries keyed on the

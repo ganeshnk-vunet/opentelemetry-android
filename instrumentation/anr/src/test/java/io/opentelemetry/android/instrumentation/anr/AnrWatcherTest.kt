@@ -9,11 +9,14 @@ import android.os.Handler
 import io.mockk.Called
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
 import io.mockk.verify
+import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.api.common.Attributes
 import io.opentelemetry.api.trace.Span
 import io.opentelemetry.api.trace.SpanBuilder
 import io.opentelemetry.api.trace.Tracer
+import org.assertj.core.api.Assertions.assertThat
 import org.junit.Before
 import org.junit.Test
 
@@ -36,6 +39,24 @@ class AnrWatcherTest {
         every { spanBuilder.setAllAttributes(any<Attributes>()) } returns spanBuilder
         every { spanBuilder.startSpan() } returns span
         every { span.end() } returns Unit
+    }
+
+    /**
+     * The other tests here only verify that `setAllAttributes` was called, so they would not
+     * notice an attribute going missing. This one inspects what was actually passed.
+     */
+    @Test
+    fun anr_span_carries_error_runtime() {
+        val captured = slot<Attributes>()
+        every { spanBuilder.setAllAttributes(capture(captured)) } returns spanBuilder
+        val anrWatcher = AnrWatcher(handler, mainThread, tracer, emptyList(), 1)
+        every { handler.post(any()) } returns true
+
+        for (i in 0..4) {
+            anrWatcher.run()
+        }
+
+        assertThat(captured.captured.get(AttributeKey.stringKey("error.runtime"))).isEqualTo("jvm")
     }
 
     @Test
