@@ -170,6 +170,7 @@ internal class SystemMetricsSpanEmitter(
         const val METRIC_CPU_MAX = "process.cpu.usage.max"
         const val METRIC_HEAP_USED = "process.memory.heap.used"
         const val METRIC_HEAP_ALLOCATED = "process.memory.heap.allocated"
+        const val METRIC_HEAP_FREE = "process.memory.heap.free"
         const val METRIC_NATIVE_USED = "process.memory.native.used"
         const val METRIC_PSS_KB = "process.memory.pss"
         const val METRIC_THREAD_COUNT = "process.thread.count"
@@ -187,8 +188,17 @@ internal class SystemMetricsSpanEmitter(
         // Process — heap (current values only)
         val ATTR_HEAP_USED: AttributeKey<Long> = AttributeKey.longKey(METRIC_HEAP_USED)
         val ATTR_HEAP_ALLOCATED: AttributeKey<Long> = AttributeKey.longKey(METRIC_HEAP_ALLOCATED)
-        // Reuse RumConstants.HEAP_FREE_KEY ("heap.free") — matches crash instrumentation schema.
-        val ATTR_HEAP_FREE: AttributeKey<Long> = RumConstants.HEAP_FREE_KEY
+        /**
+         * Deliberately *not* [RumConstants.HEAP_FREE_KEY], unlike [ATTR_BATTERY_LEVEL] and
+         * [ATTR_DISK_FREE] below, which still alias the shared crash-schema keys.
+         *
+         * Canonical names this field `process.memory.heap.free` on `app.metrics` while keeping the
+         * short `heap.free` on `device.crash`, so the two signals can no longer share one object.
+         * Declaring it locally — the same way every non-shared metric here is declared — leaves
+         * `RumConstants.HEAP_FREE_KEY` untouched for the crash reporter and keeps this out of the
+         * public API surface, since this class is `internal`.
+         */
+        val ATTR_HEAP_FREE: AttributeKey<Long> = AttributeKey.longKey(METRIC_HEAP_FREE)
         val ATTR_NATIVE_USED: AttributeKey<Long> = AttributeKey.longKey(METRIC_NATIVE_USED)
         val ATTR_PSS_KB: AttributeKey<Long> = AttributeKey.longKey(METRIC_PSS_KB)
         val ATTR_THREAD_COUNT: AttributeKey<Long> = AttributeKey.longKey(METRIC_THREAD_COUNT)
