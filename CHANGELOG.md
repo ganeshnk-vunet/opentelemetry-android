@@ -58,10 +58,28 @@
 
   `RumConstants.START_TYPE_KEY` and the `AppStartupTimer.EVENT_*` constants keep their identifiers,
   so this changes the emitted wire keys only and is source- and binary-compatible for callers.
+- Two `app.metrics` attributes renamed to their canonical names:
+
+  | Old | New |
+  |-----|-----|
+  | `process.memory.native.used` | `process.memory.resident` |
+  | `process.memory.pss` | `process.memory.footprint` |
+
+  Update dashboards, alerts, and queries keyed on the old names. Both are `internal` constants in
+  `SystemMetricsSpanEmitter`, so no `apiCheck`/`apiDump` is affected.
+
+  **Unit note:** `process.memory.footprint` continues to carry Proportional Set Size in **kB**,
+  not bytes. Canonical defines footprint in bytes, and iOS feeds `phys_footprint` (bytes) to the
+  same field — so a cross-platform chart on this attribute currently compares kB against bytes.
+  This rename does not change the unit; converting it is a separate, deliberate decision since it
+  would silently move every existing value by 1024x.
+
+- Action summary renamed to the canonical `semantic.summary` (was `app.action.summary`). This is the human-readable span description written by `ActionSummarySpanExporter` (e.g. `App cold start`). Update dashboards, alerts, and queries keyed on the old name. `RumConstants.APP_ACTION_SUMMARY_KEY` keeps its identifier, so this changes the emitted wire key only and is source- and binary-compatible for callers.
 
 - Hybrid-click span renamed from `ui.click` to `ui.interaction`
   (`RumConstants.UI_INTERACTION_SPAN_NAME`). Update dashboards, alerts, and queries keyed on the
-  old name. Span attributes and the derived `app.action.summary` value are unchanged.
+  old name. Span attributes and the derived summary *value* are unchanged (the attribute carrying
+  that summary is renamed to `semantic.summary` — see the entry above).
 
 - `ui.interaction` toggle-state attribute renamed from `app.widget.checked` to
   `ui.control.value.checked` (canonical `ui.control.value.*` family). Update dashboards, alerts,

@@ -32,8 +32,8 @@ Data produced by this instrumentation uses instrumentation scope name
 | `process.memory.heap.used` | Long | Java heap bytes currently in use |
 | `process.memory.heap.allocated` | Long | Java heap bytes committed from the OS |
 | `process.memory.heap.free` | Long | Java heap bytes committed but unused |
-| `process.memory.native.used` | Long | Native heap bytes allocated via malloc/JNI |
-| `process.memory.pss` | Long | Proportional Set Size in kB (cached; refreshed every 60 s) |
+| `process.memory.resident` | Long | Native heap bytes allocated via malloc/JNI |
+| `process.memory.footprint` | Long | Proportional Set Size in **kB** (cached; refreshed every 60 s) |
 | `process.thread.count` | Long | Total live threads in this process |
 | `system.memory.total` | Long | Total physical RAM on the device (bytes) |
 | `system.memory.available` | Long | Available (free) RAM on the device (bytes) |
