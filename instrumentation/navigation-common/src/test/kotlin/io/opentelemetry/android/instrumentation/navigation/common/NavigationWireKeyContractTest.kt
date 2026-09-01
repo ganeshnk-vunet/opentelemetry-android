@@ -24,11 +24,17 @@ class NavigationWireKeyContractTest {
     @Test
     fun `navigation attribute keys use the canonical wire names`() {
         assertThat(NavigationConstants.SPAN_NAME).isEqualTo("ui.navigation")
+        assertThat(NavigationConstants.NAVIGATION_SOURCE_TYPE_KEY.key).isEqualTo("navigation.source.type")
+        assertThat(NavigationConstants.NAVIGATION_SOURCE_NAME_KEY.key).isEqualTo("navigation.source.name")
+        assertThat(NavigationConstants.NAVIGATION_DESTINATION_TYPE_KEY.key).isEqualTo("navigation.destination.type")
+        assertThat(NavigationConstants.NAVIGATION_DESTINATION_NAME_KEY.key).isEqualTo("navigation.destination.name")
         assertThat(NavigationConstants.NAVIGATION_TRANSITION_TYPE_KEY.key).isEqualTo("navigation.transition.type")
+        assertThat(NavigationConstants.NAVIGATION_ENTRY_TYPE_KEY.key).isEqualTo("navigation.entry.type")
+        assertThat(NavigationConstants.NAVIGATION_TRIGGER_KEY.key).isEqualTo("navigation.trigger")
+        assertThat(NavigationConstants.NAVIGATION_TIMESTAMP_NS_KEY.key).isEqualTo("navigation.timestamp_ns")
         assertThat(NavigationConstants.NAVIGATION_IS_INITIAL_KEY.key).isEqualTo("navigation.is_initial")
         assertThat(NavigationConstants.NAVIGATION_STACK_DEPTH_BEFORE_KEY.key).isEqualTo("navigation.stack_depth.before")
         assertThat(NavigationConstants.NAVIGATION_STACK_DEPTH_AFTER_KEY.key).isEqualTo("navigation.stack_depth.after")
-        assertThat(NavigationConstants.NAVIGATION_TRIGGER_KEY.key).isEqualTo("navigation.trigger")
     }
 
     @Test

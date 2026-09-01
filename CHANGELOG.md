@@ -12,7 +12,12 @@
     than zero, where the framework has no depth to report: Activity transitions have no back-stack
     concept, so only Fragment and Compose transitions carry these. What "depth" counts is
     framework-specific — Nav3 reports true back-stack sizes, while Nav2 reports its own shadow stack,
-    which *retains* the destination on a pop (3 → 2, not 3 → 1).
+    which *retains* the destination on a pop (3 → 2, not 3 → 1). Fragment transitions report
+    `FragmentManager.getBackStackEntryCount()`, which counts transactions committed with
+    `addToBackStack()` rather than visible fragments — an app that navigates with a plain
+    `replace().commit()` reports `0 → 0` for a real transition. All three navigators emit under the
+    same instrumentation scope, so the span itself does not say which of these applies; interpret
+    the depth against the navigator the screen uses rather than comparing across them.
   - `navigation.trigger` gains the value `user_tap`, reported when a navigation occurs inside a live
     click-interaction window. It only ever replaces `unknown`; `back_press` and `programmatic` are
     unaffected. Resolved by the span emitter, since the collectors cannot see the interaction context.
