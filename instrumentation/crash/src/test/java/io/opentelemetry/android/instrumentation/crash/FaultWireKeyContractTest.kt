@@ -28,10 +28,11 @@ class FaultWireKeyContractTest {
     }
 
     /**
-     * The value space is pinned as well as the key. `error.runtime` exists to be grouped on across
-     * runtimes, so a wrapper emitting `Dart` or `dartvm` instead of `dart` would break the grouping
-     * without breaking anything that would fail a build. These are lowercase runtime names, not UI
-     * framework names — the framework is reported separately as `app.framework`.
+     * The value space is pinned as well as the key so a rename here fails the build. Wrappers that
+     * emit their own `device.crash` typically copy these string literals rather than importing
+     * `RumConstants`; the pin still documents the agreed spellings (`jvm` / `dart` / `js`). These
+     * are lowercase runtime names, not UI framework names — the framework is reported separately
+     * as `app.framework`.
      */
     @Test
     fun `error runtime values are the agreed vocabulary`() {
@@ -56,7 +57,7 @@ class FaultWireKeyContractTest {
      * So a failure here is expected to mean the split was skipped, not that this assertion is wrong.
      */
     @Test
-    fun `fault runtime detail keys keep their short names`() {
+    fun `fault detail keys keep their short names`() {
         assertThat(RumConstants.HEAP_FREE_KEY.key).isEqualTo("heap.free")
         assertThat(RumConstants.STORAGE_SPACE_FREE_KEY.key).isEqualTo("storage.free")
         assertThat(RumConstants.BATTERY_PERCENT_KEY.key).isEqualTo("battery.percent")

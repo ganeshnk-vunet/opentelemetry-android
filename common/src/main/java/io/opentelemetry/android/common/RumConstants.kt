@@ -36,17 +36,18 @@ object RumConstants {
     /**
      * Language runtime that produced a fault, set on `device.crash` and `device.anr`.
      *
-     * This SDK only ever emits [ERROR_RUNTIME_JVM]. The attribute exists so a backend can tell JVM
-     * faults apart from those reported by another runtime in the same app — a Flutter/Dart or
-     * React Native error reaches the same signals through the host SDK, and without this the two
-     * are indistinguishable once the stack trace has been stringified.
+     * This SDK always emits [ERROR_RUNTIME_JVM]. Anything that goes through the crash or ANR
+     * reporter — including a Dart `FlutterError` or React Native exception rethrown into the
+     * Android uncaught handler — is `jvm` by definition. Grouping by runtime only works if
+     * wrappers emit their own `device.crash` / `device.anr`, or overwrite this attribute via
+     * `addAttributesExtractor`, using [ERROR_RUNTIME_DART] or [ERROR_RUNTIME_JS].
      *
-     * Because the whole point is comparing runtimes, the value space is fixed here rather than left
-     * to each wrapper: [ERROR_RUNTIME_JVM], [ERROR_RUNTIME_DART], [ERROR_RUNTIME_JS]. Wrappers that
-     * emit their own `device.crash` should reference these constants — independently chosen spellings
-     * (`dart` vs `Dart` vs `dartvm`) would make the attribute ungroupable and defeat its purpose.
-     * Values are lowercase and name the *runtime*, not the UI framework; the framework is reported
-     * separately by [APP_FRAMEWORK_KEY].
+     * The value space is documented here as [ERROR_RUNTIME_JVM], [ERROR_RUNTIME_DART],
+     * [ERROR_RUNTIME_JS] so wrappers that emit their own spans can copy the same lowercase
+     * runtime names (`dart` vs `Dart` vs `dartvm` would make the attribute ungroupable).
+     * Wrappers typically copy these string values rather than importing this class. Values
+     * name the *runtime*, not the UI framework; the framework is reported separately by
+     * [APP_FRAMEWORK_KEY].
      *
      * Note this key is a deliberate extension: OpenTelemetry semantic conventions own the `error.*`
      * namespace but define only `error.type`, so `error.runtime` is non-standard by choice. If OTel
@@ -58,10 +59,16 @@ object RumConstants {
     /** Value of [ERROR_RUNTIME_KEY] for faults raised by the Android JVM runtime. */
     const val ERROR_RUNTIME_JVM: String = "jvm"
 
-    /** Value of [ERROR_RUNTIME_KEY] for faults raised by the Dart runtime (Flutter). */
+    /**
+     * Value of [ERROR_RUNTIME_KEY] for faults raised by the Dart runtime (Flutter).
+     * Unused by this SDK; for wrappers that emit their own `device.crash` / `device.anr`.
+     */
     const val ERROR_RUNTIME_DART: String = "dart"
 
-    /** Value of [ERROR_RUNTIME_KEY] for faults raised by a JavaScript runtime (React Native). */
+    /**
+     * Value of [ERROR_RUNTIME_KEY] for faults raised by a JavaScript runtime (React Native).
+     * Unused by this SDK; for wrappers that emit their own `device.crash` / `device.anr`.
+     */
     const val ERROR_RUNTIME_JS: String = "js"
 
     const val APP_START_SPAN_NAME: String = "app.start"

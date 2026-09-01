@@ -16,7 +16,7 @@ import io.opentelemetry.api.common.Attributes
 import io.opentelemetry.api.trace.Span
 import io.opentelemetry.api.trace.SpanBuilder
 import io.opentelemetry.api.trace.Tracer
-import org.junit.Assert.assertEquals
+import org.assertj.core.api.Assertions.assertThat
 import org.junit.Before
 import org.junit.Test
 
@@ -56,7 +56,7 @@ class AnrWatcherTest {
             anrWatcher.run()
         }
 
-        assertEquals("jvm", captured.captured.get(AttributeKey.stringKey("error.runtime")))
+        assertThat(captured.captured.get(AttributeKey.stringKey("error.runtime"))).isEqualTo("jvm")
     }
 
     @Test

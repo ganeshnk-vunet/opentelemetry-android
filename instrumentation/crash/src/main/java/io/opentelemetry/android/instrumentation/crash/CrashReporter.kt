@@ -53,6 +53,8 @@ internal class CrashReporter(
                     EXCEPTION_STACKTRACE,
                     throwable.stackTraceToString(),
                 ).put(EXCEPTION_TYPE, throwable.javaClass.name)
+        // Extractors run after this write and may replace error.runtime; that is the
+        // supported in-process override for a wrapper that still goes through this reporter.
         for (extractor in extractors) {
             val extractedAttributes = extractor.extract(Context.current(), crashDetails)
             attributesBuilder.putAll(extractedAttributes)

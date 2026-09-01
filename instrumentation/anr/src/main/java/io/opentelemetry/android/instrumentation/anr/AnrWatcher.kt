@@ -87,6 +87,8 @@ internal class AnrWatcher(
                 .put(THREAD_NAME, mainThread.name)
                 .put(EXCEPTION_STACKTRACE, stackTraceToString(stackTrace))
 
+        // Extractors run after this write and may replace error.runtime; that is the
+        // supported in-process override for a wrapper that still goes through this reporter.
         for (extractor in additionalExtractors) {
             val extractedAttributes = extractor.extract(Context.current(), stackTrace)
             attributesBuilder.putAll(extractedAttributes)
