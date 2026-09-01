@@ -199,7 +199,10 @@ Every qualified tap produces one `ui.interaction` span with these attributes:
 | `app.screen.coordinate.y`     | Tap Y position in window                     | `480`                |
 | `app.widget.source`           | UI framework: `"compose"` or `"view"`        | `"compose"`          |
 | `app.widget.type`             | Widget kind (button/switch/text_field/…)     | `"button"`           |
-| `app.widget.checked`          | Toggle state — **toggle widgets only**       | `true`               |
+| `ui.control.type`             | Same value as `app.widget.type` — canonical name | `"button"`       |
+| `interaction.type`            | Gesture kind: `"tap"` or `"long_press"`      | `"tap"`              |
+| `ui.control.selection_mode`   | `"single"`/`"multiple"` — **selection widgets only** | `"multiple"` |
+| `ui.control.value.checked`    | Toggle state — **toggle widgets only**       | `true`               |
 
 The span ends immediately after the tap (or after the toggle-state read for `CompoundButton`).
 `ActiveInteractionContext` separately remains current for `activeContextWindowMillis`
@@ -218,7 +221,50 @@ A normalized widget kind so clicks can be grouped/queried by element type. Value
   `Role.Checkbox`, `Role.RadioButton`, `Role.Tab`, …), falling back to `SetText` → `text_field` and
   `OnClick` → `button`.
 
-### `app.widget.checked`
+### `ui.control.type`
+
+Canonical successor to `app.widget.type`, carrying the identical value. Canonical treats
+`app.widget.type` as an Android wire-format key and prefers this name; both are emitted so
+existing `app.widget.type` queries keep working unchanged.
+
+### `ui.control.selection_mode`
+
+Whether the tapped control belongs to a single-choice group (`"single"`) or is independently
+toggleable (`"multiple"`), derived from `app.widget.type` / `ui.control.type` — see
+`resolveSelectionMode`:
+
+| Widget kind                     | Selection mode |
+|----------------------------------|----------------|
+| `radio`, `tab`, `dropdown`       | `single`       |
+| `switch`, `checkbox`, `toggle`   | `multiple`     |
+| everything else                  | *(omitted)*    |
+
+The mapping follows ordinary Android/Compose semantics for the widget **kind**, not the
+per-instance UI: a `radio` is `single` because that's what a radio button means, without checking
+whether it actually sits inside a `RadioGroup`. Omitted entirely for kinds where the concept
+doesn't apply (buttons, text, images, unknown) rather than emitted as some default value.
+
+### `interaction.type`
+
+Which gesture produced the span. Values: `tap`, `long_press` (see `InteractionType`).
+
+Both come from the same qualified gesture — one that reaches `ACTION_UP` without leaving the touch
+slop — split by how long the pointer was down, measured against
+`ViewConfiguration.getLongPressTimeout()`. A gesture that leaves the slop is not reported at all,
+so a slow drag is neither a tap nor a long press.
+
+The kind therefore describes **the gesture the user performed, not necessarily the one the app
+acted on**. Android fires `onLongClick` at the timeout while the finger is still down and then
+suppresses the click, but only for targets that actually handle long clicks; a slow press on an
+ordinary button is reported as `long_press` even though the app treated it as a normal click.
+
+**Known limits of the vocabulary.** Only these two kinds are detectable today. The classifier
+tracks a single pointer, so `ACTION_POINTER_DOWN` does not disqualify a gesture and a two-finger
+pinch whose primary finger stays still is still reported as a `tap`. Double-tap is not detectable
+at all: it needs cross-gesture state or `GestureDetector`, whose deferred `onSingleTapConfirmed`
+would break the synchronous emission this module depends on (see *Tap Gesture Classification*).
+
+### `ui.control.value.checked`
 
 Emitted only when the tapped target is a genuine toggle — an `android.widget.CompoundButton`
 (`Switch`, `MaterialSwitch`, `CheckBox`, `RadioButton`, `ToggleButton`) or a `CheckedTextView`. It
@@ -232,8 +278,9 @@ is only observable after that runnable runs. The span ends after the read so the
 always recorded before the span closes; `ActiveInteractionContext` stays current independently
 for `activeContextWindowMillis`.
 
-**View only.** Compose toggles currently do not emit `app.widget.checked` — Compose state updates on
-recomposition (asynchronously), so a reliable post-tap read isn't available through this path.
+**View only.** Compose toggles currently do not emit `ui.control.value.checked` — Compose state
+updates on recomposition (asynchronously), so a reliable post-tap read isn't available through
+this path.
 
 ---
 
@@ -294,17 +341,28 @@ deployments (no reflection into framework internals).
 
 ## Tap Gesture Classification
 
-`TapGestureClassifier` filters raw `MotionEvent` sequences into qualified taps:
+`TapGestureClassifier` filters raw `MotionEvent` sequences into qualified gestures and reports
+which kind each one was:
 
 ```
-ACTION_DOWN → record (x, y), start tracking
+ACTION_DOWN → record (x, y) and event time, start tracking
 ACTION_MOVE → if distance > touchSlop, disqualify
-ACTION_UP   → if still within slop, emit click
+ACTION_UP   → if still within slop, classify by press duration:
+                 held ≥ longPressTimeout → long_press
+                 otherwise               → tap
 ACTION_CANCEL → reset
 ```
 
-`touchSlopPx` is initialized from `ViewConfiguration.get(context).scaledTouchSlop` when
-tracking starts, matching the system's standard tap threshold.
+`touchSlopPx` is initialized from `ViewConfiguration.get(context).scaledTouchSlop` and
+`longPressTimeoutMs` from `ViewConfiguration.getLongPressTimeout()` when tracking starts, matching
+the system's standard thresholds. Both have plain constant fallbacks so the classifier stays usable
+in non-Robolectric unit tests, where real `ViewConfiguration` calls are not available.
+
+Duration is taken from `MotionEvent.getEventTime()`, so classification stays on the same monotonic
+clock the platform uses and needs no injected time source. Deciding the kind at `ACTION_UP` — rather
+than firing at the timeout the way `GestureDetector` does — is what keeps emission synchronous
+inside `dispatchTouchEvent`, which `ActiveInteractionContext` and the `CompoundButton` state read
+both depend on.
 
 ---
 

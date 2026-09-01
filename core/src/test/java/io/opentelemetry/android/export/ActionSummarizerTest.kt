@@ -38,7 +38,7 @@ internal class ActionSummarizerTest {
                 Attributes.of(
                     AttributeKey.stringKey("app.widget.type"), "switch",
                     AttributeKey.stringKey("app.widget.name"), "Dark Mode",
-                    AttributeKey.booleanKey("app.widget.checked"), true,
+                    AttributeKey.booleanKey("ui.control.value.checked"), true,
                     RumConstants.SCREEN_NAME_KEY, "SettingsScreen",
                 ),
             )
@@ -54,7 +54,7 @@ internal class ActionSummarizerTest {
                 Attributes.of(
                     AttributeKey.stringKey("app.widget.type"), "checkbox",
                     AttributeKey.stringKey("app.widget.name"), "Notifications",
-                    AttributeKey.booleanKey("app.widget.checked"), false,
+                    AttributeKey.booleanKey("ui.control.value.checked"), false,
                     RumConstants.SCREEN_NAME_KEY, "SettingsScreen",
                 ),
             )

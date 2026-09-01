@@ -31,7 +31,7 @@ Data produced by this instrumentation uses instrumentation scope name
 | `process.cpu.usage.max` | Double | Maximum CPU % sampled in the collection window |
 | `process.memory.heap.used` | Long | Java heap bytes currently in use |
 | `process.memory.heap.allocated` | Long | Java heap bytes committed from the OS |
-| `heap.free` | Long | Java heap bytes committed but unused |
+| `process.memory.heap.free` | Long | Java heap bytes committed but unused |
 | `process.memory.native.used` | Long | Native heap bytes allocated via malloc/JNI |
 | `process.memory.pss` | Long | Proportional Set Size in kB (cached; refreshed every 60 s) |
 | `process.thread.count` | Long | Total live threads in this process |

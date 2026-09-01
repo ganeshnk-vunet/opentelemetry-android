@@ -14,6 +14,9 @@ import android.view.Window
 import io.opentelemetry.android.common.RumConstants
 import io.opentelemetry.android.common.RumDiagnostics
 import io.opentelemetry.android.common.internal.instrumentation.ActiveInteractionContext
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_CONTROL_SELECTION_MODE
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_CONTROL_TYPE
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_INTERACTION_TYPE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_WIDGET_CHECKED
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_WIDGET_SOURCE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_WIDGET_TYPE
@@ -21,6 +24,7 @@ import io.opentelemetry.android.instrumentation.hybrid.click.shared.SOURCE_COMPO
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_UNKNOWN
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.TapGestureClassifier
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.TapTarget
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.resolveSelectionMode
 import io.opentelemetry.android.instrumentation.hybrid.click.view.ViewTapTargetDetector
 import io.opentelemetry.api.trace.Tracer
 import io.opentelemetry.semconv.incubating.AppIncubatingAttributes
@@ -157,6 +161,7 @@ internal class ClickEventGenerator(
             TapGestureClassifier().apply {
                 touchSlopPx =
                     ViewConfiguration.get(window.decorView.context).scaledTouchSlop.toFloat()
+                longPressTimeoutMs = ViewConfiguration.getLongPressTimeout().toLong()
             }
         window.callback = WindowCallbackWrapper(currentCallback, window, this)
         RumDiagnostics.d { "hybridClick: window callback attached" }
@@ -173,9 +178,7 @@ internal class ClickEventGenerator(
     ) {
         val event = motionEvent ?: return
         val tapGestureClassifier = tapGestureClassifiers[window] ?: return
-        if (!tapGestureClassifier.shouldEmitClick(event)) {
-            return
-        }
+        val interactionType = tapGestureClassifier.classify(event) ?: return
 
         ActiveInteractionContext.clear()
 
@@ -188,7 +191,7 @@ internal class ClickEventGenerator(
             "hybridClick: tap -> Click span target=${target.widgetId} source=${target.source}"
         }
 
-        val span =
+        val spanBuilder =
             tracer.spanBuilder(RumConstants.UI_INTERACTION_SPAN_NAME)
                 .setNoParent()
                 .setAttribute(AppIncubatingAttributes.APP_WIDGET_ID, target.widgetId)
@@ -197,7 +200,10 @@ internal class ClickEventGenerator(
                 .setAttribute(AppIncubatingAttributes.APP_SCREEN_COORDINATE_Y, target.y)
                 .setAttribute(ATTR_WIDGET_SOURCE, target.source)
                 .setAttribute(ATTR_WIDGET_TYPE, target.type)
-                .startSpan()
+                .setAttribute(ATTR_CONTROL_TYPE, target.type)
+                .setAttribute(ATTR_INTERACTION_TYPE, interactionType.value)
+        resolveSelectionMode(target.type)?.let { spanBuilder.setAttribute(ATTR_CONTROL_SELECTION_MODE, it) }
+        val span = spanBuilder.startSpan()
 
         val token = ActiveInteractionContext.begin(span)
         scheduleContextEnd(token)
