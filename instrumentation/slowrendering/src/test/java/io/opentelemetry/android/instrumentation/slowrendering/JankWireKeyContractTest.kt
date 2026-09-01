@@ -52,5 +52,7 @@ class JankWireKeyContractTest {
     fun `jank thresholds keep the values consumers filter on`() {
         assertThat(SLOW_THRESHOLD_MS).isEqualTo(16)
         assertThat(FROZEN_THRESHOLD_MS).isEqualTo(700)
+        assertThat(SLOW_THRESHOLD_MS / 1000.0).isEqualTo(0.016)
+        assertThat(FROZEN_THRESHOLD_MS / 1000.0).isEqualTo(0.7)
     }
 }

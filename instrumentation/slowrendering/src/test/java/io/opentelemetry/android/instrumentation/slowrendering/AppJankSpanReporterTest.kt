@@ -40,27 +40,31 @@ class AppJankSpanReporterTest {
     }
 
     /**
-     * The buckets are cumulative: the 701ms frame here exceeds both thresholds, so it is reported
-     * by both reporters and appears in both spans. That is why `app.jank.type` is needed —
-     * a consumer counting jank spans would otherwise double-count frozen frames, with only the
-     * `app.jank.threshold` float to tell the two apart.
+     * The buckets are cumulative: 3×17ms + 1×701ms yields slow `frame_count=4` and frozen
+     * `frame_count=1`. Span-count subtraction (`1 - 1`) would be 0; the documented slow-only
+     * equivalent is `sum(frame_count)` slow minus frozen (`4 - 1 = 3`).
      */
     @Test
-    fun `slow and frozen reporters label the same frame differently`() {
+    fun `slow reporter frame_count includes frozen frames`() {
         val tracer = otelTesting.openTelemetry.getTracer("JANK!")
         val histogramData = HashMap<Int, Int>()
+        histogramData[17] = 3
         histogramData[701] = 1
 
         mockkStatic(Log::class)
         every { Log.d(any(), any()) } returns 0
 
-        AppJankSpanReporter(tracer, SLOW_THRESHOLD_MS / 1000.0, JANK_TYPE_SLOW)
-            .reportSlow(histogramData, 1.0, "io.otel/Komponent")
-        AppJankSpanReporter(tracer, FROZEN_THRESHOLD_MS / 1000.0, JANK_TYPE_FROZEN)
-            .reportSlow(histogramData, 1.0, "io.otel/Komponent")
+        AppJankSpanReporter.combined(tracer).reportSlow(histogramData, 1.0, "io.otel/Komponent")
 
-        val types = otelTesting.spans.filter { it.name == "app.jank" }.map { it.attributes.get(JANK_TYPE) }
-        assertThat(types).containsExactlyInAnyOrder("slow", "frozen")
+        val byType =
+            otelTesting.spans
+                .filter { it.name == "app.jank" }
+                .associate { it.attributes.get(JANK_TYPE) to it }
+        assertThat(byType.keys).containsExactlyInAnyOrder("slow", "frozen")
+        assertThat(byType["slow"]!!.attributes.get(FRAME_COUNT)).isEqualTo(4)
+        assertThat(byType["slow"]!!.attributes.get(THRESHOLD)).isEqualTo(0.016)
+        assertThat(byType["frozen"]!!.attributes.get(FRAME_COUNT)).isEqualTo(1)
+        assertThat(byType["frozen"]!!.attributes.get(THRESHOLD)).isEqualTo(0.7)
     }
 
     @Test

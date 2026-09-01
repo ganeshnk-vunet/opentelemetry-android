@@ -86,12 +86,7 @@ class SlowRenderingInstrumentation : AndroidInstrumentation {
         val verbose = debugVerbose || RumDiagnostics.verbose
         RumDiagnostics.d { "slowRendering: install verbose=$verbose" }
         val tracer = openTelemetryRum.openTelemetry.getTracer("app.jank")
-        var jankReporter: JankReporter =
-            AppJankSpanReporter(tracer, SLOW_THRESHOLD_MS / 1000.0, JANK_TYPE_SLOW, verbose)
-        jankReporter =
-            jankReporter.combine(
-                AppJankSpanReporter(tracer, FROZEN_THRESHOLD_MS / 1000.0, JANK_TYPE_FROZEN, verbose),
-            )
+        var jankReporter: JankReporter = AppJankSpanReporter.combined(tracer, verbose)
 
         if (useDeprecatedSpan) {
             val tracer = openTelemetryRum.openTelemetry.getTracer("io.opentelemetry.slow-rendering")
