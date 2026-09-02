@@ -46,10 +46,13 @@ Data produced by this instrumentation uses instrumentation scope name
 > the OTel resource (`AndroidResource.SYSTEM_MEMORY_TOTAL`/`SYSTEM_DISK_TOTAL`) and are read once
 > per process instead of on every `app.metrics` emission. Per the resource-export rules, they are
 > present on logs and metrics always, and on trace spans only via the first cold `app.start` span
-> — not on `app.metrics` or any other trace span.
+> — not on `app.metrics` or any other trace span. A query that derived used memory as
+> `1 - available/total` from a single `app.metrics` record must now join against the resource.
 
-> `heap.free`, `battery.percent`, and `storage.free` reuse the attribute keys already
-> defined in `RumConstants` so they align with the crash instrumentation schema.
+> `battery.percent` and `storage.free` reuse the attribute keys already defined in `RumConstants`
+> so they align with the crash instrumentation schema. `process.memory.heap.free` does not: the
+> crash schema keeps `heap.free`, and this signal uses the canonical name, so the two are
+> deliberately different keys for the same underlying value.
 >
 > `process.memory.native.used` is deliberately not renamed to the canonical
 > `process.memory.resident`: the value is native heap allocated via malloc/JNI

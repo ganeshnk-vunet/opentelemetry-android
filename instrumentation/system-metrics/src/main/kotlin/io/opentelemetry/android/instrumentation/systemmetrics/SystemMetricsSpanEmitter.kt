@@ -133,9 +133,9 @@ internal class SystemMetricsSpanEmitter(
             cachedFootprintBytes = memoryReader.readFootprintBytes()
             // Single IPC per resource type instead of one call per individual metric.
             // mem.totalBytes / disk.totalBytes are intentionally unread here: total RAM/disk are
-            // static device facts now reported once on the resource (AndroidResource), not on
-            // this per-sample span — see the "system.memory.total" / "system.disk.total" removal
-            // below.
+            // static device facts reported on the resource (AndroidResource) instead of on this
+            // per-sample span. Note this saves no IPC — the totals are fields on the same result
+            // objects already fetched below — it only keeps two static longs off every sample.
             val mem = deviceReader.readDeviceMemoryInfo()
             cachedAvailableRamBytes = mem.availableBytes
             cachedLowMemoryFlag = mem.lowMemoryFlag

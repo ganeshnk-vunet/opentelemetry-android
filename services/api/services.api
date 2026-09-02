@@ -1,14 +1,3 @@
-public final class io/opentelemetry/android/internal/services/DefaultDeviceCapacityReader : io/opentelemetry/android/internal/services/DeviceCapacityReader {
-	public static final field INSTANCE Lio/opentelemetry/android/internal/services/DefaultDeviceCapacityReader;
-	public fun readTotalDiskBytes ()J
-	public fun readTotalRamBytes (Landroid/content/Context;)J
-}
-
-public abstract interface class io/opentelemetry/android/internal/services/DeviceCapacityReader {
-	public abstract fun readTotalDiskBytes ()J
-	public abstract fun readTotalRamBytes (Landroid/content/Context;)J
-}
-
 public abstract interface class io/opentelemetry/android/internal/services/Service : java/io/Closeable {
 	public fun close ()V
 }

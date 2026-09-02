@@ -10,8 +10,6 @@ import android.content.Context
 import android.os.Build
 import androidx.annotation.VisibleForTesting
 import io.opentelemetry.android.common.RumConstants.APP_FRAMEWORK_KEY
-import io.opentelemetry.android.internal.services.DefaultDeviceCapacityReader
-import io.opentelemetry.android.internal.services.DeviceCapacityReader
 import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.sdk.resources.Resource
 import io.opentelemetry.semconv.ServiceAttributes.SERVICE_NAME
@@ -63,18 +61,24 @@ object AndroidResource {
     @JvmField
     val SYSTEM_DISK_TOTAL: AttributeKey<Long> = AttributeKey.longKey("system.disk.total")
 
-    @JvmOverloads
     @JvmStatic
-    fun createDefault(
+    fun createDefault(context: Context): Resource = createDefault(context, DefaultDeviceCapacityReader)
+
+    /**
+     * [deviceCapacityReader] is injectable only so tests can supply deterministic values; it is
+     * deliberately kept off the published API, the same shape as [resolveAppFramework].
+     */
+    @VisibleForTesting
+    internal fun createDefault(
         context: Context,
-        deviceCapacityReader: DeviceCapacityReader = DefaultDeviceCapacityReader,
+        deviceCapacityReader: DeviceCapacityReader,
     ): Resource {
         val appName = readAppName(context)
         val resourceBuilder = Resource.builder().put(SERVICE_NAME, appName)
         val appVersion = readAppVersion(context)
         appVersion?.let { resourceBuilder.put(SERVICE_VERSION, it) }
 
-        return resourceBuilder
+        resourceBuilder
             .put(DEVICE_MODEL_NAME, Build.MODEL)
             .put(DEVICE_MODEL_IDENTIFIER, Build.MODEL)
             .put(DEVICE_MANUFACTURER, Build.MANUFACTURER)
@@ -85,9 +89,19 @@ object AndroidResource {
             .put(OS_DESCRIPTION, oSDescription)
             .put(APP_INSTALLATION_ID, readInstallId(context))
             .put(APP_FRAMEWORK_KEY, appFramework)
-            .put(SYSTEM_MEMORY_TOTAL, deviceCapacityReader.readTotalRamBytes(context))
-            .put(SYSTEM_DISK_TOTAL, deviceCapacityReader.readTotalDiskBytes())
-            .build()
+
+        // Omitted rather than reported as a sentinel when unreadable. The resource is immutable for
+        // the life of the process, so a transient StatFs/getMemoryInfo failure would otherwise pin
+        // a bogus value onto every log and metric until the app restarts — the same reason
+        // service.version is skipped above when the version cannot be read.
+        deviceCapacityReader.readTotalRamBytes(context).takeIf { it >= 0 }?.let {
+            resourceBuilder.put(SYSTEM_MEMORY_TOTAL, it)
+        }
+        deviceCapacityReader.readTotalDiskBytes().takeIf { it >= 0 }?.let {
+            resourceBuilder.put(SYSTEM_DISK_TOTAL, it)
+        }
+
+        return resourceBuilder.build()
     }
 
     /**

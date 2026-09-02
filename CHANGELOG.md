@@ -54,15 +54,28 @@
   to the resource, and a consumer reading them from an arbitrary trace span must switch to
   filtering for the cold `app.start` span specifically.
 
+  This does not reduce IPC. `system-metrics` still calls `getMemoryInfo()` and `StatFs` on its
+  existing 60-second cache refresh — the totals were fields on those same result objects, never
+  extra calls — so the emitter pays exactly what it paid before. What changes is placement: two
+  static longs stop being repeated on every `app.metrics` sample.
+
   New unconditional cost: every app now performs one `ActivityManager.getMemoryInfo()` call and one
-  `StatFs` call once at SDK-init resource-build time, regardless of whether the opt-in
+  `StatFs` call at SDK-init resource-build time, regardless of whether the opt-in
   `instrumentation:system-metrics` module is used — these are treated as device facts (same
   category as `device.manufacturer`), not something gated on which instrumentations are installed,
-  since the resource has no mechanism for late, per-instrumentation attribute append.
+  since the resource has no mechanism for late, per-instrumentation attribute append. Both values
+  are memoized after the first successful read, because `AndroidResource.createDefault` runs more
+  than once per SDK init (a field initializer in `OpenTelemetryRumBuilder`, then again in
+  `OpenTelemetryRumInitializer`) and typically on the main thread during `Application.onCreate`,
+  where `StatFs` is a filesystem read that can trip `StrictMode.detectDiskReads`. A failed read is
+  not memoized, so a transient failure can recover on a later build.
 
-  `AndroidResource.createDefault(Context)` gains a second, defaulted parameter
-  (`DeviceCapacityReader`, source: `io.opentelemetry.android.internal.services`) via
-  `@JvmOverloads`; the existing single-argument call is unaffected and remains binary-compatible.
+  If either value cannot be read it is **omitted** from the resource rather than reported as a
+  sentinel: the resource is immutable for the life of the process, so publishing `-1` would pin it
+  onto every log and metric until the app restarts.
+
+  No public API change: `AndroidResource.createDefault(Context)` keeps its existing signature, and
+  the reader it delegates to is `internal` to `:core`.
 
 - `app.start` attribute and startup-phase span events renamed to the canonical `app.start.*`
   names. Update dashboards, alerts, and queries keyed on the old names:
