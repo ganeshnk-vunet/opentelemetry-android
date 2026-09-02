@@ -99,9 +99,17 @@ object RumConstants {
     val FRAGMENT_LIFECYCLE_EVENT_KEY: AttributeKey<String> =
         AttributeKey.stringKey("fragment.lifecycle.event")
 
+    /**
+     * Human-readable summary of what a span represents, derived by `ActionSummarySpanExporter`
+     * (e.g. `App cold start`, `Clicked button 'Pay'`).
+     *
+     * Emits the canonical `semantic.summary`. The constant identifier is deliberately left as
+     * `APP_ACTION_SUMMARY_KEY` so this stays source- and binary-compatible for existing callers —
+     * only the emitted wire key changes.
+     */
     @JvmField
     val APP_ACTION_SUMMARY_KEY: AttributeKey<String> =
-        AttributeKey.stringKey("app.action.summary")
+        AttributeKey.stringKey("semantic.summary")
 
     object Events {
         const val INIT_EVENT_STARTED: String = "rum.sdk.init.started"

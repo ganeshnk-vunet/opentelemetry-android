@@ -41,7 +41,7 @@ internal class SystemMetricsSpanEmitter(
 
     // Device metrics cache — refreshed at startup then every 60 s by the cache timer.
     // Defaults are -1 to indicate "not yet sampled" rather than 0 which is a valid reading.
-    @Volatile private var cachedPssKb = -1L
+    @Volatile private var cachedFootprintBytes = -1L
     @Volatile private var cachedTotalRamBytes = -1L
     @Volatile private var cachedAvailableRamBytes = -1L
     @Volatile private var cachedLowMemoryFlag = -1L
@@ -122,7 +122,7 @@ internal class SystemMetricsSpanEmitter(
             .put(ATTR_HEAP_FREE, sample.heapFree)
             .put(ATTR_NATIVE_USED, sample.nativeUsed)
             .put(ATTR_THREAD_COUNT, sample.threadCount)
-            .put(ATTR_PSS_KB, cachedPssKb)
+            .put(ATTR_FOOTPRINT, cachedFootprintBytes)
             .put(ATTR_SYS_MEM_TOTAL, cachedTotalRamBytes)
             .put(ATTR_SYS_MEM_AVAILABLE, cachedAvailableRamBytes)
             .put(ATTR_SYS_MEM_LOW, cachedLowMemoryFlag)
@@ -134,7 +134,7 @@ internal class SystemMetricsSpanEmitter(
 
     private fun refreshDeviceCache() {
         try {
-            cachedPssKb = memoryReader.readPssKb()
+            cachedFootprintBytes = memoryReader.readFootprintBytes()
             // Single IPC per resource type instead of one call per individual metric.
             val mem = deviceReader.readDeviceMemoryInfo()
             cachedTotalRamBytes = mem.totalBytes
@@ -170,8 +170,14 @@ internal class SystemMetricsSpanEmitter(
         const val METRIC_HEAP_USED = "process.memory.heap.used"
         const val METRIC_HEAP_ALLOCATED = "process.memory.heap.allocated"
         const val METRIC_HEAP_FREE = "process.memory.heap.free"
+        // Not renamed to the canonical "process.memory.resident": the value here is
+        // Debug.getNativeHeapAllocatedSize() (native heap allocated via malloc/JNI), not resident
+        // set size — a real, physically-mapped-memory statistic this SDK does not currently
+        // measure. Adopting the canonical name for the wrong quantity would be worse than keeping
+        // the old one, since a chart comparing this against a genuine RSS value (e.g. iOS
+        // resident_size) would silently compare two different things.
         const val METRIC_NATIVE_USED = "process.memory.native.used"
-        const val METRIC_PSS_KB = "process.memory.pss"
+        const val METRIC_FOOTPRINT = "process.memory.footprint"
         const val METRIC_THREAD_COUNT = "process.thread.count"
         const val METRIC_SYS_MEM_TOTAL = "system.memory.total"
         const val METRIC_SYS_MEM_AVAILABLE = "system.memory.available"
@@ -199,7 +205,7 @@ internal class SystemMetricsSpanEmitter(
          */
         val ATTR_HEAP_FREE: AttributeKey<Long> = AttributeKey.longKey(METRIC_HEAP_FREE)
         val ATTR_NATIVE_USED: AttributeKey<Long> = AttributeKey.longKey(METRIC_NATIVE_USED)
-        val ATTR_PSS_KB: AttributeKey<Long> = AttributeKey.longKey(METRIC_PSS_KB)
+        val ATTR_FOOTPRINT: AttributeKey<Long> = AttributeKey.longKey(METRIC_FOOTPRINT)
         val ATTR_THREAD_COUNT: AttributeKey<Long> = AttributeKey.longKey(METRIC_THREAD_COUNT)
 
         // Device
