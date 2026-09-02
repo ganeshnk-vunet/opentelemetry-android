@@ -5,6 +5,7 @@
 
 package io.opentelemetry.android.instrumentation.navigation.common
 
+import androidx.annotation.VisibleForTesting
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -19,7 +20,12 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Process-global by nature, so it is shared by all three collectors — a host app running both a
  * View and a Compose navigator still reports exactly one initial navigation.
  */
-internal object NavigationColdStartTracker {
+/*
+ * Public rather than internal only so the View and Compose collector tests, which live in sibling
+ * Gradle modules, can reach [resetForTesting] — Kotlin's `internal` stops at the module boundary.
+ * Nothing outside this SDK should call either member.
+ */
+object NavigationColdStartTracker {
     private val isInitialPending = AtomicBoolean(true)
 
     /** Returns `true` exactly once per process, for the first caller. */
@@ -28,7 +34,12 @@ internal object NavigationColdStartTracker {
     /**
      * Restores the pending state. Exists only so tests are not order-dependent on this
      * process-global flag; there is no production reason to call it.
+     *
+     * Visible beyond this module so the View and Compose collector tests in sibling modules can
+     * reset it too — they do not assert `navigation.is_initial` today, but would be order-dependent
+     * the day they do, and `internal` would leave them no way to reset it.
      */
+    @VisibleForTesting
     fun resetForTesting() {
         isInitialPending.set(true)
     }

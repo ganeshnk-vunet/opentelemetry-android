@@ -7,7 +7,7 @@ package io.opentelemetry.android.instrumentation.navigation.common
 
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTrigger
 import org.assertj.core.api.Assertions.assertThat
-import org.junit.Test
+import org.junit.jupiter.api.Test
 
 /**
  * Locks the **wire keys** of the `ui.navigation` signal.

@@ -33,9 +33,21 @@ class NavigationSpanEmitterTest {
         NavigationColdStartTracker.resetForTesting()
     }
 
+    /**
+     * Both pieces of state read by the emitter are process-global, so anything left set here leaks
+     * into the next test and into later classes in this module.
+     *
+     * `clearActiveContext()` already reaches [ActiveInteractionContext] transitively, but the click
+     * window is owned by hybrid-click rather than by navigation, so it is cleared explicitly — a
+     * reader should not have to follow `NavigationActiveContext` to see that
+     * `does_not_report_user_tap_without_a_click_interaction` is protected. Removing either line
+     * makes that test fail.
+     */
     @AfterEach
     fun tearDown() {
         NavigationSpanEmitter.clearActiveContext()
+        ActiveInteractionContext.clear()
+        NavigationColdStartTracker.resetForTesting()
     }
 
     @Test
@@ -188,9 +200,12 @@ class NavigationSpanEmitterTest {
         assertThat(attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("user_tap")
     }
 
-    /** A back press inside a click window is still a back press; only `unknown` is upgraded. */
+    /**
+     * A system back press is the more specific fact, so it survives even though a tap was live.
+     * This is the only trigger the emitter never upgrades.
+     */
     @Test
-    fun keeps_an_attributed_trigger_inside_a_click_interaction() {
+    fun keeps_back_press_trigger_inside_a_click_interaction() {
         val exporter = InMemorySpanExporter.create()
         val tracer = tracerFor(exporter)
         val emitter = NavigationSpanEmitter(tracer)
@@ -200,6 +215,36 @@ class NavigationSpanEmitterTest {
 
         val attributes = exporter.finishedSpanItems.last().attributes
         assertThat(attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("back_press")
+    }
+
+    /**
+     * A pop with no recorded back press is reported `programmatic` by the collectors. Inside a click
+     * window that is a tap-driven pop — a toolbar "up" or a "close" button — which is the commonest
+     * tap-driven back navigation and would otherwise read as code-driven.
+     */
+    @Test
+    fun upgrades_programmatic_pop_to_user_tap_inside_a_click_interaction() {
+        val exporter = InMemorySpanExporter.create()
+        val tracer = tracerFor(exporter)
+        val emitter = NavigationSpanEmitter(tracer)
+        beginClickInteraction(tracer)
+
+        emitter.emit(candidate(), navigationTrigger = "programmatic")
+
+        val attributes = exporter.finishedSpanItems.last().attributes
+        assertThat(attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("user_tap")
+    }
+
+    /** Without a live tap, a programmatic pop stays programmatic. */
+    @Test
+    fun keeps_programmatic_trigger_without_a_click_interaction() {
+        val exporter = InMemorySpanExporter.create()
+        val emitter = NavigationSpanEmitter(tracerFor(exporter))
+
+        emitter.emit(candidate(), navigationTrigger = "programmatic")
+
+        val attributes = exporter.finishedSpanItems.single().attributes
+        assertThat(attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("programmatic")
     }
 
     @Test

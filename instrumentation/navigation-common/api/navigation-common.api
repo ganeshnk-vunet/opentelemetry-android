@@ -1,3 +1,9 @@
+public final class io/opentelemetry/android/instrumentation/navigation/common/NavigationColdStartTracker {
+	public static final field INSTANCE Lio/opentelemetry/android/instrumentation/navigation/common/NavigationColdStartTracker;
+	public final fun consumeIsInitial ()Z
+	public final fun resetForTesting ()V
+}
+
 public final class io/opentelemetry/android/instrumentation/navigation/common/NavigationConstants {
 	public static final field INSTANCE Lio/opentelemetry/android/instrumentation/navigation/common/NavigationConstants;
 	public static final field NAVIGATION_DESTINATION_NAME_KEY Lio/opentelemetry/api/common/AttributeKey;

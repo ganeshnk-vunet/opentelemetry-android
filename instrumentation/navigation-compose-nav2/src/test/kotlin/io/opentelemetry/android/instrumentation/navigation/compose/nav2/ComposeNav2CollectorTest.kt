@@ -73,6 +73,41 @@ class ComposeNav2CollectorTest {
         assertThat(spans).hasSize(3)
         assertThat(spans[2].attributes.get(NavigationConstants.NAVIGATION_TRANSITION_TYPE_KEY)).isEqualTo("pop")
         assertThat(spans[2].attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("programmatic")
+        // The shadow stack keeps the popped-to destination as the new top, so a one-level pop is
+        // 2 -> 1 rather than 2 -> 0.
+        assertDepths(spans[0], before = 0L, after = 1L)
+        assertDepths(spans[1], before = 1L, after = 2L)
+        assertDepths(spans[2], before = 2L, after = 1L)
+    }
+
+    /**
+     * A pop that returns to an ancestor unwinds every entry above it in one transition, so the depth
+     * delta is the number of screens dropped rather than always one.
+     */
+    @Test
+    fun compose_route_pop_to_an_ancestor_unwinds_the_whole_stack_above_it() {
+        val collector = createCollector()
+        collector.onDestinationChanged(navController, destination("home", id = 1), null)
+        entryBelowTopId = 1
+        collector.onDestinationChanged(navController, destination("details/{id}", id = 2), null)
+        entryBelowTopId = 2
+        collector.onDestinationChanged(navController, destination("receipt", id = 3), null)
+        collector.onDestinationChanged(navController, destination("home", id = 1), null)
+
+        val spans = exporter.finishedSpanItems
+        assertThat(spans).hasSize(4)
+        assertThat(spans[3].attributes.get(NavigationConstants.NAVIGATION_TRANSITION_TYPE_KEY)).isEqualTo("pop")
+        assertDepths(spans[2], before = 2L, after = 3L)
+        assertDepths(spans[3], before = 3L, after = 1L)
+    }
+
+    private fun assertDepths(
+        span: io.opentelemetry.sdk.trace.data.SpanData,
+        before: Long,
+        after: Long,
+    ) {
+        assertThat(span.attributes.get(NavigationConstants.NAVIGATION_STACK_DEPTH_BEFORE_KEY)).isEqualTo(before)
+        assertThat(span.attributes.get(NavigationConstants.NAVIGATION_STACK_DEPTH_AFTER_KEY)).isEqualTo(after)
     }
 
     @Test
@@ -132,6 +167,8 @@ class ComposeNav2CollectorTest {
         assertThat(spans).hasSize(2)
         assertThat(spans[1].attributes.get(NavigationConstants.NAVIGATION_TRANSITION_TYPE_KEY)).isEqualTo("replace")
         assertThat(spans[1].attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("unknown")
+        // A replace swaps the top entry, so the depth is unchanged.
+        assertDepths(spans[1], before = 1L, after = 1L)
     }
 
     @Test

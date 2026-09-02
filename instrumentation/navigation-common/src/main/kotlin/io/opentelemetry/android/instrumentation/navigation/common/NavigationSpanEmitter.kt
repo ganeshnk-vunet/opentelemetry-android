@@ -82,23 +82,39 @@ class NavigationSpanEmitter(
     }
 
     /**
-     * Upgrades an unattributed trigger to [NavigationTrigger.USER_TAP] when the navigation happened
-     * inside a live click-interaction window.
+     * Reports [NavigationTrigger.USER_TAP] when the navigation happened inside a live
+     * click-interaction window and nothing more specific already explains it.
      *
      * The collectors cannot make this call themselves — they have no view of the interaction
-     * context. They report `back_press`/`programmatic` for pops and `unknown` for forward
-     * transitions, and only that `unknown` is replaced here.
+     * context. They report `unknown` for forward transitions, and `back_press`/`programmatic` for
+     * pops depending on whether a back press was recorded. Two of those three are upgraded here:
+     * - `unknown` — a forward transition that happened while a tap was live.
+     * - `programmatic` — only ever produced for a pop with no recorded back press, which inside a
+     *   click window is a tap-driven pop: a toolbar "up" or a "close" button. The pop itself is
+     *   still recorded by `navigation.transition.type`, so naming the trigger `user_tap` loses
+     *   nothing and stops the commonest tap-driven back navigation reading as code-driven.
+     *
+     * [NavigationTrigger.BACK_PRESS] is never upgraded: a system back press is a real back press
+     * even if a tap happened to be live, and it is the more specific fact of the two.
      *
      * A non-null [hasLiveInteraction] means exactly "a tap opened a window that has not expired":
      * `ClickEventGenerator` is the only production caller of `ActiveInteractionContext.begin`, and
      * it schedules its own expiry.
+     *
+     * Known limit: the window is not consumed here, so a genuinely programmatic navigation landing
+     * inside the window of an unrelated tap is also labelled `user_tap`. Consuming it would need
+     * `ActiveInteractionContext` to expose a "claim" operation, which is owned by hybrid-click and
+     * shared with the HTTP instrumentations.
      */
     private fun resolveTrigger(
         navigationTrigger: String?,
         hasLiveInteraction: Boolean,
     ): String? {
-        val isUnattributed = navigationTrigger == null || navigationTrigger == NavigationTrigger.UNKNOWN.value
-        return if (isUnattributed && hasLiveInteraction) {
+        val isUpgradable =
+            navigationTrigger == null ||
+                navigationTrigger == NavigationTrigger.UNKNOWN.value ||
+                navigationTrigger == NavigationTrigger.PROGRAMMATIC.value
+        return if (isUpgradable && hasLiveInteraction) {
             NavigationTrigger.USER_TAP.value
         } else {
             navigationTrigger
