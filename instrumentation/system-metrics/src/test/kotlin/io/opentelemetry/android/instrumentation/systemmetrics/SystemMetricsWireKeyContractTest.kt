@@ -72,11 +72,11 @@ class SystemMetricsWireKeyContractTest {
         assertThat(metricsSpan.events).isEmpty()
 
         // A representative spread across the metric families, proving the data landed on the
-        // span itself rather than nowhere. Full 16-key coverage lives in
+        // span itself rather than nowhere. Full 14-key coverage lives in
         // SystemMetricsSpanEmitterTest — this is enough to prove the claim isn't vacuous.
         assertThat(metricsSpan.attributes.get(SystemMetricsSpanEmitter.ATTR_CPU_USAGE)).isNotNull
         assertThat(metricsSpan.attributes.get(SystemMetricsSpanEmitter.ATTR_HEAP_USED)).isNotNull
-        assertThat(metricsSpan.attributes.get(SystemMetricsSpanEmitter.ATTR_SYS_MEM_TOTAL)).isNotNull
+        assertThat(metricsSpan.attributes.get(SystemMetricsSpanEmitter.ATTR_SYS_MEM_AVAILABLE)).isNotNull
         assertThat(metricsSpan.attributes.get(SystemMetricsSpanEmitter.ATTR_BATTERY_LEVEL)).isNotNull
         assertThat(metricsSpan.attributes.get(SystemMetricsSpanEmitter.ATTR_DISK_FREE)).isNotNull
     }

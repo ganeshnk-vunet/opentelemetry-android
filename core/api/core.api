@@ -1,5 +1,7 @@
 public final class io/opentelemetry/android/AndroidResource {
 	public static final field INSTANCE Lio/opentelemetry/android/AndroidResource;
+	public static final field SYSTEM_DISK_TOTAL Lio/opentelemetry/api/common/AttributeKey;
+	public static final field SYSTEM_MEMORY_TOTAL Lio/opentelemetry/api/common/AttributeKey;
 	public static final fun createDefault (Landroid/content/Context;)Lio/opentelemetry/sdk/resources/Resource;
 	public static final fun createMinimal (Landroid/content/Context;)Lio/opentelemetry/sdk/resources/Resource;
 }

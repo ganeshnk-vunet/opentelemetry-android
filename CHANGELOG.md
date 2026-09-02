@@ -94,6 +94,40 @@
   `SystemMetricsSpanEmitter` is `internal`; no public API / `apiCheck` impact.
 
 - `app.metrics` renamed `heap.free` to the canonical `process.memory.heap.free`. `device.crash` and `device.anr` keep `heap.free` unchanged — canonical renames this field in `app.metrics` scope only. Both signals previously emitted through a single shared `RumConstants.HEAP_FREE_KEY`, so `SystemMetricsSpanEmitter` now declares its own key, the same way every non-shared metric there already does; `RumConstants.HEAP_FREE_KEY` is untouched, so the crash reporter and any caller using it are unaffected and the public API is unchanged. `storage.free` and `battery.percent` stay shared, as canonical keeps those identical on both signals. Update dashboards, alerts, and queries reading `heap.free` off `app.metrics`.
+- **`system.memory.total` and `system.disk.total` move from `app.metrics` span attributes to the
+  OTel resource — this is not a rename, and where you read them from is not symmetric with the
+  rest of the resource.** They no longer appear anywhere on `app.metrics` (or any other trace
+  span). Per the existing resource-export rules
+  (`io.opentelemetry.android.export.SelectiveResourceSpanExporter`, unchanged by this release):
+  logs and metrics always carry the full resource, so both keys are present there; traces carry
+  the full resource only on the first cold `app.start` span per process, so that is the only trace
+  span where they now appear. A consumer reading these two values from `app.metrics` must switch
+  to the resource, and a consumer reading them from an arbitrary trace span must switch to
+  filtering for the cold `app.start` span specifically.
+
+  This does not reduce IPC. `system-metrics` still calls `getMemoryInfo()` and `StatFs` on its
+  existing 60-second cache refresh — the totals were fields on those same result objects, never
+  extra calls — so the emitter pays exactly what it paid before. What changes is placement: two
+  static longs stop being repeated on every `app.metrics` sample.
+
+  New unconditional cost: every app now performs one `ActivityManager.getMemoryInfo()` call and one
+  `StatFs` call at SDK-init resource-build time, regardless of whether the opt-in
+  `instrumentation:system-metrics` module is used — these are treated as device facts (same
+  category as `device.manufacturer`), not something gated on which instrumentations are installed,
+  since the resource has no mechanism for late, per-instrumentation attribute append. Both values
+  are memoized after the first successful read, because `AndroidResource.createDefault` runs more
+  than once per SDK init (a field initializer in `OpenTelemetryRumBuilder`, then again in
+  `OpenTelemetryRumInitializer`) and typically on the main thread during `Application.onCreate`,
+  where `StatFs` is a filesystem read that can trip `StrictMode.detectDiskReads`. A failed read is
+  not memoized, so a transient failure can recover on a later build.
+
+  If either value cannot be read it is **omitted** from the resource rather than reported as a
+  sentinel: the resource is immutable for the life of the process, so publishing `-1` would pin it
+  onto every log and metric until the app restarts.
+
+  No public API change: `AndroidResource.createDefault(Context)` keeps its existing signature, and
+  the reader it delegates to is `internal` to `:core`.
+
 - `app.start` attribute and startup-phase span events renamed to the canonical `app.start.*`
   names. Update dashboards, alerts, and queries keyed on the old names:
 

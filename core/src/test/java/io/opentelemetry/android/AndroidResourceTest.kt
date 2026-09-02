@@ -31,10 +31,33 @@ import org.junit.jupiter.api.assertNotNull
 import org.assertj.core.api.Assertions.assertThat
 import java.util.UUID
 
+/** Deterministic stand-in for [DefaultDeviceCapacityReader], also counting how often it is read. */
+private class FakeDeviceCapacityReader(
+    private val totalRamBytes: Long,
+    private val totalDiskBytes: Long,
+) : DeviceCapacityReader {
+    var ramReadCount: Int = 0
+        private set
+    var diskReadCount: Int = 0
+        private set
+
+    override fun readTotalRamBytes(context: Context): Long {
+        ramReadCount++
+        return totalRamBytes
+    }
+
+    override fun readTotalDiskBytes(): Long {
+        diskReadCount++
+        return totalDiskBytes
+    }
+}
+
 internal class AndroidResourceTest {
     private val appName: String = "robotron"
     private val prefsName: String = "opentelemetry-android"
     private val installId: String = "install-id"
+    private val totalRamBytes: Long = 4_000_000_000L
+    private val totalDiskBytes: Long = 64_000_000_000L
     private val osDescription: String =
         "Android Version " +
             Build.VERSION.RELEASE +
@@ -48,6 +71,7 @@ internal class AndroidResourceTest {
     private lateinit var ctx: Context
     private lateinit var expectedResourceBuilder: ResourceBuilder
     private lateinit var appInfo: ApplicationInfo
+    private val deviceCapacityReader = FakeDeviceCapacityReader(totalRamBytes, totalDiskBytes)
 
     @BeforeEach
     fun setUp() {
@@ -86,13 +110,68 @@ internal class AndroidResourceTest {
                 ).put(OsIncubatingAttributes.OS_DESCRIPTION, osDescription)
                 .put(AppIncubatingAttributes.APP_INSTALLATION_ID, installId)
                 .put(RumConstants.APP_FRAMEWORK_KEY, "native_android")
+                .put(AndroidResource.SYSTEM_MEMORY_TOTAL, totalRamBytes)
+                .put(AndroidResource.SYSTEM_DISK_TOTAL, totalDiskBytes)
     }
 
     @Test
     fun testFullResource() {
         assertResourceMatches()
-        assertTelemetrySdkAttributesAbsent(AndroidResource.createDefault(ctx))
+        assertTelemetrySdkAttributesAbsent(AndroidResource.createDefault(ctx, deviceCapacityReader))
     }
+
+    /**
+     * Pins the emitted key strings as literals. Asserting through
+     * [AndroidResource.SYSTEM_MEMORY_TOTAL] on both sides would pass even if the constant's string
+     * were mistyped, which is the contract with existing `app.metrics` dashboards.
+     */
+    @Test
+    fun `capacity attributes use the canonical wire keys`() {
+        val resource = AndroidResource.createDefault(ctx, deviceCapacityReader)
+
+        assertThat(resource.attributes.get(AttributeKey.longKey("system.memory.total")))
+            .isEqualTo(totalRamBytes)
+        assertThat(resource.attributes.get(AttributeKey.longKey("system.disk.total")))
+            .isEqualTo(totalDiskBytes)
+    }
+
+    /**
+     * The resource is immutable for the process lifetime, so an unreadable value must be omitted
+     * rather than published as a sentinel that every log and metric would then carry.
+     */
+    @Test
+    fun `unreadable capacity values are omitted rather than reported as a sentinel`() {
+        val failing = FakeDeviceCapacityReader(totalRamBytes = -1L, totalDiskBytes = -1L)
+
+        val resource = AndroidResource.createDefault(ctx, failing)
+
+        assertThat(resource.attributes.get(AndroidResource.SYSTEM_MEMORY_TOTAL)).isNull()
+        assertThat(resource.attributes.get(AndroidResource.SYSTEM_DISK_TOTAL)).isNull()
+    }
+
+    @Test
+    fun `a single unreadable value does not suppress the other`() {
+        val partial = FakeDeviceCapacityReader(totalRamBytes = -1L, totalDiskBytes = totalDiskBytes)
+
+        val resource = AndroidResource.createDefault(ctx, partial)
+
+        assertThat(resource.attributes.get(AndroidResource.SYSTEM_MEMORY_TOTAL)).isNull()
+        assertThat(resource.attributes.get(AndroidResource.SYSTEM_DISK_TOTAL)).isEqualTo(totalDiskBytes)
+    }
+
+    /** Each resource build reads once; the real reader memoizes across builds (see its own test). */
+    @Test
+    fun `each resource build reads each capacity value once`() {
+        val counting = FakeDeviceCapacityReader(totalRamBytes, totalDiskBytes)
+
+        AndroidResource.createDefault(ctx, counting)
+
+        assertThat(counting.ramReadCount).isEqualTo(1)
+        assertThat(counting.diskReadCount).isEqualTo(1)
+    }
+
+    // The one-arg createDefault(context) is covered in DefaultDeviceCapacityReaderTest, which has a
+    // real Robolectric context; the mocked Context here cannot drive the real reader.
 
     @Test
     fun testMinimalResource() {
@@ -181,14 +260,14 @@ internal class AndroidResourceTest {
         } returns editor
 
         assertResourceMatches(
-            resource = AndroidResource.createDefault(ctx),
+            resource = AndroidResource.createDefault(ctx, deviceCapacityReader),
             extraAttributes = mapOf(AppIncubatingAttributes.APP_INSTALLATION_ID to slot.captured),
         )
         assertNotNull(UUID.fromString(slot.captured))
     }
 
     private fun assertResourceMatches(
-        resource: Resource = AndroidResource.createDefault(ctx),
+        resource: Resource = AndroidResource.createDefault(ctx, deviceCapacityReader),
         extraAttributes: Map<AttributeKey<*>, String> = emptyMap(),
     ) {
         extraAttributes.forEach { entry ->
