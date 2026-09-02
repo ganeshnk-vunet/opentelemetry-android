@@ -85,12 +85,11 @@ class OpenTelemetryRumSmokeTest {
         )
 
         val traceRequest =
-            server.awaitTraceRequest {
-                it
-                    .getResourceSpans(0)
-                    .getScopeSpans(0)
-                    .getSpans(0)
-                    .name == spanName
+            server.awaitTraceRequest { request ->
+                request.resourceSpansList
+                    .flatMap { it.scopeSpansList }
+                    .flatMap { it.spansList }
+                    .any { it.name == spanName }
             }
         assertTraceRequestReceived(traceRequest)
     }

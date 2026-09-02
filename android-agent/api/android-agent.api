@@ -91,6 +91,10 @@ public final class io/opentelemetry/android/agent/dsl/instrumentation/AnrReporte
 	public fun enabled (Z)V
 }
 
+public final class io/opentelemetry/android/agent/dsl/instrumentation/AppLifecycleReporterConfiguration : io/opentelemetry/android/agent/dsl/instrumentation/CanBeEnabledAndDisabled {
+	public fun enabled (Z)V
+}
+
 public final class io/opentelemetry/android/agent/dsl/instrumentation/CoilConfiguration : io/opentelemetry/android/agent/dsl/instrumentation/CanBeEnabledAndDisabled {
 	public fun enabled (Z)V
 }
@@ -118,6 +122,7 @@ public final class io/opentelemetry/android/agent/dsl/instrumentation/HybridClic
 public final class io/opentelemetry/android/agent/dsl/instrumentation/InstrumentationConfiguration {
 	public final fun activity (Lkotlin/jvm/functions/Function1;)V
 	public final fun anrReporter (Lkotlin/jvm/functions/Function1;)V
+	public final fun appLifecycle (Lkotlin/jvm/functions/Function1;)V
 	public final fun coil (Lkotlin/jvm/functions/Function1;)V
 	public final fun crashReporter (Lkotlin/jvm/functions/Function1;)V
 	public final fun fragment (Lkotlin/jvm/functions/Function1;)V

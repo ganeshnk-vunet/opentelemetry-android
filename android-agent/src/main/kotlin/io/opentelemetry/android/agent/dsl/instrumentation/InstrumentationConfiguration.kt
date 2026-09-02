@@ -24,6 +24,9 @@ class InstrumentationConfiguration internal constructor(
         FragmentLifecycleConfiguration(config, instrumentationLoader)
     }
     private val anr: AnrReporterConfiguration by lazy { AnrReporterConfiguration(config, instrumentationLoader) }
+    private val appLifecycle: AppLifecycleReporterConfiguration by lazy {
+        AppLifecycleReporterConfiguration(config, instrumentationLoader)
+    }
     private val crash: CrashReporterConfiguration by lazy { CrashReporterConfiguration(config, instrumentationLoader) }
     private val networkMonitoring: NetworkMonitoringConfiguration by lazy {
         NetworkMonitoringConfiguration(config, instrumentationLoader)
@@ -67,6 +70,13 @@ class InstrumentationConfiguration internal constructor(
      */
     fun anrReporter(configure: AnrReporterConfiguration.() -> Unit) {
         anr.configure()
+    }
+
+    /**
+     * Configures `device.app.lifecycle` instrumentation.
+     */
+    fun appLifecycle(configure: AppLifecycleReporterConfiguration.() -> Unit) {
+        appLifecycle.configure()
     }
 
     /**

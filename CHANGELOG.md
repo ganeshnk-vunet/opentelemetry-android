@@ -4,6 +4,17 @@
 
 ### Added
 
+- New `device.app.lifecycle` signal (`instrumentation/applifecycle`, bundled by default): one
+  standalone span per app-level state transition — `created` (once, at SDK install), `foreground`,
+  `background` — each carrying `app.state` (cross-platform canonical key) and `android.app.state`
+  (OTel Android wire key) with the identical value. Built on the SDK's existing process-level
+  foreground/background detection (`ProcessLifecycleOwner`, already used internally for session
+  timeout, ANR polling, and network-change gating); this is the first thing to export it as
+  telemetry. Deliberately distinct from `app.start` (startup/resume timing, not app-level state)
+  and from `activity.lifecycle`/`fragment.lifecycle` (per-UI-host spans, fired once per Activity or
+  Fragment) — one `device.app.lifecycle` span covers a transition regardless of how many
+  Activities/Fragments are involved. Disable via `instrumentation { appLifecycle { enabled(false) } }`.
+  iOS-side `ios.app.state` parity is out of scope for this change.
 - Navigation attribution: `ui.navigation` spans include three new attributes across all three
   navigators (View, Compose Nav2, Compose Nav3).
   - `navigation.is_initial` — `true` on the **first `ui.navigation` span emitted in the process**,

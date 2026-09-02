@@ -22,6 +22,7 @@ dependencies {
     // Default instrumentations:
     implementation(project(":instrumentation:activity"))
     implementation(project(":instrumentation:anr"))
+    implementation(project(":instrumentation:applifecycle"))
     implementation(project(":instrumentation:crash"))
     implementation(project(":instrumentation:fragment"))
     implementation(project(":instrumentation:network"))
