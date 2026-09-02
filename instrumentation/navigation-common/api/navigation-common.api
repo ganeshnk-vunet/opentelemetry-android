@@ -1,10 +1,19 @@
+public final class io/opentelemetry/android/instrumentation/navigation/common/NavigationColdStartTracker {
+	public static final field INSTANCE Lio/opentelemetry/android/instrumentation/navigation/common/NavigationColdStartTracker;
+	public final fun consumeIsInitial ()Z
+	public final fun resetForTesting ()V
+}
+
 public final class io/opentelemetry/android/instrumentation/navigation/common/NavigationConstants {
 	public static final field INSTANCE Lio/opentelemetry/android/instrumentation/navigation/common/NavigationConstants;
 	public static final field NAVIGATION_DESTINATION_NAME_KEY Lio/opentelemetry/api/common/AttributeKey;
 	public static final field NAVIGATION_DESTINATION_TYPE_KEY Lio/opentelemetry/api/common/AttributeKey;
 	public static final field NAVIGATION_ENTRY_TYPE_KEY Lio/opentelemetry/api/common/AttributeKey;
+	public static final field NAVIGATION_IS_INITIAL_KEY Lio/opentelemetry/api/common/AttributeKey;
 	public static final field NAVIGATION_SOURCE_NAME_KEY Lio/opentelemetry/api/common/AttributeKey;
 	public static final field NAVIGATION_SOURCE_TYPE_KEY Lio/opentelemetry/api/common/AttributeKey;
+	public static final field NAVIGATION_STACK_DEPTH_AFTER_KEY Lio/opentelemetry/api/common/AttributeKey;
+	public static final field NAVIGATION_STACK_DEPTH_BEFORE_KEY Lio/opentelemetry/api/common/AttributeKey;
 	public static final field NAVIGATION_TIMESTAMP_NS_KEY Lio/opentelemetry/api/common/AttributeKey;
 	public static final field NAVIGATION_TRANSITION_TYPE_KEY Lio/opentelemetry/api/common/AttributeKey;
 	public static final field NAVIGATION_TRIGGER_KEY Lio/opentelemetry/api/common/AttributeKey;
@@ -56,18 +65,23 @@ public final class io/opentelemetry/android/instrumentation/navigation/common/mo
 }
 
 public final class io/opentelemetry/android/instrumentation/navigation/common/models/NavigationTransitionCandidate {
-	public fun <init> (Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationNode;Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationNode;Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTransitionType;Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationEntryType;J)V
+	public fun <init> (Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationNode;Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationNode;Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTransitionType;Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationEntryType;JLjava/lang/Integer;Ljava/lang/Integer;)V
+	public synthetic fun <init> (Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationNode;Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationNode;Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTransitionType;Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationEntryType;JLjava/lang/Integer;Ljava/lang/Integer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationNode;
 	public final fun component2 ()Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationNode;
 	public final fun component3 ()Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTransitionType;
 	public final fun component4 ()Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationEntryType;
 	public final fun component5 ()J
-	public final fun copy (Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationNode;Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationNode;Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTransitionType;Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationEntryType;J)Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTransitionCandidate;
-	public static synthetic fun copy$default (Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTransitionCandidate;Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationNode;Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationNode;Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTransitionType;Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationEntryType;JILjava/lang/Object;)Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTransitionCandidate;
+	public final fun component6 ()Ljava/lang/Integer;
+	public final fun component7 ()Ljava/lang/Integer;
+	public final fun copy (Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationNode;Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationNode;Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTransitionType;Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationEntryType;JLjava/lang/Integer;Ljava/lang/Integer;)Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTransitionCandidate;
+	public static synthetic fun copy$default (Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTransitionCandidate;Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationNode;Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationNode;Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTransitionType;Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationEntryType;JLjava/lang/Integer;Ljava/lang/Integer;ILjava/lang/Object;)Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTransitionCandidate;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getDestination ()Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationNode;
 	public final fun getEntryType ()Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationEntryType;
 	public final fun getSource ()Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationNode;
+	public final fun getStackDepthAfter ()Ljava/lang/Integer;
+	public final fun getStackDepthBefore ()Ljava/lang/Integer;
 	public final fun getTimestampNanos ()J
 	public final fun getTransitionType ()Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTransitionType;
 	public fun hashCode ()I
@@ -88,9 +102,15 @@ public final class io/opentelemetry/android/instrumentation/navigation/common/mo
 	public static final field BACK_PRESS Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTrigger;
 	public static final field PROGRAMMATIC Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTrigger;
 	public static final field UNKNOWN Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTrigger;
+	public static final field USER_TAP Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTrigger;
 	public static fun getEntries ()Lkotlin/enums/EnumEntries;
 	public final fun getValue ()Ljava/lang/String;
 	public static fun valueOf (Ljava/lang/String;)Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTrigger;
 	public static fun values ()[Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTrigger;
+}
+
+public final class io/opentelemetry/android/instrumentation/navigation/common/models/NavigationTriggerResolver {
+	public static final field INSTANCE Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTriggerResolver;
+	public final fun resolve (Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTransitionType;Ljava/lang/Long;J)Lio/opentelemetry/android/instrumentation/navigation/common/models/NavigationTrigger;
 }
 

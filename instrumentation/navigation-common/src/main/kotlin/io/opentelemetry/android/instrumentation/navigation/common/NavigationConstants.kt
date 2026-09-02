@@ -36,4 +36,21 @@ object NavigationConstants {
 
     @JvmField
     val NAVIGATION_TIMESTAMP_NS_KEY: AttributeKey<Long> = AttributeKey.longKey("navigation.timestamp_ns")
+
+    /** True on the first navigation of the process. See `NavigationColdStartTracker`. */
+    @JvmField
+    val NAVIGATION_IS_INITIAL_KEY: AttributeKey<Boolean> = AttributeKey.booleanKey("navigation.is_initial")
+
+    /**
+     * Depth of the navigator's tracked stack before the transition. Absent where the framework has
+     * no depth to report — see `NavigationTransitionCandidate.stackDepthBefore`.
+     */
+    @JvmField
+    val NAVIGATION_STACK_DEPTH_BEFORE_KEY: AttributeKey<Long> =
+        AttributeKey.longKey("navigation.stack_depth.before")
+
+    /** Depth of the navigator's tracked stack after the transition. */
+    @JvmField
+    val NAVIGATION_STACK_DEPTH_AFTER_KEY: AttributeKey<Long> =
+        AttributeKey.longKey("navigation.stack_depth.after")
 }

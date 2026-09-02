@@ -17,6 +17,7 @@ import io.opentelemetry.android.instrumentation.navigation.common.models.Navigat
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTransitionCandidate
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTransitionType
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTrigger
+import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTriggerResolver
 
 /**
  * Threading contract: this collector is not internally synchronized. `onDestinationChanged` is
@@ -68,14 +69,23 @@ internal class ComposeNav2Collector(
         }
 
         val transitionType = inferTransitionType(controller, destinationId)
+        // inferTransitionType only reads the stack, so this is still the pre-transition depth.
+        val stackDepthBefore = destinationIdStack.size
         applyTransition(transitionType, destinationId)
+        val stackDepthAfter = destinationIdStack.size
 
         val destinationNode =
             NavigationNode(
                 type = NavigationNodeType.COMPOSE_ROUTE,
                 name = destinationNameExtractor(destination),
             )
-        val navigationTrigger = resolveTrigger(transitionType)
+        val navigationTrigger =
+            NavigationTriggerResolver.resolve(
+                transitionType,
+                pendingBackPressTimestampNanos,
+                clock.now(),
+            )
+        pendingBackPressTimestampNanos = null
 
         emitter.emit(
             NavigationTransitionCandidate(
@@ -84,6 +94,8 @@ internal class ComposeNav2Collector(
                 transitionType = transitionType,
                 entryType = NavigationEntryType.INTERNAL,
                 timestampNanos = clock.now(),
+                stackDepthBefore = stackDepthBefore,
+                stackDepthAfter = stackDepthAfter,
             ),
             navigationTrigger = navigationTrigger.value,
         )
@@ -148,44 +160,7 @@ internal class ComposeNav2Collector(
         }
     }
 
-    /**
-     * Attributes a transition to a [NavigationTrigger]. Only a [NavigationTransitionType.POP]
-     * that follows a recent [recordBackPress] is reported as [NavigationTrigger.BACK_PRESS];
-     * other pops are [NavigationTrigger.PROGRAMMATIC] and forward transitions are
-     * [NavigationTrigger.UNKNOWN].
-     */
-    private fun resolveTrigger(transitionType: NavigationTransitionType): NavigationTrigger =
-        when (transitionType) {
-            NavigationTransitionType.POP -> {
-                if (consumeBackPressSignal()) {
-                    NavigationTrigger.BACK_PRESS
-                } else {
-                    NavigationTrigger.PROGRAMMATIC
-                }
-            }
-
-            NavigationTransitionType.PUSH,
-            NavigationTransitionType.REPLACE,
-            -> {
-                pendingBackPressTimestampNanos = null
-                NavigationTrigger.UNKNOWN
-            }
-        }
-
-    private fun consumeBackPressSignal(): Boolean {
-        val backPressTimestampNanos = pendingBackPressTimestampNanos ?: return false
-        pendingBackPressTimestampNanos = null
-        return clock.now() - backPressTimestampNanos <= BACK_PRESS_SIGNAL_TTL_NANOS
-    }
-
     companion object {
-        /**
-         * How long a recorded back press stays eligible to be attributed to the next pop. A pop that
-         * arrives later is treated as programmatic, guarding against a stale back-press signal being
-         * misattributed. Implementation detail, intentionally not part of the published API.
-         */
-        private const val BACK_PRESS_SIGNAL_TTL_NANOS: Long = 1_000_000_000L
-
         /**
          * Reads the id of the destination directly beneath the current top using the public,
          * version-stable [NavController.previousBackStackEntry] (which reflects the live back stack

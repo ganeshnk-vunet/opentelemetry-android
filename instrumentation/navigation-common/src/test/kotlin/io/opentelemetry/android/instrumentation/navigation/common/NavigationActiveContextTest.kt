@@ -35,6 +35,10 @@ class NavigationActiveContextTest {
     @AfterEach
     fun tearDown() {
         NavigationSpanEmitter.clearActiveContext()
+        // Every emit() here consumes the process-global "first navigation" flag. Restoring it keeps
+        // this class from deciding what a later test class observes, and keeps these tests from
+        // depending on each other's order.
+        NavigationColdStartTracker.resetForTesting()
         exporter.reset()
     }
 

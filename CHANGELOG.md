@@ -4,6 +4,57 @@
 
 ### Added
 
+- Navigation attribution: `ui.navigation` spans include three new attributes across all three
+  navigators (View, Compose Nav2, Compose Nav3).
+  - `navigation.is_initial` — `true` on the **first `ui.navigation` span emitted in the process**,
+    not necessarily the first screen the user sees. In a single-Activity app the host Activity's
+    transition is emitted before the first Fragment or Compose destination, so `is_initial=true`
+    marks the host shell rather than the content screen; read it as "start of this process's
+    navigation history", and pair it with `navigation.destination.*` if you need the visible screen.
+    It is a deliberate proxy rather than a correlation against `app.start.type`, which would require
+    navigation-common to depend on the activity/startup instrumentation.
+  - `navigation.stack_depth.before` / `.after` — the navigator's tracked stack depth. Absent, rather
+    than zero, where the framework has no depth to report: Activity transitions have no back-stack
+    concept, so only Fragment and Compose transitions carry these. What "depth" counts is
+    framework-specific — Nav3 reports true back-stack sizes, while Nav2 reports its own shadow stack,
+    which *retains* the destination it returned to on a pop, so a pop never unwinds past that entry.
+    The delta is how many entries were dropped, not always one: a one-level pop is 3 → 2, while
+    returning to an ancestor unwinds everything above it in a single transition (3 → 1). Fragment
+    transitions report
+    `FragmentManager.getBackStackEntryCount()`, which counts transactions committed with
+    `addToBackStack()` rather than visible fragments — an app that navigates with a plain
+    `replace().commit()` reports `0 → 0` for a real transition. All three navigators emit under the
+    same instrumentation scope, so the span itself does not say which of these applies; interpret
+    the depth against the navigator the screen uses rather than comparing across them.
+  - `navigation.trigger` gains the value `user_tap`, reported when a navigation happens inside a
+    live click-interaction window. Resolved by the span emitter, since the collectors cannot see the
+    interaction context. It replaces two of the three collector-assigned triggers:
+    - `unknown` — a forward transition (push/replace) that happened while a tap was live.
+    - `programmatic` — only ever produced for a pop with no recorded back press, which inside a
+      click window is a tap-driven pop such as a toolbar "up" or a "close" button. The pop is still
+      recorded by `navigation.transition.type`, so nothing is lost by naming the trigger.
+
+    `back_press` is never replaced: a system back press is the more specific fact even if a tap was
+    live. **Note for existing consumers:** a tap-driven pop that previously reported `programmatic`
+    now reports `user_tap`, so queries that counted `programmatic` as "code-driven navigation" will
+    see those move. Known limit: the click window is not consumed by the first navigation that uses
+    it, so a genuinely programmatic navigation landing inside the window of an unrelated tap is also
+    labelled `user_tap`.
+
+  Known vocabulary gap: `back_gesture` (predictive back vs. plain back press) is not yet
+  distinguished — it needs an `OnBackAnimationCallback` integration (API 33+). Also still deferred,
+  as they require the navigation span to stop ending synchronously and instead wait for the
+  destination to render: `navigation.duration_ms`, `navigation.ttid_ms`,
+  `navigation.transition.completed`, and `navigation.is_cancelled`.
+
+  `NavigationTransitionCandidate` gained two optional constructor parameters, so its generated JVM
+  constructor and `copy` signatures changed: the old 5-argument `<init>` is gone, replaced by a
+  7-argument one plus the synthetic defaults overload. Kotlin callers are source-compatible; Java
+  callers that constructed it with 5 arguments would be a binary break. This is accepted rather than
+  papered over with `@JvmOverloads` because the type is Kotlin-only in practice — navigation-common
+  is an `implementation` dependency of every navigation module, so it is not on any consumer's
+  compile classpath, and the only constructors are the three collectors in this repo.
+
 - OkHttp network phase timing (incubating): DNS, connect, TLS, TTFB, download, and total durations exported as `http.client.timing.*` span attributes and `http.*` span events when `captureNetworkTimingPhases` is enabled (default).
 - HttpURLConnection total request timing (incubating): `http.client.timing.total_ms` and `http.call` span event when `captureNetworkTiming` is enabled (default); `http.client.timing.phases_supported=false` (use OkHttp for phase breakdown).
 - HTTP error taxonomy: OkHttp and HttpURLConnection failed spans include `http.error.category` (`timeout`, `dns`, `ssl`, `io`, `http_client`, `unknown`) alongside existing `error.type`.
