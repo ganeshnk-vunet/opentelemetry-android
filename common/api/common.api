@@ -19,7 +19,13 @@ public final class io/opentelemetry/android/common/RumConstants {
 	public static final field SCREEN_NAME_KEY Lio/opentelemetry/api/common/AttributeKey;
 	public static final field START_TYPE_KEY Lio/opentelemetry/api/common/AttributeKey;
 	public static final field STORAGE_SPACE_FREE_KEY Lio/opentelemetry/api/common/AttributeKey;
+	public static final field UI_HOST_KIND_ACTIVITY Ljava/lang/String;
+	public static final field UI_HOST_KIND_FRAGMENT Ljava/lang/String;
+	public static final field UI_HOST_KIND_KEY Lio/opentelemetry/api/common/AttributeKey;
+	public static final field UI_HOST_LIFECYCLE_EVENT_KEY Lio/opentelemetry/api/common/AttributeKey;
+	public static final field UI_HOST_NAME_KEY Lio/opentelemetry/api/common/AttributeKey;
 	public static final field UI_INTERACTION_SPAN_NAME Ljava/lang/String;
+	public static final fun uiHostLifecycleEventOf (Ljava/lang/String;)Ljava/lang/String;
 }
 
 public final class io/opentelemetry/android/common/RumConstants$Events {

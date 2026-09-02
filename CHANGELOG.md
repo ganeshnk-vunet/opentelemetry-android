@@ -55,6 +55,25 @@
   is an `implementation` dependency of every navigation module, so it is not on any consumer's
   compile classpath, and the only constructors are the three collectors in this repo.
 
+- Canonical UI-host lifecycle attributes: `activity.lifecycle` and `fragment.lifecycle` spans now
+  also carry `ui.host.kind` (`activity` / `fragment`), `ui.host.name`, and
+  `ui.host.lifecycle.event`. Canonical models Activity, Fragment and the iOS hosts as one
+  `ui.host.*` shape, so a single cross-platform query can read lifecycle data without knowing which
+  attribute holds the host identity on each platform, and `ui.host.kind` gives a host filter that
+  previously did not exist (the concept was split across two span types).
+
+  **Purely additive** — the span names are unchanged and every existing attribute
+  (`activity.name`, `fragment.name`, `activity.lifecycle.event`, `fragment.lifecycle.event`) is
+  still emitted, so existing queries and `app.action.summary` output are unaffected.
+
+  One value-space difference to be aware of: `ui.host.name` carries the identical value to
+  `activity.name` / `fragment.name`, but `ui.host.lifecycle.event` is **snake_case**
+  (`view_destroyed`) where the superseded keys keep the PascalCase Android callback names
+  (`ViewDestroyed`). That normalisation is the point — iOS already emits snake_case, so folding case
+  per platform is exactly what the canonical key removes. Both values appear on the same span.
+
+  Note `ui.*` is a deliberate extension: OpenTelemetry semantic conventions do not define a
+  `ui.host.*` namespace, so these names are non-standard by choice.
 - OkHttp network phase timing (incubating): DNS, connect, TLS, TTFB, download, and total durations exported as `http.client.timing.*` span attributes and `http.*` span events when `captureNetworkTimingPhases` is enabled (default).
 - HttpURLConnection total request timing (incubating): `http.client.timing.total_ms` and `http.call` span event when `captureNetworkTiming` is enabled (default); `http.client.timing.phases_supported=false` (use OkHttp for phase breakdown).
 - HTTP error taxonomy: OkHttp and HttpURLConnection failed spans include `http.error.category` (`timeout`, `dns`, `ssl`, `io`, `http_client`, `unknown`) alongside existing `error.type`.

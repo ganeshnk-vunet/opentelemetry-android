@@ -47,6 +47,30 @@ class ActivityTracerTest {
     }
 
     @Test
+    fun stampsCanonicalUiHostAttributes() {
+        val trackableTracer =
+            ActivityTracer(
+                activity = mockk<Activity>(),
+                activeSpan = activeSpan,
+                tracer = tracer,
+                appStartupTimer = appStartupTimer,
+                initialAppActivity = "FirstActivity",
+            )
+        trackableTracer.initiateRestartSpanIfNecessary(false)
+        trackableTracer.endActiveSpan()
+
+        val attributes = this.singleSpan.attributes
+        assertEquals("activity", attributes.get(RumConstants.UI_HOST_KIND_KEY))
+        assertEquals(
+            attributes.get(ActivityTracer.ACTIVITY_NAME_KEY),
+            attributes.get(RumConstants.UI_HOST_NAME_KEY),
+        )
+        assertEquals("restarted", attributes.get(RumConstants.UI_HOST_LIFECYCLE_EVENT_KEY))
+        // The superseded key keeps its PascalCase value on the same span.
+        assertEquals("Restarted", attributes.get(RumConstants.ACTIVITY_LIFECYCLE_EVENT_KEY))
+    }
+
+    @Test
     fun restart_nonInitialActivity() {
         val trackableTracer =
             ActivityTracer(

@@ -12,6 +12,11 @@ import io.opentelemetry.android.common.RumConstants.ACTIVITY_LIFECYCLE_SPAN_NAME
 import io.opentelemetry.android.common.RumConstants.APP_START_SPAN_NAME
 import io.opentelemetry.android.common.RumConstants.SCREEN_NAME_KEY
 import io.opentelemetry.android.common.RumConstants.START_TYPE_KEY
+import io.opentelemetry.android.common.RumConstants.UI_HOST_KIND_ACTIVITY
+import io.opentelemetry.android.common.RumConstants.UI_HOST_KIND_KEY
+import io.opentelemetry.android.common.RumConstants.UI_HOST_LIFECYCLE_EVENT_KEY
+import io.opentelemetry.android.common.RumConstants.UI_HOST_NAME_KEY
+import io.opentelemetry.android.common.RumConstants.uiHostLifecycleEventOf
 import io.opentelemetry.android.instrumentation.activity.startup.AppStartupTimer
 import io.opentelemetry.android.instrumentation.common.ActiveSpan
 import io.opentelemetry.api.common.AttributeKey
@@ -101,6 +106,11 @@ internal class ActivityTracer(
                 .spanBuilder(ACTIVITY_LIFECYCLE_SPAN_NAME)
                 .setAttribute(ACTIVITY_NAME_KEY, activityName)
                 .setAttribute(ACTIVITY_LIFECYCLE_EVENT_KEY, lifecycleEvent)
+                // Canonical ui.host.* alongside the per-host attributes above, so one cross-platform
+                // query can read Activity, Fragment and the iOS hosts the same way.
+                .setAttribute(UI_HOST_KIND_KEY, UI_HOST_KIND_ACTIVITY)
+                .setAttribute(UI_HOST_NAME_KEY, activityName)
+                .setAttribute(UI_HOST_LIFECYCLE_EVENT_KEY, uiHostLifecycleEventOf(lifecycleEvent))
         if (parentSpan != null) {
             spanBuilder.setParent(parentSpan.storeInContext(Context.current()))
         }

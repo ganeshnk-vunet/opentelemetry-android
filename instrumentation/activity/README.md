@@ -60,6 +60,16 @@ This instrumentation produces the following telemetry:
   * `activity.name`:  name of activity
   * `screen.name`:  name of screen
   * `last.screen.name`:  name of screen, only when span contains the `activityPostResumed` event.
+  * `ui.host.kind`: `activity` — canonical host discriminator, so one query can select Activity
+    transitions without knowing which span name carries them.
+  * `ui.host.name`: canonical successor to `activity.name`, carrying the identical value.
+  * `ui.host.lifecycle.event`: canonical successor to `activity.lifecycle.event`, in **snake_case**:
+    { `created` | `resumed` | `paused` | `stopped` | `destroyed` | `restarted` }. The casing differs
+    deliberately — iOS emits snake_case, so this is what lets one cross-platform query group both
+    without folding case per platform.
+
+  The `ui.host.*` attributes are additive: the `activity.*` attributes above are still emitted, so
+  existing queries keep working.
 
 ## Installation
 

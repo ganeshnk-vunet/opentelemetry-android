@@ -42,7 +42,14 @@ internal class FragmentTracer(
                 .spanBuilder(RumConstants.FRAGMENT_LIFECYCLE_SPAN_NAME)
                 .setAttribute(FRAGMENT_NAME_KEY, fragmentName)
                 .setAttribute(RumConstants.FRAGMENT_LIFECYCLE_EVENT_KEY, lifecycleEvent)
-                .startSpan()
+                // Canonical ui.host.* alongside the per-host attributes above, so one cross-platform
+                // query can read Activity, Fragment and the iOS hosts the same way.
+                .setAttribute(RumConstants.UI_HOST_KIND_KEY, RumConstants.UI_HOST_KIND_FRAGMENT)
+                .setAttribute(RumConstants.UI_HOST_NAME_KEY, fragmentName)
+                .setAttribute(
+                    RumConstants.UI_HOST_LIFECYCLE_EVENT_KEY,
+                    RumConstants.uiHostLifecycleEventOf(lifecycleEvent),
+                ).startSpan()
         // do this after the span is started, so we can override the default screen.name set by the
         // RumAttributeAppender.
         span.setAttribute(RumConstants.SCREEN_NAME_KEY, screenName)

@@ -23,6 +23,16 @@ This instrumentation produces the following telemetry:
     * `fragment.name`:  name of fragment
     * `screen.name`:  name of screen
     * `last.screen.name`:  name of screen, when span contains the `fragmentResumed` event.
+    * `ui.host.kind`: `fragment` — canonical host discriminator, so one query can select Fragment
+      transitions without knowing which span name carries them.
+    * `ui.host.name`: canonical successor to `fragment.name`, carrying the identical value.
+    * `ui.host.lifecycle.event`: canonical successor to `fragment.lifecycle.event`, in
+      **snake_case**: { `created` | `restored` | `resumed` | `paused` | `stopped` | `destroyed` |
+      `view_destroyed` | `detached` }. The casing differs deliberately — iOS emits snake_case, so
+      this is what lets one cross-platform query group both without folding case per platform.
+
+  The `ui.host.*` attributes are additive: the `fragment.*` attributes above are still emitted, so
+  existing queries keep working.
 
 ## Installation
 

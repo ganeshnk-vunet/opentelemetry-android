@@ -100,6 +100,53 @@ object RumConstants {
         AttributeKey.stringKey("fragment.lifecycle.event")
 
     /**
+     * Which kind of UI host a lifecycle span describes — see the `UI_HOST_KIND_*` values.
+     *
+     * Canonical models Activity, Fragment and the iOS hosts as one `ui.host.*` shape so a single
+     * query can span platforms. Android keeps emitting the separate
+     * [ACTIVITY_LIFECYCLE_SPAN_NAME] / [FRAGMENT_LIFECYCLE_SPAN_NAME] span names; this attribute is
+     * what lets a consumer filter by host kind without knowing which span name carries it.
+     */
+    @JvmField
+    val UI_HOST_KIND_KEY: AttributeKey<String> = AttributeKey.stringKey("ui.host.kind")
+
+    /**
+     * Canonical successor to the per-host `activity.name` / `fragment.name` attributes, carrying the
+     * identical value under one name. All are emitted so existing queries keep working.
+     */
+    @JvmField
+    val UI_HOST_NAME_KEY: AttributeKey<String> = AttributeKey.stringKey("ui.host.name")
+
+    /**
+     * Canonical successor to [ACTIVITY_LIFECYCLE_EVENT_KEY] / [FRAGMENT_LIFECYCLE_EVENT_KEY].
+     *
+     * Unlike [UI_HOST_NAME_KEY], the value is **not** identical: canonical requires snake_case
+     * (`view_destroyed`), while the superseded keys keep the PascalCase Android callback names
+     * (`ViewDestroyed`). Normalising the casing here is the point — iOS already emits snake_case, so
+     * a cross-platform query would otherwise have to fold case per platform. Use
+     * [uiHostLifecycleEventOf] to derive the value.
+     */
+    @JvmField
+    val UI_HOST_LIFECYCLE_EVENT_KEY: AttributeKey<String> =
+        AttributeKey.stringKey("ui.host.lifecycle.event")
+
+    const val UI_HOST_KIND_ACTIVITY: String = "activity"
+
+    const val UI_HOST_KIND_FRAGMENT: String = "fragment"
+
+    /**
+     * Converts an Android callback-style lifecycle event to the canonical snake_case form written to
+     * [UI_HOST_LIFECYCLE_EVENT_KEY] — `Resumed` to `resumed`, `ViewDestroyed` to `view_destroyed`.
+     *
+     * A transformation rather than a lookup table because the emitters pass an open `String`, so a
+     * fixed table would need a fallback anyway. Input that is already lowercase passes through
+     * unchanged.
+     */
+    @JvmStatic
+    fun uiHostLifecycleEventOf(lifecycleEvent: String): String =
+        lifecycleEvent.replace(PASCAL_CASE_BOUNDARY, "$1_$2").lowercase()
+
+    /**
      * Human-readable summary of what a span represents, derived by `ActionSummarySpanExporter`
      * (e.g. `App cold start`, `Clicked button 'Pay'`).
      *
@@ -110,6 +157,12 @@ object RumConstants {
     @JvmField
     val APP_ACTION_SUMMARY_KEY: AttributeKey<String> =
         AttributeKey.stringKey("semantic.summary")
+
+    /**
+     * Matches a lowercase-to-uppercase boundary, the only word break in the Android callback names.
+     * Precompiled because [uiHostLifecycleEventOf] runs on every lifecycle span.
+     */
+    private val PASCAL_CASE_BOUNDARY = Regex("([a-z0-9])([A-Z])")
 
     object Events {
         const val INIT_EVENT_STARTED: String = "rum.sdk.init.started"
