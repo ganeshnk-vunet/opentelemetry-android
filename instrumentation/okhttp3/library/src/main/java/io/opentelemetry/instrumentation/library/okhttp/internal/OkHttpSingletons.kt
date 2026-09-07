@@ -127,6 +127,11 @@ object OkHttpSingletons {
                     // Registration order is not significant: the two write under mutually
                     // exclusive conditions (a real response vs none), so they never both fire.
                     OkHttpNoResponseStatusCodeAttributesExtractor,
+                ).addAttributesExtractor(
+                    // Also complements the built-in extractor, which records url.full and never
+                    // splits it. Writes disjoint keys (url.scheme/path/query), so it cannot
+                    // conflict with anything registered above.
+                    OkHttpUrlPartsAttributesExtractor,
                 ).setEmitExperimentalHttpClientTelemetry(
                     instrumentation.emitExperimentalHttpClientTelemetry(),
                 )

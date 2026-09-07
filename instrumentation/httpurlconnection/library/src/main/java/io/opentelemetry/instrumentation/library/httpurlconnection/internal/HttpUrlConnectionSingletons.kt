@@ -70,6 +70,10 @@ internal object HttpUrlConnectionSingletons {
                 // Registration order is not significant: the two write under mutually exclusive
                 // conditions (a positive response code vs none), so they never both fire.
                 .addAttributesExtractor(HttpUrlNoResponseStatusCodeAttributesExtractor)
+                // Also complements it: that extractor records url.full and never splits it.
+                // Writes disjoint keys (url.scheme/path/query), so it cannot conflict with
+                // anything registered above.
+                .addAttributesExtractor(HttpUrlUrlPartsAttributesExtractor)
                 .addOperationMetrics(HttpClientMetrics.get())
 
         for (extractor in instrumentation.getAdditionalExtractors()) {

@@ -149,6 +149,11 @@ public final class io/opentelemetry/android/common/internal/http/HttpErrorCatego
 	public final fun reportsZeroStatusCode (Ljava/lang/Throwable;)Z
 }
 
+public final class io/opentelemetry/android/common/internal/http/UrlPartsAttributes {
+	public static final field INSTANCE Lio/opentelemetry/android/common/internal/http/UrlPartsAttributes;
+	public static final fun putUrlParts (Lio/opentelemetry/api/common/AttributesBuilder;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+}
+
 public final class io/opentelemetry/android/common/internal/imageload/ImageLoadAttributes {
 	public static final field ATTR_ERROR_TYPE Lio/opentelemetry/api/common/AttributeKey;
 	public static final field ATTR_IMAGE_IS_FIRST_RESOURCE Lio/opentelemetry/api/common/AttributeKey;
