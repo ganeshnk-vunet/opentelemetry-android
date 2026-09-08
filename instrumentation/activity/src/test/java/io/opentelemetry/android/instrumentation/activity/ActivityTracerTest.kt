@@ -205,7 +205,7 @@ class ActivityTracerTest {
         fun tracerFor(activity: Activity) =
             ActivityTracer(
                 activity = activity,
-                activeSpan = ActiveSpan(::noPreviousScreen),
+                activeSpan = ActiveSpan(noPreviousScreen),
                 tracer = tracer,
                 appStartupTimer = appStartupTimer,
             )
@@ -232,7 +232,9 @@ class ActivityTracerTest {
         )
     }
 
-    private fun noPreviousScreen(): String? = null
+    /** No previously-visible screen. A property, not a function: detekt's
+     * FunctionOnlyReturningConstant flags a function whose body is a constant. */
+    private val noPreviousScreen: () -> String? = { null }
 
     private open class SplashActivity : Activity()
 
