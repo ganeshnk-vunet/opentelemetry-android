@@ -201,6 +201,41 @@ class InstrumentationTest {
         assertThat(httpSpan.events.map { it.name }).contains("http.call", "http.download")
     }
 
+    /**
+     * Proves the URL-parts extractor is actually registered on the real instrumenter, not merely
+     * correct in isolation. The unit tests call `onStart` on the extractor object directly, so
+     * they would all still pass if it were dropped from `OkHttpSingletons`; only an end-to-end
+     * assertion on a span from the wired pipeline catches that.
+     *
+     * Also covers the redaction reaching the wire: `sig` is in the default sensitive set, so its
+     * value must be `REDACTED` on `url.query` exactly as it already is inside `url.full`.
+     */
+    @Test
+    @Throws(IOException::class)
+    fun urlPartsReachTheSpanAndTheQueryIsRedacted() {
+        server.enqueue(MockResponse.Builder().code(200).body("ok").build())
+
+        val client = OkHttpClient.Builder().build()
+        createCall(client, "/parts/?page=2&sig=s3cr3t").execute().use { response ->
+            assertThat(response.body?.string()).isEqualTo("ok")
+        }
+
+        val httpSpan =
+            openTelemetryRumRule.inMemorySpanExporter.finishedSpanItems.firstOrNull { span ->
+                span.attributes.get(AttributeKey.stringKey("http.request.method")) == "GET"
+            }
+
+        assertThat(httpSpan).isNotNull()
+        assertThat(httpSpan!!.attributes.get(AttributeKey.stringKey("url.scheme"))).isEqualTo("http")
+        assertThat(httpSpan.attributes.get(AttributeKey.stringKey("url.path"))).isEqualTo("/parts/")
+
+        val query = httpSpan.attributes.get(AttributeKey.stringKey("url.query"))
+        assertThat(query).isEqualTo("page=2&sig=REDACTED")
+        // The secret must not survive anywhere on the span, url.full included.
+        assertThat(httpSpan.attributes.asMap().values.map { it.toString() })
+            .noneMatch { it.contains("s3cr3t") }
+    }
+
     private fun createCall(
         client: OkHttpClient,
         urlPath: String,

@@ -42,9 +42,20 @@
   resource differently.
 
   Values keep their percent-encoding, matching `url.full`, so the parts add up to the whole they
-  sit beside. No redaction is applied: the span already carried the identical characters in
-  `url.full`, so this exposes nothing new — but any future query redaction has to cover
-  `url.full` at the same time, or a redacted copy ends up next to the unredacted original.
+  sit beside.
+
+  `url.query` is redacted with the same sanitizer and parameter set that upstream's
+  `HttpClientAttributesExtractor` already applies to `url.full` — the values of `AWSAccessKeyId`,
+  `Signature`, `sig` and `X-Goog-Signature` are replaced with `REDACTED`. Emitting the raw query
+  would have placed a plaintext signed-URL credential on the same span as the redacted copy, and
+  semconv requires sensitive query values to be scrubbed on `url.query` as well as `url.full`.
+  `url.scheme` and `url.path` need no equivalent: userinfo lives in the authority and the
+  sensitive parameters live in the query, so neither reaches them.
+
+  One gap remains, and it is upstream's: a consumer overriding the set via
+  `Experimental.setSensitiveQueryParameters` changes what `url.full` redacts, but that set is
+  write-only — there is no getter — so `url.query` is redacted against the default set regardless.
+  Nothing in this SDK calls that API today.
 
 - Navigation attribution: `ui.navigation` spans include three new attributes across all three
   navigators (View, Compose Nav2, Compose Nav3).

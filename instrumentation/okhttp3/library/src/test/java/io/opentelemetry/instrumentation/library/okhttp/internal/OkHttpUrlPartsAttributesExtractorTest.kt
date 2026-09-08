@@ -60,4 +60,34 @@ internal class OkHttpUrlPartsAttributesExtractorTest {
         val attributes = attributesFor("https://example.com:8443/a").asMap().keys.map { it.key }
         assertThat(attributes).containsExactlyInAnyOrder("url.scheme", "url.path")
     }
+
+    /**
+     * `+` means a space in a query string. `encodedQuery` preserves it; the decoded accessor would
+     * hand back `q=a b`, which no longer matches the `url.full` sitting beside it. Locks the
+     * encoded accessor against a well-meaning switch to `url.query`.
+     */
+    @Test
+    fun keepsPlusRatherThanDecodingItToASpace() {
+        val attributes = attributesFor("https://example.com/search?q=a+b")
+        assertThat(attributes.get(UrlAttributes.URL_QUERY)).isEqualTo("q=a+b")
+    }
+
+    /**
+     * `%20` survives decoding as a space and leaves the path shape intact; `%2F` does not — decoded
+     * it becomes a separator and changes what the path means. Worth locking separately.
+     */
+    @Test
+    fun keepsEncodedSlashesInPathAndQuery() {
+        val attributes = attributesFor("https://example.com/a%2Fb?p=x%2Fy")
+        assertThat(attributes.get(UrlAttributes.URL_PATH)).isEqualTo("/a%2Fb")
+        assertThat(attributes.get(UrlAttributes.URL_QUERY)).isEqualTo("p=x%2Fy")
+    }
+
+    /** The redaction that upstream applies to `url.full` must reach `url.query` through here too. */
+    @Test
+    fun redactsSensitiveQueryParameters() {
+        val attributes = attributesFor("https://example.com/o?AWSAccessKeyId=AKIA&Signature=deadbeef")
+        assertThat(attributes.get(UrlAttributes.URL_QUERY))
+            .isEqualTo("AWSAccessKeyId=REDACTED&Signature=REDACTED")
+    }
 }

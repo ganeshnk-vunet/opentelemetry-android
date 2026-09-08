@@ -6,6 +6,8 @@
 package io.opentelemetry.android.common.internal.http
 
 import io.opentelemetry.api.common.AttributesBuilder
+import io.opentelemetry.instrumentation.api.internal.HttpConstants
+import io.opentelemetry.instrumentation.api.semconv.url.internal.UrlQuerySanitizer
 import io.opentelemetry.semconv.UrlAttributes
 
 /**
@@ -43,10 +45,21 @@ object UrlPartsAttributes {
      *   Semconv makes it conditionally required, so an empty string would assert "a query was
      *   present and blank", which is a different claim from "there was no query".
      *
-     * Values are written as-is, with no redaction. The span already carries the identical
-     * characters in `url.full`, so splitting them out exposes nothing that was not being sent
-     * already — but if query redaction is ever introduced it has to be applied to `url.full`
-     * at the same time, or the redacted copy sits next to the unredacted original.
+     * `url.query` is redacted with the same sanitizer and the same parameter set the upstream
+     * `HttpClientAttributesExtractor` applies to `url.full`, so the two agree. That extractor
+     * calls `stripSensitiveData()` before writing `url.full`, replacing userinfo and the values of
+     * [HttpConstants.SENSITIVE_QUERY_PARAMETERS] (`AWSAccessKeyId`, `Signature`, `sig`,
+     * `X-Goog-Signature`) with `REDACTED`. Writing the raw query here would have put the
+     * plaintext secret on the same span as the redacted copy — a redaction bypass, not merely a
+     * future concern. `url.scheme` and `url.path` need no equivalent: userinfo lives in the
+     * authority and the sensitive parameters live in the query, neither of which reaches them.
+     *
+     * Known gap: a consumer that overrides the set via
+     * `Experimental.setSensitiveQueryParameters` changes what `url.full` redacts, but the
+     * configured set is write-only upstream — there is no getter — so the override cannot be read
+     * back here and `url.query` would still be redacted against the default set. Nothing in this
+     * SDK calls that API; if it ever does, the override has to be threaded through to this helper
+     * at the same time.
      */
     @JvmStatic
     fun putUrlParts(
@@ -57,6 +70,9 @@ object UrlPartsAttributes {
     ) {
         scheme?.takeIf { it.isNotBlank() }?.let { attributes.put(UrlAttributes.URL_SCHEME, it) }
         attributes.put(UrlAttributes.URL_PATH, path?.takeIf { it.isNotBlank() } ?: "/")
-        query?.takeIf { it.isNotBlank() }?.let { attributes.put(UrlAttributes.URL_QUERY, it) }
+        query
+            ?.takeIf { it.isNotBlank() }
+            ?.let { UrlQuerySanitizer.redactQueryString(it, HttpConstants.SENSITIVE_QUERY_PARAMETERS) }
+            ?.let { attributes.put(UrlAttributes.URL_QUERY, it) }
     }
 }

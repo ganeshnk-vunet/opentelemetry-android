@@ -57,4 +57,30 @@ internal class HttpUrlUrlPartsAttributesExtractorTest {
         assertThat(attributes.get(UrlAttributes.URL_PATH)).isEqualTo("/search/a%20b")
         assertThat(attributes.get(UrlAttributes.URL_QUERY)).isEqualTo("q=a%20b")
     }
+
+    /**
+     * Host-only URL that still carries a query. `java.net.URL.getPath()` returns "" here, so this
+     * exercises the shared `/` fallback and the query on the same request — the combination the
+     * okhttp side never reaches, since okhttp reports "/" itself.
+     */
+    @Test
+    fun reportsRootPathForAHostOnlyUrlThatHasAQuery() {
+        val attributes = attributesFor("http://example.com?foo=bar")
+        assertThat(attributes.get(UrlAttributes.URL_PATH)).isEqualTo("/")
+        assertThat(attributes.get(UrlAttributes.URL_QUERY)).isEqualTo("foo=bar")
+    }
+
+    @Test
+    fun keepsEncodedSlashesInPathAndQuery() {
+        val attributes = attributesFor("https://example.com/a%2Fb?p=x%2Fy")
+        assertThat(attributes.get(UrlAttributes.URL_PATH)).isEqualTo("/a%2Fb")
+        assertThat(attributes.get(UrlAttributes.URL_QUERY)).isEqualTo("p=x%2Fy")
+    }
+
+    /** The redaction that upstream applies to `url.full` must reach `url.query` through here too. */
+    @Test
+    fun redactsSensitiveQueryParameters() {
+        val attributes = attributesFor("https://example.com/o?sig=s3cr3t&alt=media")
+        assertThat(attributes.get(UrlAttributes.URL_QUERY)).isEqualTo("sig=REDACTED&alt=media")
+    }
 }

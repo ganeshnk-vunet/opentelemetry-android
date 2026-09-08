@@ -64,4 +64,30 @@ internal class UrlPartsAttributesTest {
         assertThat(attributes.get(UrlAttributes.URL_PATH)).isEqualTo("/search/a%20b")
         assertThat(attributes.get(UrlAttributes.URL_QUERY)).isEqualTo("q=a%20b&r=%2F")
     }
+
+    /**
+     * The upstream client extractor redacts `url.full` before writing it — userinfo, plus the
+     * values of `HttpConstants.SENSITIVE_QUERY_PARAMETERS`. Writing the raw query here would put
+     * the plaintext secret on the same span as the redacted copy. These lock the two together.
+     */
+    @Test
+    fun redactsSensitiveQueryParameterValues() {
+        val attributes = put("https", "/object", "AWSAccessKeyId=AKIA&Signature=deadbeef&sig=s3cr3t")
+        assertThat(attributes.get(UrlAttributes.URL_QUERY))
+            .isEqualTo("AWSAccessKeyId=REDACTED&Signature=REDACTED&sig=REDACTED")
+    }
+
+    @Test
+    fun redactsGoogleSignedUrlParameter() {
+        val query = put("https", "/o", "X-Goog-Signature=abc123&alt=media").get(UrlAttributes.URL_QUERY)!!
+        assertThat(query).doesNotContain("abc123")
+        // A non-sensitive parameter alongside it keeps its value.
+        assertThat(query).contains("alt=media")
+    }
+
+    @Test
+    fun leavesOrdinaryQueryParametersUntouched() {
+        assertThat(put("https", "/a", "page=2&size=50").get(UrlAttributes.URL_QUERY))
+            .isEqualTo("page=2&size=50")
+    }
 }
