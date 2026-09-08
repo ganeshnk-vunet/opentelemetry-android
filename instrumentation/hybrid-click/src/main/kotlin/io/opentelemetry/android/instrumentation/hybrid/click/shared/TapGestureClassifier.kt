@@ -14,13 +14,13 @@ import kotlin.math.pow
  * A gesture qualifies only when it reaches [MotionEvent.ACTION_UP] without moving beyond
  * [touchSlopPx] from the original [MotionEvent.ACTION_DOWN] position. A qualifying gesture is then
  * split by how long the pointer was down: below [longPressTimeoutMs] it is an
- * [InteractionType.TAP], at or above it an [InteractionType.LONG_PRESS].
+ * [GestureType.TAP], at or above it a [GestureType.LONG_PRESS].
  *
  * The kind is decided at ACTION_UP from the elapsed press duration, so it describes the gesture the
  * user performed. That is not always the gesture the *app* acted on: Android delivers `onLongClick`
  * at the timeout while the finger is still down and then suppresses the click, but only for targets
  * that actually handle long clicks. A slow press on a target without a long-click handler is still
- * reported as [InteractionType.LONG_PRESS] even though the app treated it as an ordinary click.
+ * reported as [GestureType.LONG_PRESS] even though the app treated it as an ordinary click.
  */
 internal class TapGestureClassifier {
     /**
@@ -44,7 +44,7 @@ internal class TapGestureClassifier {
      * Consumes a [MotionEvent] and returns the interaction kind only when it ends a qualifying
      * gesture, or `null` for every other event.
      */
-    fun classify(event: MotionEvent?): InteractionType? {
+    fun classify(event: MotionEvent?): GestureType? {
         if (event == null) {
             return null
         }
@@ -61,7 +61,7 @@ internal class TapGestureClassifier {
         x: Float,
         y: Float,
         eventTimeMs: Long,
-    ): InteractionType? =
+    ): GestureType? =
         when (actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 downX = x
@@ -93,8 +93,8 @@ internal class TapGestureClassifier {
                 reset()
                 when {
                     !qualifies -> null
-                    pressDurationMs >= longPressTimeoutMs -> InteractionType.LONG_PRESS
-                    else -> InteractionType.TAP
+                    pressDurationMs >= longPressTimeoutMs -> GestureType.LONG_PRESS
+                    else -> GestureType.TAP
                 }
             }
 

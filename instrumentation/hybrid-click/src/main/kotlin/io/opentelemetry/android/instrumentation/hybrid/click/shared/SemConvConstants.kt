@@ -7,8 +7,22 @@ package io.opentelemetry.android.instrumentation.hybrid.click.shared
 
 internal const val ATTR_WIDGET_SOURCE = "app.widget.source"
 
-/** Which gesture produced the interaction — see [InteractionType] for the values. */
+/** Which gesture produced the interaction — see [GestureType] for the values. */
 internal const val ATTR_INTERACTION_TYPE = "interaction.type"
+
+/**
+ * The raw pointer gesture that produced the span — see [GestureType] for the values.
+ *
+ * Emitted alongside [ATTR_INTERACTION_TYPE] rather than instead of it, because the two answer
+ * different questions: this one is always "what did the finger do", while `interaction.type` names
+ * the semantic interaction and so depends on which control was hit. Today both carry the same
+ * value; keeping the gesture on its own key means gesture-level analysis survives unchanged once
+ * `interaction.type` starts reporting control-derived kinds.
+ *
+ * Named `ui.gesture.type` rather than `app.gesture.type` to match the direction already set by
+ * [ATTR_CONTROL_TYPE] — `app.*` here is a legacy platform wire prefix, not one to grow.
+ */
+internal const val ATTR_GESTURE_TYPE = "ui.gesture.type"
 
 /** Boolean state of a tapped toggle (switch / checkbox / radio), when the target is checkable. */
 internal const val ATTR_WIDGET_CHECKED = "ui.control.value.checked"

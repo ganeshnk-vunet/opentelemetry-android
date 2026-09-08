@@ -16,6 +16,7 @@ import io.opentelemetry.android.common.RumDiagnostics
 import io.opentelemetry.android.common.internal.instrumentation.ActiveInteractionContext
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_CONTROL_SELECTION_MODE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_CONTROL_TYPE
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_GESTURE_TYPE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_INTERACTION_TYPE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_WIDGET_CHECKED
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_WIDGET_SOURCE
@@ -178,7 +179,7 @@ internal class ClickEventGenerator(
     ) {
         val event = motionEvent ?: return
         val tapGestureClassifier = tapGestureClassifiers[window] ?: return
-        val interactionType = tapGestureClassifier.classify(event) ?: return
+        val gestureType = tapGestureClassifier.classify(event) ?: return
 
         ActiveInteractionContext.clear()
 
@@ -201,7 +202,8 @@ internal class ClickEventGenerator(
                 .setAttribute(ATTR_WIDGET_SOURCE, target.source)
                 .setAttribute(ATTR_WIDGET_TYPE, target.type)
                 .setAttribute(ATTR_CONTROL_TYPE, target.type)
-                .setAttribute(ATTR_INTERACTION_TYPE, interactionType.value)
+                .setAttribute(ATTR_INTERACTION_TYPE, gestureType.value)
+                .setAttribute(ATTR_GESTURE_TYPE, gestureType.value)
         resolveSelectionMode(target.type)?.let { spanBuilder.setAttribute(ATTR_CONTROL_SELECTION_MODE, it) }
         val span = spanBuilder.startSpan()
 

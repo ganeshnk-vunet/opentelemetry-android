@@ -16,6 +16,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.mockk.every
 import io.mockk.mockk
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_GESTURE_TYPE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_INTERACTION_TYPE
 import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.sdk.OpenTelemetrySdk
@@ -64,7 +65,9 @@ class ViewInteractionTypeTest {
 
         press(window, holdMs = 50L)
 
-        assertThat(interactionType(singleSpan())).isEqualTo("tap")
+        val span = singleSpan()
+        assertThat(interactionType(span)).isEqualTo("tap")
+        assertThat(gestureType(span)).isEqualTo("tap")
     }
 
     @Test
@@ -74,7 +77,9 @@ class ViewInteractionTypeTest {
 
         press(window, holdMs = 900L)
 
-        assertThat(interactionType(singleSpan())).isEqualTo("long_press")
+        val span = singleSpan()
+        assertThat(interactionType(span)).isEqualTo("long_press")
+        assertThat(gestureType(span)).isEqualTo("long_press")
     }
 
     /** A press that leaves the touch slop is not a tap, so it emits nothing regardless of duration. */
@@ -89,6 +94,24 @@ class ViewInteractionTypeTest {
         shadowOf(Looper.getMainLooper()).idle()
 
         assertThat(exporter.finishedSpanItems).isEmpty()
+    }
+
+    /**
+     * Both keys are emitted on every span, not one or the other. They carry the same value while
+     * `interaction.type` still reports the gesture; the point of this test is that the gesture is
+     * readable from its own key, so gesture analysis keeps working once `interaction.type` starts
+     * reporting control-derived kinds like `toggle`.
+     */
+    @Test
+    fun `span carries both the interaction type and the raw gesture`() {
+        val window = buttonWindow()
+        generator.startTracking(window)
+
+        press(window, holdMs = 50L)
+
+        val span = singleSpan()
+        assertThat(span.attributes.get(AttributeKey.stringKey("interaction.type"))).isNotNull()
+        assertThat(span.attributes.get(AttributeKey.stringKey("ui.gesture.type"))).isNotNull()
     }
 
     private fun buttonWindow(): Window {
@@ -122,6 +145,9 @@ class ViewInteractionTypeTest {
 
     private fun interactionType(span: SpanData): String? =
         span.attributes.get(AttributeKey.stringKey(ATTR_INTERACTION_TYPE))
+
+    private fun gestureType(span: SpanData): String? =
+        span.attributes.get(AttributeKey.stringKey(ATTR_GESTURE_TYPE))
 
     private companion object {
         const val VIEW_SIZE = 500

@@ -7,9 +7,10 @@ package io.opentelemetry.android.instrumentation.hybrid.click
 
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_CONTROL_SELECTION_MODE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_CONTROL_TYPE
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_GESTURE_TYPE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_INTERACTION_TYPE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_WIDGET_CHECKED
-import io.opentelemetry.android.instrumentation.hybrid.click.shared.InteractionType
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.GestureType
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.SELECTION_MODE_MULTIPLE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.SELECTION_MODE_SINGLE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_BUTTON
@@ -51,9 +52,35 @@ class HybridClickWireKeyContractTest {
     }
 
     @Test
-    fun `interaction kinds use the canonical vocabulary`() {
-        assertThat(InteractionType.TAP.value).isEqualTo("tap")
-        assertThat(InteractionType.LONG_PRESS.value).isEqualTo("long_press")
+    fun `gesture kinds use the canonical vocabulary`() {
+        assertThat(GestureType.TAP.value).isEqualTo("tap")
+        assertThat(GestureType.LONG_PRESS.value).isEqualTo("long_press")
+    }
+
+    @Test
+    fun `gesture type uses the canonical wire key`() {
+        assertThat(ATTR_GESTURE_TYPE).isEqualTo("ui.gesture.type")
+    }
+
+    /**
+     * The gesture key deliberately does not take the `app.*` prefix that `app.widget.type` and
+     * `app.widget.source` carry. Those are legacy platform wire names the module is moving away
+     * from (see [ATTR_CONTROL_TYPE]); a new key adopting that prefix would reverse that direction.
+     */
+    @Test
+    fun `gesture type is not emitted under the legacy app prefix`() {
+        assertThat(ATTR_GESTURE_TYPE).isNotEqualTo("app.gesture.type")
+    }
+
+    /**
+     * `interaction.type` and `ui.gesture.type` currently carry the same value, but they are
+     * separate contracts: `interaction.type` is scheduled to report control-derived kinds
+     * (`toggle`, `slider`), while `ui.gesture.type` must keep answering "what did the finger do".
+     * Pinned so a future change cannot quietly collapse them back into one key.
+     */
+    @Test
+    fun `gesture type and interaction type are distinct keys`() {
+        assertThat(ATTR_GESTURE_TYPE).isNotEqualTo(ATTR_INTERACTION_TYPE)
     }
 
     @Test

@@ -4,6 +4,20 @@
 
 ### Added
 
+- Hybrid-click raw gesture key: `ui.interaction` spans now also carry `ui.gesture.type`, naming the
+  pointer gesture that produced the span (`tap`, `long_press`). **Purely additive** — the value is
+  currently identical to `interaction.type`, and no existing attribute changed, so span volume and
+  every existing query are unaffected. The two are separate keys on purpose: `ui.gesture.type` always
+  answers "what did the finger do", while `interaction.type` is scheduled to report the *semantic*
+  interaction derived from the control that was hit (`toggle`, `slider`), which depends on the target
+  rather than the gesture. Splitting them now means gesture-level analysis — tap vs long-press rates,
+  say — keeps working unchanged when that happens, instead of being lost. Named `ui.gesture.type`
+  rather than `app.gesture.type` because `app.*` on this signal is a legacy Android wire prefix
+  canonical already treats as platform-specific (the same reasoning that introduced `ui.control.type`
+  beside `app.widget.type`). Deliberate extension: canonical does not define a gesture key today, so
+  this needs a catalog entry. Known limit: the vocabulary is still only the two kinds the classifier
+  can detect — gestures leaving the touch slop are not reported at all, so a drag or scroll produces
+  no span. No public API / `apiCheck` impact.
 - New `device.app.lifecycle` signal (`instrumentation/applifecycle`, bundled by default): one
   standalone span per app-level state transition — `created` (once, at SDK install), `foreground`,
   `background` — each carrying `app.state` (cross-platform canonical key) and `android.app.state`

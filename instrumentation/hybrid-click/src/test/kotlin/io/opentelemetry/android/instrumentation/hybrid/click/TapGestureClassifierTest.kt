@@ -6,7 +6,7 @@
 package io.opentelemetry.android.instrumentation.hybrid.click
 
 import android.view.MotionEvent
-import io.opentelemetry.android.instrumentation.hybrid.click.shared.InteractionType
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.GestureType
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.TapGestureClassifier
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -25,7 +25,7 @@ class TapGestureClassifierTest {
         assertThat(classifier.classify(MotionEvent.ACTION_DOWN, 100f, 200f, 1_000L)).isNull()
         assertThat(classifier.classify(MotionEvent.ACTION_MOVE, 103f, 204f, 1_050L)).isNull()
         assertThat(classifier.classify(MotionEvent.ACTION_UP, 103f, 204f, 1_100L))
-            .isEqualTo(InteractionType.TAP)
+            .isEqualTo(GestureType.TAP)
     }
 
     @Test
@@ -34,7 +34,7 @@ class TapGestureClassifierTest {
 
         assertThat(classifier.classify(MotionEvent.ACTION_DOWN, 100f, 200f, 1_000L)).isNull()
         assertThat(classifier.classify(MotionEvent.ACTION_UP, 103f, 204f, 1_900L))
-            .isEqualTo(InteractionType.LONG_PRESS)
+            .isEqualTo(GestureType.LONG_PRESS)
     }
 
     @Test
@@ -44,7 +44,7 @@ class TapGestureClassifierTest {
         classifier.classify(MotionEvent.ACTION_DOWN, 100f, 200f, 1_000L)
 
         assertThat(classifier.classify(MotionEvent.ACTION_UP, 100f, 200f, 1_500L))
-            .isEqualTo(InteractionType.LONG_PRESS)
+            .isEqualTo(GestureType.LONG_PRESS)
     }
 
     @Test
@@ -54,7 +54,7 @@ class TapGestureClassifierTest {
         classifier.classify(MotionEvent.ACTION_DOWN, 100f, 200f, 1_000L)
 
         assertThat(classifier.classify(MotionEvent.ACTION_UP, 100f, 200f, 1_499L))
-            .isEqualTo(InteractionType.TAP)
+            .isEqualTo(GestureType.TAP)
     }
 
     @Test

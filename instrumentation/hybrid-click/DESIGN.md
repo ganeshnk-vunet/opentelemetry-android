@@ -201,6 +201,7 @@ Every qualified tap produces one `ui.interaction` span with these attributes:
 | `app.widget.type`             | Widget kind (button/switch/text_field/…)     | `"button"`           |
 | `ui.control.type`             | Same value as `app.widget.type` — canonical name | `"button"`       |
 | `interaction.type`            | Gesture kind: `"tap"` or `"long_press"`      | `"tap"`              |
+| `ui.gesture.type`             | Raw pointer gesture: `"tap"` or `"long_press"` | `"tap"`            |
 | `ui.control.selection_mode`   | `"single"`/`"multiple"` — **selection widgets only** | `"multiple"` |
 | `ui.control.value.checked`    | Toggle state — **toggle widgets only**       | `true`               |
 
@@ -246,7 +247,9 @@ doesn't apply (buttons, text, images, unknown) rather than emitted as some defau
 
 ### `interaction.type`
 
-Which gesture produced the span. Values: `tap`, `long_press` (see `InteractionType`).
+Which gesture produced the span. Values: `tap`, `long_press` (see `GestureType`).
+
+The same value is also emitted under `ui.gesture.type` — see below.
 
 Both come from the same qualified gesture — one that reaches `ACTION_UP` without leaving the touch
 slop — split by how long the pointer was down, measured against
@@ -263,6 +266,20 @@ tracks a single pointer, so `ACTION_POINTER_DOWN` does not disqualify a gesture 
 pinch whose primary finger stays still is still reported as a `tap`. Double-tap is not detectable
 at all: it needs cross-gesture state or `GestureDetector`, whose deferred `onSingleTapConfirmed`
 would break the synchronous emission this module depends on (see *Tap Gesture Classification*).
+
+### `ui.gesture.type`
+
+The raw pointer gesture, always emitted. Values: `tap`, `long_press` (see `GestureType`) — today
+identical to `interaction.type`.
+
+The two keys are separate contracts because they answer different questions. `ui.gesture.type` is
+always "what did the finger do". `interaction.type` names the *semantic* interaction, and so depends
+on which control was hit — the same tap is a plain tap on a button but a toggle on a switch. Keeping
+the gesture on its own key means gesture-level analysis (tap vs long-press rates, for instance)
+keeps working unchanged when `interaction.type` starts reporting control-derived kinds.
+
+Named `ui.gesture.type`, not `app.gesture.type`: `app.*` here is a legacy platform wire prefix that
+canonical treats as Android-specific (see `ui.control.type` above), so a new key does not adopt it.
 
 ### `ui.control.value.checked`
 
