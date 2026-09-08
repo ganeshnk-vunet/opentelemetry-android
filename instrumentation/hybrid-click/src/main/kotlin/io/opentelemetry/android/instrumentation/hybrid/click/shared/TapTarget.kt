@@ -42,6 +42,14 @@ internal sealed interface ControlValue {
  * the span is emitted before the touch is delegated to the underlying widget, so reading lazily (on
  * a later main-loop tick) reports the *resulting* value after the widget has processed the gesture.
  *
+ * [valueIsPreGesture] marks a [valueProvider] that returns a value snapshotted *before* the gesture
+ * reached the widget, rather than reading it afterwards. The Compose path has no choice but to do
+ * this — a Compose control's value only reaches its semantics after a composition pass, which runs
+ * on a frame boundary rather than a message boundary, so a deferred read cannot reliably observe it.
+ * Such a value is close enough during a drag (it trails by at most one frame of movement) but
+ * entirely wrong for a tap, where nothing has been processed yet, so the emitter records it only for
+ * a drag.
+ *
  * [isTracking] records whether the widget was actively handling this gesture at the time the target
  * was resolved. It only matters for drags: a slider inside a scrolling container can lose the
  * gesture to its parent — receiving `ACTION_CANCEL` and never seeking — while the window callback
@@ -58,4 +66,5 @@ internal data class TapTarget(
     val type: String = WIDGET_TYPE_UNKNOWN,
     val isTracking: Boolean = false,
     val valueProvider: (() -> ControlValue?)? = null,
+    val valueIsPreGesture: Boolean = false,
 )

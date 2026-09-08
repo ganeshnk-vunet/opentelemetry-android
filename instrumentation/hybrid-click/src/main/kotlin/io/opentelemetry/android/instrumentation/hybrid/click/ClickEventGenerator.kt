@@ -118,6 +118,16 @@ internal class ClickEventGenerator(
                         parameterType = layoutNodeClass,
                     )
                 }.getOrNull()
+            // Same leniency as nodeToType, for the same reason: a detector build without it should
+            // cost the value attribute, not all Compose click detection.
+            val nodeToNormalizedValueMethod =
+                runCatching {
+                    findMangledMethod(
+                        detectorClass = detectorClass,
+                        methodBaseName = "nodeToNormalizedValue",
+                        parameterType = layoutNodeClass,
+                    )
+                }.getOrNull()
             ReflectiveComposeDetectorBridge(
                 detector = detector,
                 findTapTargetMethod = findTapTargetMethod,
@@ -125,6 +135,7 @@ internal class ClickEventGenerator(
                 nodeToLabelMethod = nodeToLabelMethod,
                 nodeToPositionMethod = nodeToPositionMethod,
                 nodeToTypeMethod = nodeToTypeMethod,
+                nodeToNormalizedValueMethod = nodeToNormalizedValueMethod,
             )
         } catch (_: Throwable) {
             null
@@ -257,7 +268,9 @@ internal class ClickEventGenerator(
         val token = ActiveInteractionContext.begin(span)
         scheduleContextEnd(token)
 
-        val valueProvider = target.valueProvider
+        // A pre-gesture snapshot is only meaningful for a drag -- see TapTarget.valueIsPreGesture.
+        val valueProvider =
+            target.valueProvider?.takeUnless { target.valueIsPreGesture && gestureType != GestureType.DRAG }
         if (valueProvider == null) {
             span.end()
         } else {
@@ -356,6 +369,7 @@ private class ReflectiveComposeDetectorBridge(
     private val nodeToLabelMethod: Method,
     private val nodeToPositionMethod: Method,
     private val nodeToTypeMethod: Method?,
+    private val nodeToNormalizedValueMethod: Method?,
 ) : ComposeDetectorBridge {
     /**
      * Invokes reflected detector methods and maps the Compose node to hybrid [TapTarget].
@@ -373,6 +387,17 @@ private class ReflectiveComposeDetectorBridge(
             val nodeX = (position?.first as? Long) ?: 0L
             val nodeY = (position?.second as? Long) ?: 0L
             val type = nodeToTypeMethod?.invoke(detector, node) as? String ?: WIDGET_TYPE_UNKNOWN
+            // Captured now, not deferred: a Compose slider's value reaches its semantics only after
+            // a composition pass, which runs on a frame boundary rather than a message boundary, so
+            // a posted re-read would not reliably see it. That makes it accurate to within the last
+            // frame of a drag but pre-gesture for a tap, which valueIsPreGesture below tells the
+            // emitter to respect.
+            val percent =
+                if (type == WIDGET_TYPE_SLIDER) {
+                    nodeToNormalizedValueMethod?.invoke(detector, node) as? Double
+                } else {
+                    null
+                }
             TapTarget(
                 source = SOURCE_COMPOSE,
                 widgetId = node.hashCode().toString(),
@@ -381,6 +406,11 @@ private class ReflectiveComposeDetectorBridge(
                 x = nodeX,
                 y = nodeY,
                 type = type,
+                // A Compose node has no pressed flag to read; the drag guard relies on the node
+                // having been hit-tested at the down point, which findTapTarget already enforces.
+                isTracking = true,
+                valueProvider = percent?.let { p -> { ControlValue.Percentage(p) } },
+                valueIsPreGesture = true,
             )
         } catch (_: Throwable) {
             null

@@ -14,6 +14,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.ModifierInfo
 import androidx.compose.ui.node.LayoutNode
 import androidx.compose.ui.semantics.AccessibilityAction
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsConfiguration
@@ -158,10 +159,83 @@ internal class ComposeTapTargetDetectorTest {
         assertThat(detector.widgetTypeOf(null)).isEqualTo("unknown")
     }
 
+    /**
+     * A Compose Slider has no [Role] of its own — Compose defines none — so it is identifiable only
+     * by the `SetProgress` action it exposes.
+     */
+    @Test
+    fun `widget type from a slider's setProgress action`() {
+        assertThat(detector.widgetTypeOf(typeConfig(role = null, setProgress = true))).isEqualTo("slider")
+    }
+
+    /**
+     * The Compose analogue of excluding `ProgressBar` on the View path.
+     * `LinearProgressIndicator`/`CircularProgressIndicator` carry [ProgressBarRangeInfo] via
+     * `Modifier.progressSemantics` but expose no `SetProgress`, because they are not interactive.
+     * Keying detection on the range info instead of the action would report them as sliders.
+     */
+    @Test
+    fun `progress bar range info without setProgress is not a slider`() {
+        val config = typeConfig(role = null, rangeInfo = ProgressBarRangeInfo(current = 5f, range = 0f..20f))
+
+        assertThat(detector.widgetTypeOf(config)).isEqualTo("unknown")
+        assertThat(detector.normalizedValueOf(config)).isNull()
+    }
+
+    /**
+     * Non-vacuous on the scaling: the range is 0–20 so a raw-value regression reports `5.0` here
+     * rather than `25.0`. A 0–100 range would make the two identical and the test worthless.
+     */
+    @Test
+    fun `normalized value scales to the control's own range`() {
+        val config =
+            typeConfig(
+                role = null,
+                setProgress = true,
+                rangeInfo = ProgressBarRangeInfo(current = 5f, range = 0f..20f),
+            )
+
+        assertThat(detector.normalizedValueOf(config)).isEqualTo(25.0)
+    }
+
+    /** A non-zero range start must offset the value, not just divide it. */
+    @Test
+    fun `normalized value accounts for a non-zero range start`() {
+        val config =
+            typeConfig(
+                role = null,
+                setProgress = true,
+                rangeInfo = ProgressBarRangeInfo(current = 150f, range = 100f..300f),
+            )
+
+        assertThat(detector.normalizedValueOf(config)).isEqualTo(25.0)
+    }
+
+    /** An indeterminate progress node reports `0f..0f`, which must not divide by zero. */
+    @Test
+    fun `indeterminate range yields no value`() {
+        val config =
+            typeConfig(
+                role = null,
+                setProgress = true,
+                rangeInfo = ProgressBarRangeInfo.Indeterminate,
+            )
+
+        assertThat(detector.normalizedValueOf(config)).isNull()
+    }
+
+    @Test
+    fun `no value for a node that is not a range control`() {
+        assertThat(detector.normalizedValueOf(typeConfig(role = Role.Button, onClick = true))).isNull()
+        assertThat(detector.normalizedValueOf(null)).isNull()
+    }
+
     private fun typeConfig(
         role: Role?,
         setText: Boolean = false,
         onClick: Boolean = false,
+        setProgress: Boolean = false,
+        rangeInfo: ProgressBarRangeInfo? = null,
     ): SemanticsConfiguration {
         val config = SemanticsConfiguration()
         if (role != null) {
@@ -172,6 +246,12 @@ internal class ComposeTapTargetDetectorTest {
         }
         if (onClick) {
             config[SemanticsActions.OnClick] = AccessibilityAction<() -> Boolean>("onClick") { true }
+        }
+        if (setProgress) {
+            config[SemanticsActions.SetProgress] = AccessibilityAction<(Float) -> Boolean>("setProgress") { true }
+        }
+        if (rangeInfo != null) {
+            config[SemanticsProperties.ProgressBarRangeInfo] = rangeInfo
         }
         return config
     }

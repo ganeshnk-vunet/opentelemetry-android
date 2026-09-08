@@ -23,6 +23,10 @@ import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_CONTROL
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_CONTROL_VALUE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_GESTURE_TYPE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_INTERACTION_TYPE
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.ControlValue
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.TapTarget
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_SLIDER
+import io.opentelemetry.android.instrumentation.hybrid.click.view.ViewTapTargetDetector
 import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.sdk.OpenTelemetrySdk
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
@@ -50,6 +54,7 @@ import org.robolectric.annotation.Config
 class ViewSliderClickTest {
     private lateinit var context: Context
     private lateinit var exporter: InMemorySpanExporter
+    private lateinit var tracer: io.opentelemetry.api.trace.Tracer
     private lateinit var generator: ClickEventGenerator
 
     @Before
@@ -65,7 +70,8 @@ class ViewSliderClickTest {
                         .addSpanProcessor(SimpleSpanProcessor.create(exporter))
                         .build(),
                 ).build()
-        generator = ClickEventGenerator(tracer = sdk.getTracer("test"), activeContextWindowMillis = 0)
+        tracer = sdk.getTracer("test")
+        generator = ClickEventGenerator(tracer = tracer, activeContextWindowMillis = 0)
     }
 
     /**
@@ -155,6 +161,57 @@ class ViewSliderClickTest {
 
         assertThat(exporter.finishedSpanItems).isEmpty()
     }
+
+    /**
+     * A pre-gesture value must be dropped for a tap and kept for a drag.
+     *
+     * This models the Compose path, whose value can only be snapshotted *before* the gesture is
+     * delivered: a Compose control's value reaches its semantics after a composition pass, on a
+     * frame boundary rather than a message boundary, so a deferred read cannot reliably see it. That
+     * snapshot trails a drag by at most one frame, but for a tap-seek it is the pre-tap value
+     * outright — reporting it would put a number on the wire that the user never selected.
+     *
+     * Driven through an injected detector rather than real Compose, because the Compose detector is
+     * reached over a reflection bridge that unit tests cannot construct.
+     */
+    @Test
+    fun `a pre-gesture value is recorded for a drag but not for a tap`() {
+        val detector = mockk<ViewTapTargetDetector>()
+        every { detector.findTapTarget(any(), any(), any()) } returns preGestureSliderTarget()
+        val generator = ClickEventGenerator(
+            tracer = tracer,
+            viewTapTargetDetector = detector,
+            activeContextWindowMillis = 0,
+        )
+        val window = windowOf(Button(context))
+        generator.startTracking(window)
+
+        generator.generateClick(window, motion(MotionEvent.ACTION_DOWN, 0L, TAP_X))
+        generator.generateClick(window, motion(MotionEvent.ACTION_UP, 50L, TAP_X))
+        shadowOf(Looper.getMainLooper()).idle()
+        assertThat(percent(exporter.finishedSpanItems.single())).isNull()
+
+        exporter.reset()
+        generator.generateClick(window, motion(MotionEvent.ACTION_DOWN, 100L, TAP_X))
+        generator.generateClick(window, motion(MotionEvent.ACTION_MOVE, 200L, TAP_X + DRAG_DISTANCE))
+        generator.generateClick(window, motion(MotionEvent.ACTION_UP, 300L, TAP_X + DRAG_DISTANCE))
+        shadowOf(Looper.getMainLooper()).idle()
+        assertThat(percent(exporter.finishedSpanItems.single())).isEqualTo(42.0)
+    }
+
+    private fun preGestureSliderTarget(): TapTarget =
+        TapTarget(
+            source = "compose",
+            widgetId = "1",
+            widgetName = "Amount",
+            label = "Amount",
+            x = 0L,
+            y = 0L,
+            type = WIDGET_TYPE_SLIDER,
+            isTracking = true,
+            valueProvider = { ControlValue.Percentage(42.0) },
+            valueIsPreGesture = true,
+        )
 
     private fun sliderWindow(
         progress: Int,

@@ -4,6 +4,22 @@
 
 ### Added
 
+- Hybrid-click slider capture, Compose path: a Compose `Slider` now produces a `ui.interaction` span
+  with `ui.control.type = slider` and `interaction.type = slider`, completing the slider work across
+  both UI frameworks. Compose sliders were previously undetected for a different reason than the
+  View ones — a Compose `Slider` has no semantics `Role` (Compose defines none), no `OnClick`, and
+  none of the matched foundation elements, since it is built from `draggable` + `detectTapGestures`.
+  It is identified solely by the `SemanticsActions.SetProgress` action. Detection keys on that
+  **action**, deliberately not on `ProgressBarRangeInfo`, because `Modifier.progressSemantics` also
+  applies that to `LinearProgressIndicator`/`CircularProgressIndicator` — the Compose analogue of
+  excluding `ProgressBar`. **Known limit:** `ui.control.value.value` is emitted for a Compose
+  **drag** only, not a tap-seek. A Compose control's value reaches its semantics only after a
+  composition pass, which runs on a frame boundary rather than a message boundary, so the deferred
+  read the View path uses cannot observe it; the value is snapshotted before the gesture instead,
+  which trails a drag by at most one frame but is simply the pre-tap value for a tap. Emitting it
+  there would report a number the user never selected, so it is omitted. `interaction.type` and
+  `ui.control.type` are unaffected — they come from synchronous type resolution. No public API /
+  `apiCheck` impact.
 - Hybrid-click slider capture (View path): `SeekBar`, `AppCompatSeekBar`, a user-seekable
   `RatingBar` and Material `Slider`/`RangeSlider` now produce `ui.interaction` spans with
   `ui.control.type = slider`, `interaction.type = slider`, and `ui.control.value.value` carrying the

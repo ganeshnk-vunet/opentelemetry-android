@@ -330,8 +330,9 @@ this path.
 
 ## Range controls
 
-Sliders are captured on the View path: `SeekBar`, `AppCompatSeekBar`, a user-seekable `RatingBar`,
-and Material's `Slider`/`RangeSlider`.
+Sliders are captured on both paths: `SeekBar`, `AppCompatSeekBar`, a user-seekable `RatingBar` and
+Material's `Slider`/`RangeSlider` on the View side, and Compose's `Slider` (see *Compose sliders*
+below).
 
 Before this, a `SeekBar` produced **no span at all** — not for a drag, and not for a tap either. Two
 independent reasons:
@@ -401,11 +402,36 @@ this is only inexact for an app setting `android:min` on API 26+ — not worth a
 A `RangeSlider` emits `ui.control.type = slider` but **no** value: it has no single position, only
 `getValues()`.
 
-### Not covered
+### Compose sliders
 
-Compose sliders are not yet detected — a Compose `Slider` exposes no `OnClick` and none of the
-matched foundation elements, so it is identified only by `SemanticsActions.SetProgress`, which this
-detector does not yet read.
+A Compose `Slider` has **no `Role`** — Compose defines none for sliders — and exposes no `OnClick`
+and none of the matched foundation elements, since it is built from `draggable` +
+`detectTapGestures`. It is therefore identified solely by the `SemanticsActions.SetProgress` action
+it carries, which is now admitted alongside `OnClick` and `SetText` in both
+`collectTappableSemanticsIds` and `isValidClickTarget`.
+
+Detection keys on the `SetProgress` **action**, deliberately not on
+`SemanticsProperties.ProgressBarRangeInfo`: `Modifier.progressSemantics` also puts that info on
+`LinearProgressIndicator`/`CircularProgressIndicator`, which are non-interactive. That is the exact
+Compose analogue of excluding `ProgressBar` on the View path.
+
+**The value is read synchronously, not deferred.** A Compose control's value only reaches its
+semantics after a composition pass, and composition runs on a *frame* boundary rather than a
+*message* boundary, so posting to the main looper — the mechanism the View path relies on — cannot
+reliably observe it. The value is therefore snapshotted before the gesture is delivered, which
+`TapTarget.valueIsPreGesture` records. Consequences:
+
+- For a **drag**, the snapshot trails the final position by at most one frame of movement, because
+  the preceding `ACTION_MOVE`s have already been delivered and recomposed. It is emitted.
+- For a **tap-seek**, nothing has been processed yet, so the snapshot is the pre-tap value outright.
+  It is **omitted** — reporting it would put a number on the wire the user never selected.
+
+Either way `interaction.type = slider` and `ui.control.type = slider` are reported, since those come
+from the synchronous type resolution and need no value read at all.
+
+The reader reaches the detector through the same reflection bridge as `nodeToType`, resolved
+leniently: a detector build without `nodeToNormalizedValue` loses the value attribute rather than
+disabling all Compose click detection.
 
 ## Text fields
 

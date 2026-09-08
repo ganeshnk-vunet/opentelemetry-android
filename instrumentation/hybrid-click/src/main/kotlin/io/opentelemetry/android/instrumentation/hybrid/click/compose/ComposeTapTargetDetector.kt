@@ -25,10 +25,12 @@ import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_DROPDOWN
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_IMAGE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_RADIO
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_SLIDER
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_SWITCH
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_TAB
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_TEXT_FIELD
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_UNKNOWN
+import kotlin.math.round
 import java.util.LinkedList
 
 /**
@@ -107,12 +109,51 @@ internal class ComposeTapTargetDetector(
                 role == Role.Tab -> WIDGET_TYPE_TAB
                 role == Role.Image -> WIDGET_TYPE_IMAGE
                 role == Role.DropdownList -> WIDGET_TYPE_DROPDOWN
+                // Keyed on the SetProgress *action*, not ProgressBarRangeInfo: Modifier
+                // .progressSemantics also puts that info on LinearProgressIndicator /
+                // CircularProgressIndicator, which are non-interactive. This is the Compose
+                // analogue of excluding ProgressBar on the View path.
+                config.contains(SemanticsActions.SetProgress) -> WIDGET_TYPE_SLIDER
                 config.contains(SemanticsActions.SetText) -> WIDGET_TYPE_TEXT_FIELD
                 config.contains(SemanticsActions.OnClick) -> WIDGET_TYPE_BUTTON
                 else -> WIDGET_TYPE_UNKNOWN
             }
         } catch (_: Throwable) {
             WIDGET_TYPE_UNKNOWN
+        }
+    }
+
+    /**
+     * Position of a range node as a percentage (0-100) of its own range, or `null` when the node is
+     * not a range control or its range is degenerate (an indeterminate progress indicator reports
+     * `0f..0f`).
+     *
+     * Resolved reflectively by `ClickEventGenerator`, so the name must stay stable and the
+     * visibility must stay `internal` for the mangled-name lookup to find it.
+     */
+    internal fun nodeToNormalizedValue(node: LayoutNode): Double? = normalizedValueOf(mergedConfigFor(node))
+
+    /**
+     * Split from [nodeToNormalizedValue] so the scaling is unit-testable against a hand-built
+     * [SemanticsConfiguration], mirroring [widgetTypeOf].
+     *
+     * Read *synchronously*, unlike the View path's deferred read. A Compose slider's value only
+     * reaches its semantics after a composition pass, which runs on a frame boundary rather than a
+     * message boundary, so posting to the main looper would not reliably observe it. That makes this
+     * accurate to within the last frame of a drag -- and wrong for a tap-seek, which is why the
+     * caller only records it for drags.
+     */
+    internal fun normalizedValueOf(config: SemanticsConfiguration?): Double? {
+        if (config == null) return null
+        return try {
+            if (!config.contains(SemanticsActions.SetProgress)) return null
+            val info = config.getOrNull(SemanticsProperties.ProgressBarRangeInfo) ?: return null
+            val range = info.range.endInclusive - info.range.start
+            if (range <= 0f) return null
+            val percent = (info.current - info.range.start) / range * 100.0
+            round(percent.coerceIn(0.0, 100.0) * 100.0) / 100.0
+        } catch (_: Throwable) {
+            null
         }
     }
 
@@ -197,7 +238,8 @@ internal class ComposeTapTargetDetector(
             semanticsNodesOf(owner)
                 .filter { node ->
                     node.config.contains(SemanticsActions.OnClick) ||
-                        node.config.contains(SemanticsActions.SetText)
+                        node.config.contains(SemanticsActions.SetText) ||
+                        node.config.contains(SemanticsActions.SetProgress)
                 }.map { it.id }
                 .toSet()
         } catch (_: Throwable) {
@@ -234,7 +276,11 @@ internal class ComposeTapTargetDetector(
             val modifier = info.modifier
             if (modifier is SemanticsModifier) {
                 with(modifier.semanticsConfiguration) {
-                    if (contains(SemanticsActions.OnClick) || contains(SemanticsActions.SetText)) {
+                    if (
+                        contains(SemanticsActions.OnClick) ||
+                        contains(SemanticsActions.SetText) ||
+                        contains(SemanticsActions.SetProgress)
+                    ) {
                         return true
                     }
                 }
