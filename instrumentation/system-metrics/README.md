@@ -32,7 +32,8 @@ Data produced by this instrumentation uses instrumentation scope name
 | `process.memory.heap.used` | Long | Java heap bytes currently in use |
 | `process.memory.heap.allocated` | Long | Java heap bytes committed from the OS |
 | `process.memory.heap.free` | Long | Java heap bytes committed but unused |
-| `process.memory.native.used` | Long | Native heap bytes allocated via malloc/JNI (not canonical `process.memory.resident` — see note below) |
+| `process.memory.native.used` | Long | Native heap bytes allocated via malloc/JNI — a different statistic from `process.memory.resident`, not a rename of it (see note below) |
+| `process.memory.resident` | Long | Resident set size in **bytes** — pages mapped into physical RAM, from `/proc/self/status` `VmRSS`. **Conditional**: omitted when the reading is unavailable (see note below) |
 | `process.memory.footprint` | Long | Proportional Set Size in **bytes** (cached; refreshed every 60 s) |
 | `process.thread.count` | Long | Total live threads in this process |
 | `system.memory.available` | Long | Available (free) RAM on the device (bytes) |
@@ -54,11 +55,21 @@ Data produced by this instrumentation uses instrumentation scope name
 > crash schema keeps `heap.free`, and this signal uses the canonical name, so the two are
 > deliberately different keys for the same underlying value.
 >
-> `process.memory.native.used` is deliberately not renamed to the canonical
-> `process.memory.resident`: the value is native heap allocated via malloc/JNI
-> (`Debug.getNativeHeapAllocatedSize()`), not resident set size — a different, currently
-> unmeasured statistic. Adopting the canonical name for the wrong quantity would make it silently
-> wrong on any chart comparing it against a real RSS value.
+> `process.memory.native.used` and `process.memory.resident` are two genuinely different
+> statistics, both emitted, and neither is a rename of the other. `native.used` is native heap
+> allocated via malloc/JNI (`Debug.getNativeHeapAllocatedSize()`); `resident` is resident set size
+> — pages mapped into physical RAM, read from `/proc/self/status`'s `VmRSS` line. `resident` is the
+> canonical field and the one that compares like-for-like with iOS `resident_size`, so a
+> cross-platform memory chart wants that one. Adopting the canonical name for the native-heap
+> figure would have made any such chart silently wrong, which is why the rename was reversed.
+>
+> `VmRSS` is read rather than `/proc/self/statm` because `statm` reports resident *pages* and needs
+> a page-size multiplier — Android 15 supports 16 kB pages, so the customary hardcoded 4096 is
+> wrong there. `VmRSS` is denominated in kB, so there is no page-size assumption to get wrong.
+>
+> `process.memory.resident` is **omitted**, not zeroed, when the reading is unavailable (procfs
+> unreadable, or no `VmRSS` line). A live process never has zero resident pages, so a `0` would be
+> indistinguishable from a real measurement; treat an absent attribute as "not measured".
 
 ## How it works
 
