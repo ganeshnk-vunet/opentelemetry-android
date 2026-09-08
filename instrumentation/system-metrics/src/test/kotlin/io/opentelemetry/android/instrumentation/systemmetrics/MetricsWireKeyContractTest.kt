@@ -41,10 +41,36 @@ class MetricsWireKeyContractTest {
      * would make a cross-platform chart (e.g. against iOS `resident_size`) silently compare two
      * unrelated quantities. Pinned here so a future rename attempt has to either supply a real RSS
      * reading first or explicitly revisit this decision, not slip through as a "just a rename."
+     *
+     * That RSS reading now exists — `MemoryMetricsReader.readResidentSetSizeBytes()`, emitted
+     * separately as `process.memory.resident` (see below). This pin still stands, and arguably
+     * matters more now that both keys are on the same span: the two are complementary, and
+     * collapsing `native.used` into `resident` would lose the native-heap figure entirely while
+     * making the remaining number look like it had always been RSS.
      */
     @Test
     fun `native heap key intentionally keeps its non-canonical name`() {
         assertThat(SystemMetricsSpanEmitter.METRIC_NATIVE_USED).isEqualTo("process.memory.native.used")
+    }
+
+    /**
+     * The canonical RSS key, pinned by literal for the same reason as the others: this is the
+     * cross-platform contract with dashboards, and asserting through the constant would prove
+     * nothing if its value were mistyped.
+     */
+    @Test
+    fun `resident set size uses the canonical wire key`() {
+        assertThat(SystemMetricsSpanEmitter.METRIC_RESIDENT).isEqualTo("process.memory.resident")
+    }
+
+    /**
+     * The two memory keys must stay distinct. If these ever collapse to one string, one of the two
+     * statistics has silently stopped being reported.
+     */
+    @Test
+    fun `resident and native heap remain separate keys`() {
+        assertThat(SystemMetricsSpanEmitter.METRIC_RESIDENT)
+            .isNotEqualTo(SystemMetricsSpanEmitter.METRIC_NATIVE_USED)
     }
 
     /**

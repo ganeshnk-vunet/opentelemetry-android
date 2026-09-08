@@ -91,6 +91,7 @@ internal class SystemMetricsSpanEmitter(
                 heapAllocated = memoryReader.readHeapAllocatedBytes(),
                 heapFree = memoryReader.readHeapFreeBytes(),
                 nativeUsed = memoryReader.readNativeHeapUsedBytes(),
+                residentSetSize = memoryReader.readResidentSetSizeBytes(),
                 threadCount = threadReader.readThreadCount(),
             )
         resetCpuWindow()
@@ -109,24 +110,31 @@ internal class SystemMetricsSpanEmitter(
         }
     }
 
-    private fun buildAttributes(sample: ProcessSample): Attributes =
-        Attributes
-            .builder()
-            .put(ATTR_CPU_USAGE, sample.cpuUsage)
-            .put(ATTR_CPU_MIN, sample.cpuMin)
-            .put(ATTR_CPU_MAX, sample.cpuMax)
-            .put(ATTR_HEAP_USED, sample.heapUsed)
-            .put(ATTR_HEAP_ALLOCATED, sample.heapAllocated)
-            .put(ATTR_HEAP_FREE, sample.heapFree)
-            .put(ATTR_NATIVE_USED, sample.nativeUsed)
-            .put(ATTR_THREAD_COUNT, sample.threadCount)
-            .put(ATTR_FOOTPRINT, cachedFootprintBytes)
-            .put(ATTR_SYS_MEM_AVAILABLE, cachedAvailableRamBytes)
-            .put(ATTR_SYS_MEM_LOW, cachedLowMemoryFlag)
-            .put(ATTR_BATTERY_LEVEL, cachedBatteryPercent)
-            .put(ATTR_BATTERY_TEMP, cachedBatteryTempCelsius)
-            .put(ATTR_DISK_FREE, cachedDiskFreeBytes)
-            .build()
+    private fun buildAttributes(sample: ProcessSample): Attributes {
+        val builder =
+            Attributes
+                .builder()
+                .put(ATTR_CPU_USAGE, sample.cpuUsage)
+                .put(ATTR_CPU_MIN, sample.cpuMin)
+                .put(ATTR_CPU_MAX, sample.cpuMax)
+                .put(ATTR_HEAP_USED, sample.heapUsed)
+                .put(ATTR_HEAP_ALLOCATED, sample.heapAllocated)
+                .put(ATTR_HEAP_FREE, sample.heapFree)
+                .put(ATTR_NATIVE_USED, sample.nativeUsed)
+                .put(ATTR_THREAD_COUNT, sample.threadCount)
+                .put(ATTR_FOOTPRINT, cachedFootprintBytes)
+                .put(ATTR_SYS_MEM_AVAILABLE, cachedAvailableRamBytes)
+                .put(ATTR_SYS_MEM_LOW, cachedLowMemoryFlag)
+                .put(ATTR_BATTERY_LEVEL, cachedBatteryPercent)
+                .put(ATTR_BATTERY_TEMP, cachedBatteryTempCelsius)
+                .put(ATTR_DISK_FREE, cachedDiskFreeBytes)
+        // Omitted rather than published as the sentinel: a live process never has zero resident
+        // pages, so emitting 0 would be indistinguishable from a real reading and silently wrong.
+        if (sample.residentSetSize != MemoryMetricsReader.UNAVAILABLE) {
+            builder.put(ATTR_RESIDENT, sample.residentSetSize)
+        }
+        return builder.build()
+    }
 
     private fun refreshDeviceCache() {
         try {
@@ -157,6 +165,7 @@ internal class SystemMetricsSpanEmitter(
         val heapAllocated: Long,
         val heapFree: Long,
         val nativeUsed: Long,
+        val residentSetSize: Long,
         val threadCount: Long,
     )
 
@@ -175,6 +184,12 @@ internal class SystemMetricsSpanEmitter(
         // the old one, since a chart comparing this against a genuine RSS value (e.g. iOS
         // resident_size) would silently compare two different things.
         const val METRIC_NATIVE_USED = "process.memory.native.used"
+
+        // The canonical RSS field, and a genuinely different statistic from METRIC_NATIVE_USED
+        // above rather than a rename of it: this is resident set size (pages mapped into
+        // physical RAM, from /proc/self/status VmRSS), the same quantity iOS reports from
+        // resident_size. Both are emitted; a chart comparing platforms wants this one.
+        const val METRIC_RESIDENT = "process.memory.resident"
         const val METRIC_FOOTPRINT = "process.memory.footprint"
         const val METRIC_THREAD_COUNT = "process.thread.count"
         const val METRIC_SYS_MEM_AVAILABLE = "system.memory.available"
@@ -201,6 +216,7 @@ internal class SystemMetricsSpanEmitter(
          */
         val ATTR_HEAP_FREE: AttributeKey<Long> = AttributeKey.longKey(METRIC_HEAP_FREE)
         val ATTR_NATIVE_USED: AttributeKey<Long> = AttributeKey.longKey(METRIC_NATIVE_USED)
+        val ATTR_RESIDENT: AttributeKey<Long> = AttributeKey.longKey(METRIC_RESIDENT)
         val ATTR_FOOTPRINT: AttributeKey<Long> = AttributeKey.longKey(METRIC_FOOTPRINT)
         val ATTR_THREAD_COUNT: AttributeKey<Long> = AttributeKey.longKey(METRIC_THREAD_COUNT)
 

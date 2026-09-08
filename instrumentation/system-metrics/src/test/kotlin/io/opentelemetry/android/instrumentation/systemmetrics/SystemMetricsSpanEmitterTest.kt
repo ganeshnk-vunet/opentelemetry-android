@@ -5,10 +5,13 @@
 
 package io.opentelemetry.android.instrumentation.systemmetrics
 
+import io.mockk.every
+import io.mockk.mockk
 import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.sdk.OpenTelemetrySdk
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
 import io.opentelemetry.sdk.trace.SdkTracerProvider
+import io.opentelemetry.sdk.trace.data.SpanData
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
@@ -131,5 +134,54 @@ class SystemMetricsSpanEmitterTest {
         // CPU min/max window attrs
         assertThat(metricsSpan.attributes.get(SystemMetricsSpanEmitter.ATTR_CPU_MIN)).isNotNull
         assertThat(metricsSpan.attributes.get(SystemMetricsSpanEmitter.ATTR_CPU_MAX)).isNotNull
+    }
+
+    /**
+     * The reader-level tests cover `readResidentSetSizeBytes` returning a value or [
+     * MemoryMetricsReader.UNAVAILABLE]; these two cover what the emitter then does with it, which
+     * is the part that actually reaches the wire. Without them the `if (… != UNAVAILABLE)` branch
+     * in `buildAttributes` is unexercised in both directions.
+     */
+    @Test
+    fun `span carries process memory resident when the reading is available`() {
+        val memoryReader = mockk<MemoryMetricsReader>(relaxed = true)
+        every { memoryReader.readResidentSetSizeBytes(any()) } returns 123_456L * 1024L
+
+        val metricsSpan = emitOneSpanWith(memoryReader)
+
+        assertThat(metricsSpan.attributes.get(SystemMetricsSpanEmitter.ATTR_RESIDENT))
+            .isEqualTo(123_456L * 1024L)
+    }
+
+    /**
+     * Omitted, not zeroed: a live process never has zero resident pages, so a `0` would be
+     * indistinguishable from a real measurement rather than readable as "not measured".
+     */
+    @Test
+    fun `span omits process memory resident when the reading is unavailable`() {
+        val memoryReader = mockk<MemoryMetricsReader>(relaxed = true)
+        every { memoryReader.readResidentSetSizeBytes(any()) } returns MemoryMetricsReader.UNAVAILABLE
+
+        val metricsSpan = emitOneSpanWith(memoryReader)
+
+        assertThat(metricsSpan.attributes.get(SystemMetricsSpanEmitter.ATTR_RESIDENT)).isNull()
+        // The sentinel must not leak through under any key either.
+        assertThat(metricsSpan.attributes.asMap().values).doesNotContain(MemoryMetricsReader.UNAVAILABLE)
+        // Guard against a false pass from a span that lost all of its attributes.
+        assertThat(metricsSpan.attributes.get(SystemMetricsSpanEmitter.ATTR_NATIVE_USED)).isNotNull
+    }
+
+    private fun emitOneSpanWith(memoryReader: MemoryMetricsReader): SpanData {
+        val scheduler = Executors.newSingleThreadScheduledExecutor()
+        SystemMetricsSpanEmitter(
+            openTelemetry = openTelemetry,
+            scheduler = scheduler,
+            intervalSeconds = 2L,
+            memoryReader = memoryReader,
+            deviceReader = StubDeviceMetricsReader(),
+        ).start()
+        scheduler.awaitTermination(3_500, TimeUnit.MILLISECONDS)
+        scheduler.shutdownNow()
+        return spanExporter.finishedSpanItems.first { it.name == "app.metrics" }
     }
 }

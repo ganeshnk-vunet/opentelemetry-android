@@ -57,6 +57,27 @@
   write-only — there is no getter — so `url.query` is redacted against the default set regardless.
   Nothing in this SDK calls that API today.
 
+- `app.metrics` gains **`process.memory.resident`** — resident set size in bytes, the pages
+  currently mapped into physical RAM.
+
+  This is the canonical field iOS feeds from `resident_size`, and it was the one memory statistic
+  this SDK could not report. **It is a new field, not a rename of `process.memory.native.used`,
+  which stays exactly as it is.** An earlier draft proposed renaming that key and the decision was
+  reversed: `Debug.getNativeHeapAllocatedSize()` is native heap allocated via malloc/JNI, which is
+  not RSS, and shipping the canonical name against the wrong quantity would make any chart
+  comparing it to a real RSS value silently wrong. The two are complementary and both are now
+  emitted, so a cross-platform memory chart finally has a field it can compare like for like.
+
+  Read from `/proc/self/status`'s `VmRSS` line rather than `/proc/self/statm`, deliberately:
+  `statm` reports resident *pages* and needs a page-size multiplier, and Android 15 supports 16 kB
+  pages — so the customary hardcoded 4096 is wrong on those devices. `VmRSS` is denominated in kB,
+  so there is no page-size assumption to get wrong.
+
+  The attribute is **omitted** rather than zeroed when the reading is unavailable (procfs
+  unreadable, or no `VmRSS` line). A live process never has zero resident pages, so a `0` would be
+  indistinguishable from a real measurement; absence is the honest signal. Consumers should treat a
+  missing attribute as "not measured", not as zero.
+
 - Navigation attribution: `ui.navigation` spans include three new attributes across all three
   navigators (View, Compose Nav2, Compose Nav3).
   - `navigation.is_initial` — `true` on the **first `ui.navigation` span emitted in the process**,
