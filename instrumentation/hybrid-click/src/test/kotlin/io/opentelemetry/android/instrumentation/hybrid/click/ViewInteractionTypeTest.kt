@@ -11,6 +11,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.Window
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.FrameLayout
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -32,8 +33,9 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /**
- * Verifies that the emitted `ui.interaction` span reports which gesture produced it, and that the
- * kind is decided by how long the pointer was held.
+ * Verifies how the emitted `ui.interaction` span reports what the user did: `ui.gesture.type`
+ * always carries the raw gesture (decided by how long the pointer was held), while
+ * `interaction.type` reports the semantic interaction derived from the control that was hit.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [29])
@@ -112,6 +114,45 @@ class ViewInteractionTypeTest {
         val span = singleSpan()
         assertThat(span.attributes.get(AttributeKey.stringKey("interaction.type"))).isNotNull()
         assertThat(span.attributes.get(AttributeKey.stringKey("ui.gesture.type"))).isNotNull()
+    }
+
+    @Test
+    fun `checkbox reports a toggle interaction rather than a tap`() {
+        val window = checkBoxWindow()
+        generator.startTracking(window)
+
+        press(window, holdMs = 50L)
+
+        val span = singleSpan()
+        assertThat(interactionType(span)).isEqualTo("toggle")
+        assertThat(gestureType(span)).isEqualTo("tap")
+    }
+
+    /**
+     * The two keys genuinely decouple here: the control decides `interaction.type` while the
+     * pointer decides `ui.gesture.type`, so a long-pressed checkbox reports `toggle` *and*
+     * `long_press`. If either key mirrored the other, one of these assertions would fail.
+     */
+    @Test
+    fun `long pressed checkbox reports a toggle interaction with a long press gesture`() {
+        val window = checkBoxWindow()
+        generator.startTracking(window)
+
+        press(window, holdMs = 900L)
+
+        val span = singleSpan()
+        assertThat(interactionType(span)).isEqualTo("toggle")
+        assertThat(gestureType(span)).isEqualTo("long_press")
+    }
+
+    private fun checkBoxWindow(): Window {
+        val checkBox = CheckBox(context).apply { isClickable = true; contentDescription = "Remember me" }
+        val root = FrameLayout(context)
+        root.addView(checkBox, FrameLayout.LayoutParams(VIEW_SIZE, VIEW_SIZE))
+        val spec = View.MeasureSpec.makeMeasureSpec(VIEW_SIZE, View.MeasureSpec.EXACTLY)
+        root.measure(spec, spec)
+        root.layout(0, 0, VIEW_SIZE, VIEW_SIZE)
+        return mockk<Window>(relaxed = true).also { every { it.decorView } returns root }
     }
 
     private fun buttonWindow(): Window {

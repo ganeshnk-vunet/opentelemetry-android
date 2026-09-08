@@ -200,7 +200,7 @@ Every qualified tap produces one `ui.interaction` span with these attributes:
 | `app.widget.source`           | UI framework: `"compose"` or `"view"`        | `"compose"`          |
 | `app.widget.type`             | Widget kind (button/switch/text_field/…)     | `"button"`           |
 | `ui.control.type`             | Same value as `app.widget.type` — canonical name | `"button"`       |
-| `interaction.type`            | Gesture kind: `"tap"` or `"long_press"`      | `"tap"`              |
+| `interaction.type`            | Semantic interaction kind                    | `"toggle"`           |
 | `ui.gesture.type`             | Raw pointer gesture: `"tap"` or `"long_press"` | `"tap"`            |
 | `ui.control.selection_mode`   | `"single"`/`"multiple"` — **selection widgets only** | `"multiple"` |
 | `ui.control.value.checked`    | Toggle state — **toggle widgets only**       | `true`               |
@@ -247,9 +247,33 @@ doesn't apply (buttons, text, images, unknown) rather than emitted as some defau
 
 ### `interaction.type`
 
-Which gesture produced the span. Values: `tap`, `long_press` (see `GestureType`).
+The **semantic** interaction the user performed, derived from the control that was hit and falling
+back to the raw gesture when the control implies no interaction of its own — see
+`resolveInteractionType`:
 
-The same value is also emitted under `ui.gesture.type` — see below.
+| Widget kind                              | `interaction.type`        |
+|------------------------------------------|---------------------------|
+| `switch`, `checkbox`, `radio`, `toggle`  | `toggle`                  |
+| everything else                          | `tap` / `long_press`      |
+
+The control is consulted first because the interaction is not recoverable from the gesture alone:
+the identical tap is a plain tap on a button but a toggle on a switch. iOS reports the semantic
+kind, so deriving it here is what lets both platforms be grouped by this one attribute. The gesture
+itself is never lost — it stays on `ui.gesture.type`, so a long-pressed checkbox reports
+`interaction.type = toggle` alongside `ui.gesture.type = long_press`.
+
+The toggle set matches `ActionSummarizer.TOGGLE_TYPES` in `core`, which already treats exactly
+these four kinds as toggles.
+
+**`tab` and `dropdown` are deliberately not mapped.** They are single-choice for
+`ui.control.selection_mode`'s purposes, but selecting from them is canonical's `menu_select`, which
+this module cannot detect — a dropdown's options live in a `PopupWindow`, which has no
+`Window.Callback` to wrap (see *Window Tracking → Not covered*). They keep reporting the gesture
+rather than claiming an interaction that was never observed.
+
+**Not yet reachable.** Canonical also defines `value_changed`, `slider`, `date_picker` and
+`menu_select`. None is emitted today, because this module detects touch gestures rather than value
+changes; `slider` is the next one planned.
 
 Both come from the same qualified gesture — one that reaches `ACTION_UP` without leaving the touch
 slop — split by how long the pointer was down, measured against
@@ -269,14 +293,15 @@ would break the synchronous emission this module depends on (see *Tap Gesture Cl
 
 ### `ui.gesture.type`
 
-The raw pointer gesture, always emitted. Values: `tap`, `long_press` (see `GestureType`) — today
-identical to `interaction.type`.
+The raw pointer gesture, always emitted. Values: `tap`, `long_press` (see `GestureType`). It equals
+`interaction.type` only when the control implies no interaction of its own; on a toggle the two
+differ.
 
 The two keys are separate contracts because they answer different questions. `ui.gesture.type` is
 always "what did the finger do". `interaction.type` names the *semantic* interaction, and so depends
 on which control was hit — the same tap is a plain tap on a button but a toggle on a switch. Keeping
 the gesture on its own key means gesture-level analysis (tap vs long-press rates, for instance)
-keeps working unchanged when `interaction.type` starts reporting control-derived kinds.
+keeps working unchanged now that `interaction.type` reports control-derived kinds.
 
 Named `ui.gesture.type`, not `app.gesture.type`: `app.*` here is a legacy platform wire prefix that
 canonical treats as Android-specific (see `ui.control.type` above), so a new key does not adopt it.

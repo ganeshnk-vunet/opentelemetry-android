@@ -25,6 +25,7 @@ import io.opentelemetry.android.instrumentation.hybrid.click.shared.SOURCE_COMPO
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_UNKNOWN
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.TapGestureClassifier
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.TapTarget
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.resolveInteractionType
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.resolveSelectionMode
 import io.opentelemetry.android.instrumentation.hybrid.click.view.ViewTapTargetDetector
 import io.opentelemetry.api.trace.Tracer
@@ -202,7 +203,7 @@ internal class ClickEventGenerator(
                 .setAttribute(ATTR_WIDGET_SOURCE, target.source)
                 .setAttribute(ATTR_WIDGET_TYPE, target.type)
                 .setAttribute(ATTR_CONTROL_TYPE, target.type)
-                .setAttribute(ATTR_INTERACTION_TYPE, gestureType.value)
+                .setAttribute(ATTR_INTERACTION_TYPE, resolveInteractionType(target.type, gestureType))
                 .setAttribute(ATTR_GESTURE_TYPE, gestureType.value)
         resolveSelectionMode(target.type)?.let { spanBuilder.setAttribute(ATTR_CONTROL_SELECTION_MODE, it) }
         val span = spanBuilder.startSpan()

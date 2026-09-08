@@ -5,13 +5,12 @@
 ### Added
 
 - Hybrid-click raw gesture key: `ui.interaction` spans now also carry `ui.gesture.type`, naming the
-  pointer gesture that produced the span (`tap`, `long_press`). **Purely additive** — the value is
-  currently identical to `interaction.type`, and no existing attribute changed, so span volume and
-  every existing query are unaffected. The two are separate keys on purpose: `ui.gesture.type` always
-  answers "what did the finger do", while `interaction.type` is scheduled to report the *semantic*
-  interaction derived from the control that was hit (`toggle`, `slider`), which depends on the target
-  rather than the gesture. Splitting them now means gesture-level analysis — tap vs long-press rates,
-  say — keeps working unchanged when that happens, instead of being lost. Named `ui.gesture.type`
+  pointer gesture that produced the span (`tap`, `long_press`). **Purely additive** — no existing
+  attribute was removed and span volume is unchanged. The two are separate keys on purpose:
+  `ui.gesture.type` always answers "what did the finger do", while `interaction.type` now reports the
+  *semantic* interaction derived from the control that was hit (see breaking changes below), which
+  depends on the target rather than the gesture. This key is what keeps gesture-level analysis — tap
+  vs long-press rates, say — working unchanged despite that redefinition. Named `ui.gesture.type`
   rather than `app.gesture.type` because `app.*` on this signal is a legacy Android wire prefix
   canonical already treats as platform-specific (the same reasoning that introduced `ui.control.type`
   beside `app.widget.type`). Deliberate extension: canonical does not define a gesture key today, so
@@ -184,6 +183,37 @@
 - Fault runtime attribution: `device.crash` and `device.anr` spans include `error.runtime` (`RumConstants.ERROR_RUNTIME_KEY`), always `jvm` from this SDK. A Dart/`FlutterError` or React Native exception rethrown into the Android uncaught handler is still `jvm`. Grouping Flutter/RN faults separately only works if those wrappers emit their own `device.crash` / `device.anr` (or overwrite via `addAttributesExtractor`) using `dart` / `js`. The value space is documented as `jvm` / `dart` / `js` (`ERROR_RUNTIME_JVM`, `ERROR_RUNTIME_DART`, `ERROR_RUNTIME_JS`) so wrappers that emit their own spans can copy the same lowercase runtime names rather than picking their own spelling; the values name the runtime, not the UI framework, which is reported separately as `app.framework`. `error.runtime` is a deliberate extension — semconv owns `error.*` but defines only `error.type`. Purely additive — no existing attribute changed.
 
 ### ⚠️⚠️ Breaking changes
+
+- **`interaction.type` on `ui.interaction` now reports the semantic interaction, not the gesture.**
+  A tap on a switch, checkbox, radio button or other toggle reports `toggle` where it previously
+  reported `tap` (and `long_press` for a held press). Every other control is unchanged and still
+  reports `tap` / `long_press`.
+
+  | Widget kind                             | Old                  | New      |
+  |-----------------------------------------|----------------------|----------|
+  | `switch`, `checkbox`, `radio`, `toggle` | `tap` / `long_press` | `toggle` |
+  | everything else                         | `tap` / `long_press` | *unchanged* |
+
+  **Update dashboards, alerts, and queries keyed on `interaction.type = "tap"`** — toggle taps leave
+  that bucket. Nothing is lost: the gesture moved to the `ui.gesture.type` attribute added in this
+  same release, so `ui.gesture.type = "tap"` reproduces the old grouping exactly, and the toggle set
+  is identifiable via `ui.control.type`.
+
+  Why: the interaction a user performed is not recoverable from the gesture alone — the identical tap
+  is a plain tap on a button but a toggle on a switch. iOS already reports the semantic kind, so
+  while Android reported the gesture here the two platforms could not be grouped by this attribute at
+  all, which is the whole purpose of a shared discriminator. The toggle set matches
+  `ActionSummarizer.TOGGLE_TYPES` in `core`, which already treated exactly these four kinds as
+  toggles, so the two are now consistent. Works on both the View and Compose paths with no detection
+  changes, since `CompoundButton` and `Role.Switch`/`Role.Checkbox`/`Role.RadioButton` already
+  resolved to these widget kinds.
+
+  Known limits: `tab` and `dropdown` are deliberately *not* mapped — selecting from them is
+  canonical's `menu_select`, which this module cannot detect (a dropdown's options live in a
+  `PopupWindow` with no `Window.Callback` to wrap), so they keep reporting the gesture rather than
+  claiming an unobserved interaction. Canonical's `value_changed`, `slider`, `date_picker` and
+  `menu_select` remain unemitted. `ActionSummarizer` still summarizes from `ui.control.type`, so
+  `semantic.summary` is byte-identical. No public API / `apiCheck` impact.
 
 - **`app.metrics` no longer carries its data on a span event — this is not a rename, and a
   rename-style fix does not apply.** All 16 metric attributes (`process.cpu.usage`,

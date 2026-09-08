@@ -11,6 +11,7 @@ import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_GESTURE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_INTERACTION_TYPE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_WIDGET_CHECKED
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.GestureType
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.INTERACTION_TYPE_TOGGLE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.SELECTION_MODE_MULTIPLE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.SELECTION_MODE_SINGLE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_BUTTON
@@ -21,6 +22,7 @@ import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_TAB
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_TEXT
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_TOGGLE
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.resolveInteractionType
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.resolveSelectionMode
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.Test
@@ -60,6 +62,52 @@ class HybridClickWireKeyContractTest {
     @Test
     fun `gesture type uses the canonical wire key`() {
         assertThat(ATTR_GESTURE_TYPE).isEqualTo("ui.gesture.type")
+    }
+
+    @Test
+    fun `interaction kinds use the canonical vocabulary`() {
+        assertThat(INTERACTION_TYPE_TOGGLE).isEqualTo("toggle")
+    }
+
+    /**
+     * The derivation itself is the contract, not just the key: a dashboard grouping by
+     * `interaction.type` depends on which widget kinds collapse into `toggle` and which fall
+     * through to the gesture. Pinned per kind so a change to either set is deliberate.
+     */
+    @Test
+    fun `interaction type is resolved from the widget kind`() {
+        assertThat(resolveInteractionType(WIDGET_TYPE_SWITCH, GestureType.TAP)).isEqualTo("toggle")
+        assertThat(resolveInteractionType(WIDGET_TYPE_CHECKBOX, GestureType.TAP)).isEqualTo("toggle")
+        assertThat(resolveInteractionType(WIDGET_TYPE_RADIO, GestureType.TAP)).isEqualTo("toggle")
+        assertThat(resolveInteractionType(WIDGET_TYPE_TOGGLE, GestureType.TAP)).isEqualTo("toggle")
+    }
+
+    /**
+     * A toggle reports `toggle` no matter which gesture flipped it — the whole point of splitting
+     * the two keys. If this ever returns `long_press`, the derivation has regressed to mirroring
+     * the gesture.
+     */
+    @Test
+    fun `interaction type ignores the gesture for toggle controls`() {
+        assertThat(resolveInteractionType(WIDGET_TYPE_SWITCH, GestureType.LONG_PRESS)).isEqualTo("toggle")
+    }
+
+    @Test
+    fun `interaction type falls back to the gesture for non-toggle controls`() {
+        assertThat(resolveInteractionType(WIDGET_TYPE_BUTTON, GestureType.TAP)).isEqualTo("tap")
+        assertThat(resolveInteractionType(WIDGET_TYPE_BUTTON, GestureType.LONG_PRESS)).isEqualTo("long_press")
+        assertThat(resolveInteractionType(WIDGET_TYPE_TEXT, GestureType.TAP)).isEqualTo("tap")
+    }
+
+    /**
+     * Tabs and dropdowns are single-choice, but selecting from them is canonical's `menu_select`,
+     * which this module cannot detect (a dropdown's options live in an unwrappable `PopupWindow`).
+     * They must keep reporting the gesture rather than claiming an unobserved interaction.
+     */
+    @Test
+    fun `interaction type does not claim a selection for tabs and dropdowns`() {
+        assertThat(resolveInteractionType(WIDGET_TYPE_TAB, GestureType.TAP)).isEqualTo("tap")
+        assertThat(resolveInteractionType(WIDGET_TYPE_DROPDOWN, GestureType.TAP)).isEqualTo("tap")
     }
 
     /**
