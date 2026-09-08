@@ -7,10 +7,12 @@ package io.opentelemetry.android.instrumentation.hybrid.click
 
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_CONTROL_SELECTION_MODE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_CONTROL_TYPE
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_CONTROL_VALUE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_GESTURE_TYPE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_INTERACTION_TYPE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_WIDGET_CHECKED
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.GestureType
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.INTERACTION_TYPE_SLIDER
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.INTERACTION_TYPE_TOGGLE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.SELECTION_MODE_MULTIPLE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.SELECTION_MODE_SINGLE
@@ -18,6 +20,7 @@ import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_CHECKBOX
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_DROPDOWN
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_RADIO
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_SLIDER
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_SWITCH
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_TAB
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_TEXT
@@ -67,6 +70,27 @@ class HybridClickWireKeyContractTest {
     @Test
     fun `interaction kinds use the canonical vocabulary`() {
         assertThat(INTERACTION_TYPE_TOGGLE).isEqualTo("toggle")
+        assertThat(INTERACTION_TYPE_SLIDER).isEqualTo("slider")
+    }
+
+    @Test
+    fun `gesture vocabulary includes the drag kind`() {
+        assertThat(GestureType.DRAG.value).isEqualTo("drag")
+    }
+
+    @Test
+    fun `slider control kind and value use the canonical wire keys`() {
+        assertThat(WIDGET_TYPE_SLIDER).isEqualTo("slider")
+        assertThat(ATTR_CONTROL_VALUE).isEqualTo("ui.control.value.value")
+    }
+
+    /**
+     * A slider carries a position, not a choice among siblings, so selection mode must stay absent
+     * rather than being given some default. Pinned so nobody "completes the table" later.
+     */
+    @Test
+    fun `slider has no selection mode`() {
+        assertThat(resolveSelectionMode(WIDGET_TYPE_SLIDER)).isNull()
     }
 
     /**
@@ -87,6 +111,16 @@ class HybridClickWireKeyContractTest {
      * the two keys. If this ever returns `long_press`, the derivation has regressed to mirroring
      * the gesture.
      */
+    /**
+     * Both a drag along the control and a tap-seek onto it set a value, so both are `slider`. The
+     * gesture that produced it stays readable on `ui.gesture.type`.
+     */
+    @Test
+    fun `interaction type is slider for a range control regardless of gesture`() {
+        assertThat(resolveInteractionType(WIDGET_TYPE_SLIDER, GestureType.DRAG)).isEqualTo("slider")
+        assertThat(resolveInteractionType(WIDGET_TYPE_SLIDER, GestureType.TAP)).isEqualTo("slider")
+    }
+
     @Test
     fun `interaction type ignores the gesture for toggle controls`() {
         assertThat(resolveInteractionType(WIDGET_TYPE_SWITCH, GestureType.LONG_PRESS)).isEqualTo("toggle")

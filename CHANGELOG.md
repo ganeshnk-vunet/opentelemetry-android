@@ -4,6 +4,26 @@
 
 ### Added
 
+- Hybrid-click slider capture (View path): `SeekBar`, `AppCompatSeekBar`, a user-seekable
+  `RatingBar` and Material `Slider`/`RangeSlider` now produce `ui.interaction` spans with
+  `ui.control.type = slider`, `interaction.type = slider`, and `ui.control.value.value` carrying the
+  position. **These controls previously produced no span at all** — not for a drag, and not even for
+  a tap: `SeekBar` is not `clickable` by default so the detector rejected it outright, and drags were
+  discarded by the gesture classifier. `ui.gesture.type` gains the value `drag`.
+  `ui.control.value.value` is a **percentage (0–100) of the control's own range**, rounded to 2 dp,
+  never the underlying value: on a BFSI amount slider the raw number is user-entered financial data,
+  and this module excludes such values rather than sanitizing them. A percentage still answers how
+  far along its range the user pushed the control. **Known limit: this makes the attribute not
+  directly comparable with a platform reporting the raw value** — the canonical definition needs to
+  settle on one. A `RangeSlider` emits the span but no value (it has no single position).
+  Non-interactive indicators are deliberately excluded: `ProgressBar`, and a `RatingBar` with
+  `isIndicator` set (which the framework itself refuses to seek). Material sliders were already
+  reaching the detector as `app.widget.type = view` because their constructor sets `clickable`, so
+  **their taps change type from `view` to `slider`** — update any query relying on that. Scrolls and
+  flings still emit nothing, and the active click context is deliberately not reset by them, so
+  click-to-network correlation survives a scroll mid-request. Compose sliders are not yet detected
+  (they are identified only by `SemanticsActions.SetProgress`); `value_changed`, `date_picker` and
+  `menu_select` remain unemitted. No public API / `apiCheck` impact.
 - Hybrid-click raw gesture key: `ui.interaction` spans now also carry `ui.gesture.type`, naming the
   pointer gesture that produced the span (`tap`, `long_press`). **Purely additive** — no existing
   attribute was removed and span volume is unchanged. The two are separate keys on purpose:

@@ -15,13 +15,17 @@ import io.opentelemetry.android.common.RumConstants
 import io.opentelemetry.android.common.RumDiagnostics
 import io.opentelemetry.android.common.internal.instrumentation.ActiveInteractionContext
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_CONTROL_SELECTION_MODE
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_CONTROL_VALUE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_CONTROL_TYPE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_GESTURE_TYPE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_INTERACTION_TYPE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_WIDGET_CHECKED
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_WIDGET_SOURCE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_WIDGET_TYPE
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.ControlValue
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.GestureType
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.SOURCE_COMPOSE
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_SLIDER
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_UNKNOWN
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.TapGestureClassifier
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.TapTarget
@@ -182,15 +186,57 @@ internal class ClickEventGenerator(
         val tapGestureClassifier = tapGestureClassifiers[window] ?: return
         val gestureType = tapGestureClassifier.classify(event) ?: return
 
+        if (gestureType == GestureType.DRAG) {
+            emitDrag(window, tapGestureClassifier)
+            return
+        }
+
         ActiveInteractionContext.clear()
 
-        val target =
-            findComposeTarget(window.decorView, event.x, event.y)
-                ?: viewTapTargetDetector.findTapTarget(window.decorView, event.x, event.y)
-                ?: return
+        val target = resolveTarget(window, event.x, event.y) ?: return
+        emitSpan(target, gestureType)
+    }
 
+    /**
+     * Handles a gesture that left the touch slop, emitting a span only when it actually moved a
+     * range control.
+     *
+     * The target is resolved at the point the finger went *down*, not up: a slider drag routinely
+     * ends outside the control's own bounds, and the up position would resolve to whatever is there
+     * instead. Resolution happens here rather than for every `ACTION_DOWN` so an ordinary tap pays
+     * nothing for this path.
+     *
+     * [ActiveInteractionContext] is deliberately *not* cleared on this path. Every scroll and fling
+     * in the app arrives here, and clearing would wipe the active click context mid-gesture — a user
+     * who taps "Pay" and then flicks the screen while the request is in flight would silently lose
+     * the parenting that makes click-to-network correlation work.
+     */
+    private fun emitDrag(
+        window: Window,
+        tapGestureClassifier: TapGestureClassifier,
+    ) {
+        val target = resolveTarget(window, tapGestureClassifier.downX, tapGestureClassifier.downY) ?: return
+        if (target.type != WIDGET_TYPE_SLIDER || !target.isTracking) {
+            return
+        }
+        emitSpan(target, GestureType.DRAG)
+    }
+
+    /** Resolves the target under ([x], [y]), preferring Compose and falling back to the View tree. */
+    private fun resolveTarget(
+        window: Window,
+        x: Float,
+        y: Float,
+    ): TapTarget? =
+        findComposeTarget(window.decorView, x, y)
+            ?: viewTapTargetDetector.findTapTarget(window.decorView, x, y)
+
+    private fun emitSpan(
+        target: TapTarget,
+        gestureType: GestureType,
+    ) {
         RumDiagnostics.d {
-            "hybridClick: tap -> Click span target=${target.widgetId} source=${target.source}"
+            "hybridClick: ${gestureType.value} -> Click span target=${target.widgetId} source=${target.source}"
         }
 
         val spanBuilder =
@@ -211,23 +257,30 @@ internal class ClickEventGenerator(
         val token = ActiveInteractionContext.begin(span)
         scheduleContextEnd(token)
 
-        val checkedStateProvider = target.checkedStateProvider
-        if (checkedStateProvider == null) {
+        val valueProvider = target.valueProvider
+        if (valueProvider == null) {
             span.end()
         } else {
-            // A CompoundButton flips in PerformClick, which View.onTouchEvent *posts* on ACTION_UP
-            // rather than running inline. Re-posting from inside a posted runnable (a double post)
-            // guarantees the read runs after that flip; reading inline would observe the pre-tap
-            // state. The span ends after the read; ActiveInteractionContext stays current for
+            // The widget has not processed this gesture yet: WindowCallbackWrapper calls us *before*
+            // delegating the touch. A CompoundButton flips in PerformClick, which View.onTouchEvent
+            // *posts* on ACTION_UP rather than running inline, so re-posting from inside a posted
+            // runnable (a double post) guarantees the read lands after that flip. A range control
+            // needs only one post — AbsSeekBar overrides onTouchEvent entirely and updates progress
+            // inline, so nothing is posted for it — but the extra tick is harmless and one path is
+            // worth more than a second timing rule. Reading inline would report the pre-gesture
+            // value, which for a tap-seek is wrong every single time.
+            // The span ends after the read; ActiveInteractionContext stays current for
             // activeContextWindowMillis independently.
             mainHandler.post {
                 mainHandler.post {
                     try {
-                        checkedStateProvider()?.let { checked ->
-                            span.setAttribute(ATTR_WIDGET_CHECKED, checked)
+                        when (val value = valueProvider()) {
+                            is ControlValue.Checked -> span.setAttribute(ATTR_WIDGET_CHECKED, value.checked)
+                            is ControlValue.Percentage -> span.setAttribute(ATTR_CONTROL_VALUE, value.percent)
+                            null -> Unit
                         }
                     } catch (throwable: Throwable) {
-                        RumDiagnostics.d { "hybridClick: swallowed error reading toggle state: ${throwable.message}" }
+                        RumDiagnostics.d { "hybridClick: swallowed error reading control value: ${throwable.message}" }
                     }
                     // Always end the span, even if the read above failed, so it never leaks.
                     span.end()

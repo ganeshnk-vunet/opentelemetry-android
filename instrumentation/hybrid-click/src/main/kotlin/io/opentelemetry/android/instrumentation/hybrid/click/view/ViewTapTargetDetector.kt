@@ -8,6 +8,7 @@ package io.opentelemetry.android.instrumentation.hybrid.click.view
 import android.text.InputType
 import android.view.View
 import android.view.ViewGroup
+import android.widget.AbsSeekBar
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.CheckedTextView
@@ -16,9 +17,11 @@ import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.RadioButton
+import android.widget.RatingBar
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.ToggleButton
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.ControlValue
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.LabelResolver
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.SOURCE_VIEW
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.TapTarget
@@ -27,12 +30,14 @@ import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_CHECKBOX
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_IMAGE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_RADIO
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_SLIDER
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_SWITCH
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_TEXT
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_TEXT_FIELD
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_TOGGLE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_VIEW
 import java.util.LinkedList
+import kotlin.math.round
 
 internal class ViewTapTargetDetector : TapTargetDetector {
     private val viewCoordinates = IntArray(2)
@@ -70,22 +75,60 @@ internal class ViewTapTargetDetector : TapTargetDetector {
             x = clickTarget.x.toLong(),
             y = clickTarget.y.toLong(),
             type = viewToType(clickTarget),
-            checkedStateProvider = checkedStateProviderOf(clickTarget),
+            isTracking = clickTarget.isPressed,
+            valueProvider = valueProviderOf(clickTarget),
         )
     }
 
     /** Maps a tapped View to a normalized widget kind. */
     private fun viewToType(view: View): String =
-        when (view) {
-            is EditText -> WIDGET_TYPE_TEXT_FIELD
-            is CompoundButton -> compoundButtonType(view)
-            is CheckedTextView -> WIDGET_TYPE_CHECKBOX
-            is ImageButton -> WIDGET_TYPE_BUTTON
-            is Button -> WIDGET_TYPE_BUTTON
-            is ImageView -> WIDGET_TYPE_IMAGE
-            is TextView -> WIDGET_TYPE_TEXT
+        when {
+            view is EditText -> WIDGET_TYPE_TEXT_FIELD
+            view is CompoundButton -> compoundButtonType(view)
+            isSeekBar(view) || isMaterialSlider(view) -> WIDGET_TYPE_SLIDER
+            view is CheckedTextView -> WIDGET_TYPE_CHECKBOX
+            view is ImageButton -> WIDGET_TYPE_BUTTON
+            view is Button -> WIDGET_TYPE_BUTTON
+            view is ImageView -> WIDGET_TYPE_IMAGE
+            view is TextView -> WIDGET_TYPE_TEXT
             else -> WIDGET_TYPE_VIEW
         }
+
+    /**
+     * Whether [view] is a user-seekable range control from the framework.
+     *
+     * Matched on [AbsSeekBar], not `SeekBar`: `RatingBar` extends [AbsSeekBar] directly, so keying
+     * on `SeekBar` would miss it. `ProgressBar` is [AbsSeekBar]'s *superclass* and is deliberately
+     * excluded — it is a non-interactive indicator, not a control. An indicator `RatingBar` is
+     * excluded on exactly that reasoning: `setIsIndicator` clears `mIsUserSeekable`, after which
+     * `AbsSeekBar.onTouchEvent` refuses the touch outright, making it as inert as a `ProgressBar`.
+     */
+    private fun isSeekBar(view: View): Boolean = view is AbsSeekBar && !(view is RatingBar && view.isIndicator)
+
+    /**
+     * Whether [view] is a Material slider, matched by walking superclasses for the qualified name of
+     * `BaseSlider`.
+     *
+     * By name because this module must not depend on `com.google.android.material` — the same
+     * constraint that makes [compoundButtonType] match `SwitchCompat`/`MaterialSwitch` by name. The
+     * base class rather than `Slider` covers `Slider`, `RangeSlider` and any app subclass in one
+     * constant, and the *qualified* name rather than a `simpleName.contains("Slider")` check avoids
+     * claiming unrelated classes that merely have "Slider" in their name.
+     *
+     * Note a Material slider is already `setClickable(true)` in its constructor, so it reached this
+     * detector before this kind existed — as a plain `view`. A `SeekBar` is not clickable and so
+     * reached it not at all.
+     */
+    private fun isMaterialSlider(view: View): Boolean {
+        var type: Class<*>? = view.javaClass
+        while (type != null) {
+            if (type.name == CLASS_NAME_MATERIAL_BASE_SLIDER) {
+                return true
+            }
+            type = type.superclass
+        }
+        return false
+    }
 
     private fun compoundButtonType(view: CompoundButton): String =
         when {
@@ -101,22 +144,67 @@ internal class ViewTapTargetDetector : TapTargetDetector {
         }
 
     /**
-     * Returns a live checked-state reader, but only for genuine toggle widgets. We intentionally do
-     * not key off the [android.widget.Checkable] interface: `MaterialButton` implements it while
-     * being an ordinary (non-toggle) button, which would otherwise tag every Material button — e.g.
-     * a dialog's "OK" — with `checked=false`.
+     * Returns a live value reader, but only for widgets that genuinely carry a value.
+     *
+     * For toggles we intentionally do not key off the [android.widget.Checkable] interface:
+     * `MaterialButton` implements it while being an ordinary (non-toggle) button, which would
+     * otherwise tag every Material button — e.g. a dialog's "OK" — with `checked=false`.
      */
-    private fun checkedStateProviderOf(view: View): (() -> Boolean?)? =
-        when (view) {
-            is CompoundButton -> ({ view.isChecked })
-            is CheckedTextView -> ({ view.isChecked })
+    private fun valueProviderOf(view: View): (() -> ControlValue?)? =
+        when {
+            view is CompoundButton -> ({ ControlValue.Checked(view.isChecked) })
+            view is CheckedTextView -> ({ ControlValue.Checked(view.isChecked) })
+            isSeekBar(view) -> ({ seekBarPercent(view as AbsSeekBar)?.let(ControlValue::Percentage) })
+            isMaterialSlider(view) -> ({ materialSliderPercent(view)?.let(ControlValue::Percentage) })
             else -> null
         }
+
+    /**
+     * Position of [view] as a percentage of its own range.
+     *
+     * `min` is treated as `0` rather than read from `getMin()`, which is API 26 while this module's
+     * `minSdk` is 23 — an unguarded call fails AnimalSniffer, and Android lint would not catch it
+     * because `NewApi` is disabled for these modules. `ProgressBar` initializes `mMin = 0` and
+     * offered no API to change it before 26, so this is only inexact for an app that sets
+     * `android:min` on API 26+, which is worth far less than the guard it costs.
+     */
+    private fun seekBarPercent(view: AbsSeekBar): Double? = percentOf(view.progress.toDouble(), 0.0, view.max.toDouble())
+
+    /**
+     * Position of a Material slider as a percentage of its own range, read reflectively for the same
+     * reason [isMaterialSlider] matches by name.
+     *
+     * A `RangeSlider` has no `getValue()` — only `getValues()` — so resolution fails and no value
+     * attribute is emitted, which is correct: a range slider has no single position to report. The
+     * span is still emitted with `ui.control.type = slider`.
+     */
+    private fun materialSliderPercent(view: View): Double? =
+        runCatching {
+            val type = view.javaClass
+            val value = (type.getMethod("getValue").invoke(view) as Number).toDouble()
+            val from = (type.getMethod("getValueFrom").invoke(view) as Number).toDouble()
+            val to = (type.getMethod("getValueTo").invoke(view) as Number).toDouble()
+            percentOf(value, from, to)
+        }.getOrNull()
+
+    /** Scales [value] to 0–100 across [from]..[to], or `null` for a degenerate range. */
+    private fun percentOf(
+        value: Double,
+        from: Double,
+        to: Double,
+    ): Double? {
+        val range = to - from
+        if (range <= 0.0) {
+            return null
+        }
+        val percent = (value - from) / range * 100.0
+        return round(percent.coerceIn(0.0, 100.0) * 100.0) / 100.0
+    }
 
     private fun isToggle(view: View): Boolean = view is CompoundButton || view is CheckedTextView
 
     private fun isValidClickTarget(view: View): Boolean =
-        view.isVisible && (view.isClickable || view is EditText)
+        view.isVisible && (view.isClickable || view is EditText || isSeekBar(view))
 
     private fun isPasswordField(view: EditText): Boolean {
         val variation = view.inputType and InputType.TYPE_MASK_VARIATION
@@ -279,5 +367,8 @@ internal class ViewTapTargetDetector : TapTargetDetector {
 
         /** Safe placeholder used when a password field has no usable non-value label. */
         const val PASSWORD_FIELD_LABEL = "password field"
+
+        /** Qualified name of Material's slider base class — see [isMaterialSlider]. */
+        const val CLASS_NAME_MATERIAL_BASE_SLIDER = "com.google.android.material.slider.BaseSlider"
     }
 }

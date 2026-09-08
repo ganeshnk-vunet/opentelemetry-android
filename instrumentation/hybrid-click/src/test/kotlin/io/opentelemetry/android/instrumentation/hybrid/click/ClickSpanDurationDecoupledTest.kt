@@ -100,6 +100,42 @@ class ClickSpanDurationDecoupledTest {
         assertThat(childSpan.traceId).isEqualTo(clickSpan.traceId)
     }
 
+    /**
+     * Regression test for the scroll that wipes the click context.
+     *
+     * Once the classifier began reporting drags instead of discarding them, every scroll and fling
+     * reached the emitter — and clearing [ActiveInteractionContext] there would break the module's
+     * headline feature for the most ordinary interaction there is: tap "Pay", then flick the screen
+     * while the request is still in flight. Nothing else in this suite covers it.
+     */
+    @Test
+    fun `drag over a non-slider does not clear the active click context`() {
+        val window = windowWith(label = "Pay")
+        generator.startTracking(window)
+
+        tap(window)
+        shadowOf(Looper.getMainLooper()).idleFor(50, TimeUnit.MILLISECONDS)
+        val clickSpan = exporter.finishedSpanItems.single { it.name == RumConstants.UI_INTERACTION_SPAN_NAME }
+
+        // A scroll across the screen: leaves the touch slop, lands on no range control.
+        generator.generateClick(window, MotionEvent.obtain(0L, 0L, MotionEvent.ACTION_DOWN, 10f, 10f, 0))
+        generator.generateClick(window, MotionEvent.obtain(0L, 100L, MotionEvent.ACTION_MOVE, 10f, 300f, 0))
+        generator.generateClick(window, MotionEvent.obtain(0L, 200L, MotionEvent.ACTION_UP, 10f, 300f, 0))
+        shadowOf(Looper.getMainLooper()).idleFor(50, TimeUnit.MILLISECONDS)
+
+        // The scroll itself must not be reported...
+        assertThat(exporter.finishedSpanItems.filter { it.name == RumConstants.UI_INTERACTION_SPAN_NAME }).hasSize(1)
+
+        // ...and work started after it must still parent to the click.
+        val parentContext = ActiveInteractionContext.parentContextOr(io.opentelemetry.context.Context.current())
+        val child = tracer.spanBuilder("POST").setParent(parentContext).startSpan()
+        child.end()
+
+        val childSpan = exporter.finishedSpanItems.single { it.name == "POST" }
+        assertThat(childSpan.parentSpanId).isEqualTo(clickSpan.spanContext.spanId)
+        assertThat(childSpan.traceId).isEqualTo(clickSpan.traceId)
+    }
+
     @Test
     fun `downstream span after window does not parent to click`() {
         val window = windowWith(label = "Pay")

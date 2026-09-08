@@ -201,9 +201,10 @@ Every qualified tap produces one `ui.interaction` span with these attributes:
 | `app.widget.type`             | Widget kind (button/switch/text_field/…)     | `"button"`           |
 | `ui.control.type`             | Same value as `app.widget.type` — canonical name | `"button"`       |
 | `interaction.type`            | Semantic interaction kind                    | `"toggle"`           |
-| `ui.gesture.type`             | Raw pointer gesture: `"tap"` or `"long_press"` | `"tap"`            |
+| `ui.gesture.type`             | Raw pointer gesture: `"tap"`, `"long_press"`, `"drag"` | `"drag"`   |
 | `ui.control.selection_mode`   | `"single"`/`"multiple"` — **selection widgets only** | `"multiple"` |
 | `ui.control.value.checked`    | Toggle state — **toggle widgets only**       | `true`               |
+| `ui.control.value.value`      | Slider position, % of range — **range controls only** | `25.0`      |
 
 The span ends immediately after the tap (or after the toggle-state read for `CompoundButton`).
 `ActiveInteractionContext` separately remains current for `activeContextWindowMillis`
@@ -251,10 +252,11 @@ The **semantic** interaction the user performed, derived from the control that w
 back to the raw gesture when the control implies no interaction of its own — see
 `resolveInteractionType`:
 
-| Widget kind                              | `interaction.type`        |
-|------------------------------------------|---------------------------|
-| `switch`, `checkbox`, `radio`, `toggle`  | `toggle`                  |
-| everything else                          | `tap` / `long_press`      |
+| Widget kind                              | `interaction.type`          |
+|------------------------------------------|-----------------------------|
+| `switch`, `checkbox`, `radio`, `toggle`  | `toggle`                    |
+| `slider`                                 | `slider`                    |
+| everything else                          | `tap` / `long_press`        |
 
 The control is consulted first because the interaction is not recoverable from the gesture alone:
 the identical tap is a plain tap on a button but a toggle on a switch. iOS reports the semantic
@@ -271,9 +273,9 @@ this module cannot detect — a dropdown's options live in a `PopupWindow`, whic
 `Window.Callback` to wrap (see *Window Tracking → Not covered*). They keep reporting the gesture
 rather than claiming an interaction that was never observed.
 
-**Not yet reachable.** Canonical also defines `value_changed`, `slider`, `date_picker` and
-`menu_select`. None is emitted today, because this module detects touch gestures rather than value
-changes; `slider` is the next one planned.
+**Not yet reachable.** Canonical also defines `value_changed`, `date_picker` and `menu_select`.
+None is emitted today — see *Range controls* below for why, and *Window Tracking → Not covered* for
+the surfaces involved.
 
 Both come from the same qualified gesture — one that reaches `ACTION_UP` without leaving the touch
 slop — split by how long the pointer was down, measured against
@@ -293,9 +295,9 @@ would break the synchronous emission this module depends on (see *Tap Gesture Cl
 
 ### `ui.gesture.type`
 
-The raw pointer gesture, always emitted. Values: `tap`, `long_press` (see `GestureType`). It equals
-`interaction.type` only when the control implies no interaction of its own; on a toggle the two
-differ.
+The raw pointer gesture, always emitted. Values: `tap`, `long_press`, `drag` (see `GestureType`). It
+equals `interaction.type` only when the control implies no interaction of its own; on a toggle or a
+slider the two differ.
 
 The two keys are separate contracts because they answer different questions. `ui.gesture.type` is
 always "what did the finger do". `interaction.type` names the *semantic* interaction, and so depends
@@ -325,6 +327,85 @@ updates on recomposition (asynchronously), so a reliable post-tap read isn't ava
 this path.
 
 ---
+
+## Range controls
+
+Sliders are captured on the View path: `SeekBar`, `AppCompatSeekBar`, a user-seekable `RatingBar`,
+and Material's `Slider`/`RangeSlider`.
+
+Before this, a `SeekBar` produced **no span at all** — not for a drag, and not for a tap either. Two
+independent reasons:
+
+1. `SeekBar` is not `clickable` by default (nothing in `ProgressBar → AbsSeekBar → SeekBar` sets it,
+   and no default style does), so the detector's `isClickable` gate rejected it outright.
+2. A drag leaves the touch slop, and the gesture classifier discarded such gestures entirely.
+
+Both are now handled: `isValidClickTarget` admits user-seekable `AbsSeekBar`s alongside `EditText`,
+and `TapGestureClassifier` reports `GestureType.DRAG` rather than swallowing movement.
+
+### What counts, and what deliberately does not
+
+| Class                                  | Counts | Why |
+|----------------------------------------|--------|-----|
+| `SeekBar`, `AppCompatSeekBar`          | yes    | matched via `AbsSeekBar` |
+| `RatingBar`                            | yes    | extends `AbsSeekBar` **directly**, so matching `SeekBar` would miss it |
+| `RatingBar` with `isIndicator`          | no     | `setIsIndicator` clears `mIsUserSeekable`; `onTouchEvent` then refuses the touch |
+| `ProgressBar`                          | no     | `AbsSeekBar`'s superclass — an indicator, not a control |
+| Material `Slider` / `RangeSlider`      | yes    | matched by the qualified name of `BaseSlider` |
+
+Material sliders are matched **by name** because this module must not depend on
+`com.google.android.material` — the same constraint behind the `SwitchCompat`/`MaterialSwitch` name
+match. Note Material's slider *is* `setClickable(true)` in its constructor, so it already reached
+this detector before slider support existed, reported as a plain `view`; its taps therefore change
+type from `view` to `slider`.
+
+### Drag handling
+
+A drag resolves its target at the point the finger went **down**, not up: a slider drag routinely
+ends outside the control's own bounds. Resolution runs only for drags, so an ordinary tap pays
+nothing for it.
+
+Two guards keep the path honest:
+
+- The down-target must be a `slider`. Every scroll and fling in the app reaches this code, and
+  without the check each one would emit a span.
+- The control must have been actively tracking the gesture (`View.isPressed`, which `startDrag` sets
+  and `ACTION_CANCEL` clears). A slider inside a `RecyclerView` loses the gesture to its parent —
+  it gets `ACTION_CANCEL` and never seeks — while the window callback still sees the whole
+  `DOWN`…`UP` stream, which would otherwise report a value that never changed.
+
+`ActiveInteractionContext` is deliberately **not** cleared on the drag path. Clearing it there would
+wipe the active click context on every scroll: tap "Pay", then flick the screen while the request is
+in flight, and downstream spans would stop parenting to the click.
+
+### `ui.control.value.value`
+
+The slider's position as a **percentage (0–100) of its own range**, rounded to 2 dp — never the
+underlying value.
+
+**Privacy guarantee.** On a BFSI amount slider the raw number is user-entered financial data, and
+this module's standing rule is that such values are excluded rather than sanitized (see *Text
+fields* below). A percentage keeps the interaction analytically useful — how far along its range the
+user pushed the control — without putting the amount on the wire. Note this means the attribute is
+**not** directly comparable with a platform that reports the raw value.
+
+The value is read on a deferred main-loop tick, like the toggle state, because the widget has not
+processed the gesture when the span is built. It is not optional: for a tap-seek `AbsSeekBar` calls
+`trackTouchEvent` only at `ACTION_UP`, so a synchronous read would report the pre-tap position every
+time.
+
+`min` is treated as `0` rather than read from `getMin()`, which is API 26 against this module's
+`minSdk` of 23. `ProgressBar` initializes `mMin = 0` and offered no API to change it before 26, so
+this is only inexact for an app setting `android:min` on API 26+ — not worth an API guard.
+
+A `RangeSlider` emits `ui.control.type = slider` but **no** value: it has no single position, only
+`getValues()`.
+
+### Not covered
+
+Compose sliders are not yet detected — a Compose `Slider` exposes no `OnClick` and none of the
+matched foundation elements, so it is identified only by `SemanticsActions.SetProgress`, which this
+detector does not yet read.
 
 ## Text fields
 

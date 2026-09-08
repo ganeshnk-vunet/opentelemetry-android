@@ -11,10 +11,13 @@ import kotlin.math.pow
 /**
  * Classifies pointer sequences as either tap-like gestures or non-tap gestures.
  *
- * A gesture qualifies only when it reaches [MotionEvent.ACTION_UP] without moving beyond
- * [touchSlopPx] from the original [MotionEvent.ACTION_DOWN] position. A qualifying gesture is then
- * split by how long the pointer was down: below [longPressTimeoutMs] it is an
- * [GestureType.TAP], at or above it a [GestureType.LONG_PRESS].
+ * A gesture that reaches [MotionEvent.ACTION_UP] without moving beyond [touchSlopPx] from the
+ * original [MotionEvent.ACTION_DOWN] position is tap-like, and is split by how long the pointer was
+ * down: below [longPressTimeoutMs] it is a [GestureType.TAP], at or above it a
+ * [GestureType.LONG_PRESS]. One that moves further is a [GestureType.DRAG], reported rather than
+ * swallowed so the caller can judge it against the control underneath — dragging a slider is a real
+ * interaction, scrolling a list is not. The classifier stays target-agnostic: it says what the
+ * pointer did, never whether that deserves a span.
  *
  * The kind is decided at ACTION_UP from the elapsed press duration, so it describes the gesture the
  * user performed. That is not always the gesture the *app* acted on: Android delivers `onLongClick`
@@ -34,8 +37,18 @@ internal class TapGestureClassifier {
      */
     var longPressTimeoutMs: Long = DEFAULT_LONG_PRESS_TIMEOUT_MS
 
-    private var downX: Float = 0f
-    private var downY: Float = 0f
+    /**
+     * Where the gesture started. Deliberately readable after [classify] returns: [reset] clears only
+     * the in-progress flags, so a caller handling a [GestureType.DRAG] can resolve the target at the
+     * point the finger went *down*. That matters because a drag routinely ends well outside the
+     * control it started on — a slider dragged to its end, for instance.
+     */
+    var downX: Float = 0f
+        private set
+
+    var downY: Float = 0f
+        private set
+
     private var downTimeMs: Long = 0L
     private var hasActiveGesture: Boolean = false
     private var isTapCandidate: Boolean = false
@@ -85,14 +98,16 @@ internal class TapGestureClassifier {
             }
 
             MotionEvent.ACTION_UP -> {
-                val qualifies =
-                    hasActiveGesture &&
-                        isTapCandidate &&
-                        !isOutsideTapSlop(x, y)
+                // "No active gesture" and "active but moved too far" must stay distinct: collapsing
+                // them would report a DRAG for the spurious ACTION_UP that follows an ACTION_CANCEL,
+                // inventing an interaction out of a gesture the platform already abandoned.
+                val hadActiveGesture = hasActiveGesture
+                val stayedWithinSlop = isTapCandidate && !isOutsideTapSlop(x, y)
                 val pressDurationMs = eventTimeMs - downTimeMs
                 reset()
                 when {
-                    !qualifies -> null
+                    !hadActiveGesture -> null
+                    !stayedWithinSlop -> GestureType.DRAG
                     pressDurationMs >= longPressTimeoutMs -> GestureType.LONG_PRESS
                     else -> GestureType.TAP
                 }

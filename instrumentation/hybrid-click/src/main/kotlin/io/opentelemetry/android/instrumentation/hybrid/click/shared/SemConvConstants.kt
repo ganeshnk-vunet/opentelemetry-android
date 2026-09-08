@@ -30,6 +30,12 @@ internal const val ATTR_GESTURE_TYPE = "ui.gesture.type"
 /** Boolean state of a tapped toggle (switch / checkbox / radio), when the target is checkable. */
 internal const val ATTR_WIDGET_CHECKED = "ui.control.value.checked"
 
+/**
+ * Position of a range control as a percentage (0–100) of its own range — see
+ * [ControlValue.Percentage] for why it is normalized rather than the underlying value.
+ */
+internal const val ATTR_CONTROL_VALUE = "ui.control.value.value"
+
 /** Kind of widget tapped — see the `WIDGET_TYPE_*` values. */
 internal const val ATTR_WIDGET_TYPE = "app.widget.type"
 
@@ -68,6 +74,7 @@ internal const val WIDGET_TYPE_TEXT_FIELD = "text_field"
 internal const val WIDGET_TYPE_IMAGE = "image"
 internal const val WIDGET_TYPE_TAB = "tab"
 internal const val WIDGET_TYPE_DROPDOWN = "dropdown"
+internal const val WIDGET_TYPE_SLIDER = "slider"
 internal const val WIDGET_TYPE_TEXT = "text"
 internal const val WIDGET_TYPE_VIEW = "view"
 internal const val WIDGET_TYPE_UNKNOWN = "unknown"
@@ -81,6 +88,14 @@ internal const val WIDGET_TYPE_UNKNOWN = "unknown"
  * interaction; [WIDGET_TYPE_SWITCH] and [WIDGET_TYPE_CHECKBOX] map here too.
  */
 internal const val INTERACTION_TYPE_TOGGLE = "toggle"
+
+/**
+ * A range control whose position was set — a `SeekBar`, Material `Slider`, or Compose `Slider`.
+ *
+ * Reported for both a drag along the control and a tap-seek onto it: either way the user set a
+ * value, which is what distinguishes this from the gesture that produced it.
+ */
+internal const val INTERACTION_TYPE_SLIDER = "slider"
 
 /**
  * Resolves [ATTR_INTERACTION_TYPE] from the normalized [widgetType] that was hit, falling back to
@@ -107,6 +122,8 @@ internal fun resolveInteractionType(
     when (widgetType) {
         WIDGET_TYPE_SWITCH, WIDGET_TYPE_CHECKBOX, WIDGET_TYPE_RADIO, WIDGET_TYPE_TOGGLE ->
             INTERACTION_TYPE_TOGGLE
+
+        WIDGET_TYPE_SLIDER -> INTERACTION_TYPE_SLIDER
 
         else -> gesture.value
     }
