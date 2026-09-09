@@ -228,6 +228,8 @@ Every qualified tap produces one `ui.interaction` span with these attributes:
 | `ui.control.selection_mode`   | `"single"`/`"multiple"` — **selection widgets only** | `"multiple"` |
 | `ui.control.value.checked`    | Toggle state — **toggle widgets only**       | `true`               |
 | `ui.control.value.value`      | Slider position, % of range — **range controls only** | `25.0`      |
+| `ui.control.value.selected_date` | Date chosen, day offset from today — **date pickers only** | `-30` |
+| `ui.control.value.start_date` / `.end_date` | Chosen range ends, day offsets — **range date pickers only** | `-30` / `0` |
 
 The span ends immediately after the tap (or after the toggle-state read for `CompoundButton`).
 `ActiveInteractionContext` separately remains current for `activeContextWindowMillis`
@@ -281,6 +283,10 @@ back to the raw gesture when the control implies no interaction of its own — s
 | `slider`                                 | `slider`                    |
 | everything else                          | `tap` / `long_press`        |
 
+A detector may also supply the kind outright, via `TapTarget.interactionKind`, which wins over the
+table above. That exists for interactions the widget kind cannot reveal — a date picker's confirm
+button is an ordinary button, and only the detector can see the picker around it. See *Date pickers*.
+
 The control is consulted first because the interaction is not recoverable from the gesture alone:
 the identical tap is a plain tap on a button but a toggle on a switch. iOS reports the semantic
 kind, so deriving it here is what lets both platforms be grouped by this one attribute. The gesture
@@ -296,9 +302,8 @@ this module cannot detect — a dropdown's options live in a `PopupWindow`, whic
 `Window.Callback` to wrap (see *Window Tracking → Not covered*). They keep reporting the gesture
 rather than claiming an interaction that was never observed.
 
-**Not yet reachable.** Canonical also defines `value_changed`, `date_picker` and `menu_select`.
-None is emitted today — see *Range controls* below for why, and *Window Tracking → Not covered* for
-the surfaces involved.
+**Not yet reachable.** Canonical also defines `value_changed` and `menu_select`. Neither is emitted
+today — see *Window Tracking → Not covered* for the surfaces involved.
 
 Both come from the same qualified gesture — one that reaches `ACTION_UP` without leaving the touch
 slop — split by how long the pointer was down, measured against
@@ -455,6 +460,76 @@ from the synchronous type resolution and need no value read at all.
 The reader reaches the detector through the same reflection bridge as `nodeToType`, resolved
 leniently: a detector build without `nodeToNormalizedValue` loses the value attribute rather than
 disabling all Compose click detection.
+
+## Date pickers
+
+A Material date picker's confirm tap reports `interaction.type = date_picker` and what was chosen.
+
+`MaterialDatePicker` is a `DialogFragment`, so its window is already tracked and **the confirm tap
+already produced a span before this existed** — an anonymous `button` labelled with a localized
+"OK". Nothing needed intercepting; the tap only needed recognizing.
+
+`ui.control.type` deliberately stays `button`. The tapped widget really is a confirm button, and
+leaving it alone means nothing keyed on `ui.control.type` shifts. Consumers filter date picking on
+`interaction.type`, which is what the discriminator is for.
+
+### Recognition
+
+Two stages, cheapest first — the tag check is a field read, so ordinary taps pay nothing:
+
+1. `view.tag == "CONFIRM_BUTTON_TAG"`.
+2. `FragmentManager.findFragment(view)`, then the owner must expose a public no-arg `getSelection()`.
+
+The tag is matched as a **string literal**. `MaterialDatePicker.CONFIRM_BUTTON_TAG` is
+package-private and typed `Object` but holds exactly that interned string, so this needs no
+dependency on `com.google.android.material` — which this module does not have. It does couple us to
+an undocumented internal, so the literal is pinned by a wire-key test; a rename shows up as a
+failing test rather than as telemetry that silently stops.
+
+Matching on the button's resource-id name (`confirm_button`) was rejected: apps commonly define an
+id by that name themselves, so it would misreport ordinary buttons.
+
+The owner is **duck-typed** on `getSelection()` rather than matched on `MaterialDatePicker`'s
+qualified name. That covers app subclasses for free, and keeps the logic unit-testable — Material
+cannot be a test dependency here, so a name-matched implementation could not be tested at all.
+
+### `ui.control.value.selected_date` / `.start_date` / `.end_date`
+
+Whole-day offsets from today, negative for the past — never an absolute date.
+
+**Privacy guarantee.** A chosen date is user-entered data, and this module excludes such values
+rather than sanitizing them (see *Text fields*). An offset still answers what a statement or booking
+flow wants to know — how far back or forward people reach — without putting the date on the wire.
+The range *length*, usually the more interesting figure, is `end - start` and needs no key of its
+own. Note this means the attributes are **not** directly comparable with a platform reporting
+absolute dates.
+
+`getSelection()` returns UTC-midnight millis: a `Long` for a single date, a pair for a range, or
+`null` before anything is chosen. That runtime type is the only way to tell single from range —
+`getDateSelector()` is private, and `getInputMode()` distinguishes calendar from keyboard entry, not
+arity. Either end of a range may be absent, since a range picker can be confirmed half-open.
+
+The value is captured **synchronously**, unlike the toggle and slider reads. The date was chosen
+long before the confirm tap, so it is already final, and a deferred read could arrive after the
+dialog has torn its fragment down. It is deliberately not flagged `valueIsPreGesture` — that flag
+means "stale for a tap", and this value is not stale: the confirm tap does not change it.
+
+The day arithmetic reduces both sides to an epoch-day number and subtracts, so it needs no
+`Calendar`, no formatter and no timezone handling — which also keeps it clear of `java.time`,
+unavailable here because core library desugaring is not enabled for library modules. The floor is
+done by hand because integer division rounds toward zero, which would put a pre-1970 date — an
+ordinary birth date — a day late, and `Math.floorDiv` is API 24 against a `minSdk` of 23.
+
+### Not covered
+
+- **The framework's `android.app.DatePickerDialog`**, which extends `AlertDialog` — a raw dialog with
+  no discoverable window (see *Window Tracking → Not covered*). An app using it emits nothing.
+- **Compose date pickers.** An inline `DatePicker` sits in a tracked window, but a Compose
+  `DatePickerDialog` renders in its own non-`DialogFragment` window, and reading a Compose selection
+  hits the composition/frame-boundary problem described under *Compose sliders*.
+- **`MaterialTimePicker`.** Also a `DialogFragment`, but it sets no button tag at all, so it needs a
+  different identification strategy — and canonical defines no `time_picker` value, so reporting a
+  time as `date_picker` would be wrong.
 
 ## Text fields
 

@@ -24,6 +24,7 @@ import android.widget.Switch
 import android.widget.TextView
 import android.widget.ToggleButton
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ControlValue
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.INTERACTION_TYPE_DATE_PICKER
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.LabelResolver
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.SOURCE_VIEW
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.TapTarget
@@ -77,6 +78,7 @@ internal class ViewTapTargetDetector : TapTargetDetector {
             x = clickTarget.x.toLong(),
             y = clickTarget.y.toLong(),
             type = viewToType(clickTarget),
+            interactionKind = interactionKindOf(clickTarget),
             isTracking = clickTarget.isPressed,
             valueProvider = valueProviderOf(clickTarget),
         )
@@ -152,8 +154,26 @@ internal class ViewTapTargetDetector : TapTargetDetector {
      * `MaterialButton` implements it while being an ordinary (non-toggle) button, which would
      * otherwise tag every Material button — e.g. a dialog's "OK" — with `checked=false`.
      */
+    /**
+     * The `interaction.type` to report when the widget kind alone cannot say what the tap meant, or
+     * `null` to let it be derived from the kind as usual.
+     *
+     * Only a date picker's confirm button qualifies today: it is an ordinary button, so the meaning
+     * of the tap is visible only from the picker around it.
+     */
+    private fun interactionKindOf(view: View): String? =
+        if (DatePickerSelectionReader.isDatePickerConfirmButton(view)) INTERACTION_TYPE_DATE_PICKER else null
+
     private fun valueProviderOf(view: View): (() -> ControlValue?)? =
         when {
+            // Captured now rather than read on the deferred tick: the date was chosen long before
+            // the confirm tap, so it is already final, and by the time a posted read ran the dialog
+            // could be dismissing with its fragment torn down. This is deliberately NOT flagged
+            // valueIsPreGesture -- that flag means "stale for a tap", and this value is not stale;
+            // the confirm tap does not change it.
+            DatePickerSelectionReader.isDatePickerConfirmButton(view) ->
+                DatePickerSelectionReader.read(view, System.currentTimeMillis())?.let { value -> ({ value }) }
+
             view is CompoundButton -> ({ ControlValue.Checked(view.isChecked) })
             view is CheckedTextView -> ({ ControlValue.Checked(view.isChecked) })
             isSeekBar(view) -> ({ seekBarPercent(view as AbsSeekBar)?.let(ControlValue::Percentage) })

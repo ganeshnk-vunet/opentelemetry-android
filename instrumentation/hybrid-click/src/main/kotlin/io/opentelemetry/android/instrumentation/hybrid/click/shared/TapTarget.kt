@@ -30,6 +30,32 @@ internal sealed interface ControlValue {
     data class Percentage(
         val percent: Double,
     ) : ControlValue
+
+    /**
+     * Date chosen in a single-date picker, as a whole-day offset from today — written to
+     * `ui.control.value.selected_date`.
+     *
+     * Relative deliberately, never an absolute date: a picked date is user-entered data, and this
+     * module's standing rule is that such values are excluded rather than sanitized. An offset still
+     * answers the question worth asking of a statement or booking flow — how far back or forward
+     * people reach — without putting the date itself on the wire.
+     */
+    data class SelectedDate(
+        val dayOffset: Long,
+    ) : ControlValue
+
+    /**
+     * Both ends of a chosen date range, as whole-day offsets from today, written to
+     * `ui.control.value.start_date` and `.end_date`. Either end may be `null`, because a range
+     * picker can be confirmed with only one side chosen.
+     *
+     * The range *length* — usually the more interesting figure — is `end - start`, so it needs no
+     * key of its own.
+     */
+    data class SelectedDateRange(
+        val startDayOffset: Long?,
+        val endDayOffset: Long?,
+    ) : ControlValue
 }
 
 /**
@@ -41,6 +67,11 @@ internal sealed interface ControlValue {
  * state or a slider's position. It is a deferred read of the live value rather than a captured one:
  * the span is emitted before the touch is delegated to the underlying widget, so reading lazily (on
  * a later main-loop tick) reports the *resulting* value after the widget has processed the gesture.
+ *
+ * [interactionKind] overrides the `interaction.type` that would otherwise be derived from [type].
+ * It exists for controls whose *interaction* is not inferable from the widget kind: a date picker's
+ * confirm button is a plain button, and only the detector — which can see the picker around it —
+ * knows the tap means a date selection.
  *
  * [valueIsPreGesture] marks a [valueProvider] that returns a value snapshotted *before* the gesture
  * reached the widget, rather than reading it afterwards. The Compose path has no choice but to do
@@ -64,6 +95,7 @@ internal data class TapTarget(
     val x: Long,
     val y: Long,
     val type: String = WIDGET_TYPE_UNKNOWN,
+    val interactionKind: String? = null,
     val isTracking: Boolean = false,
     val valueProvider: (() -> ControlValue?)? = null,
     val valueIsPreGesture: Boolean = false,

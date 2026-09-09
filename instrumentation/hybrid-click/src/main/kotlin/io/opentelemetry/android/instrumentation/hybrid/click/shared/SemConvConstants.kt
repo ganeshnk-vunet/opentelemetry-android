@@ -36,6 +36,18 @@ internal const val ATTR_WIDGET_CHECKED = "ui.control.value.checked"
  */
 internal const val ATTR_CONTROL_VALUE = "ui.control.value.value"
 
+/**
+ * Date chosen in a single-date picker, as a whole-day offset from today — see
+ * [ControlValue.SelectedDate] for why it is relative rather than an absolute date.
+ */
+internal const val ATTR_CONTROL_SELECTED_DATE = "ui.control.value.selected_date"
+
+/** Start of a chosen date range, as a whole-day offset from today. */
+internal const val ATTR_CONTROL_START_DATE = "ui.control.value.start_date"
+
+/** End of a chosen date range, as a whole-day offset from today. */
+internal const val ATTR_CONTROL_END_DATE = "ui.control.value.end_date"
+
 /** Kind of widget tapped — see the `WIDGET_TYPE_*` values. */
 internal const val ATTR_WIDGET_TYPE = "app.widget.type"
 
@@ -96,6 +108,15 @@ internal const val INTERACTION_TYPE_TOGGLE = "toggle"
  * value, which is what distinguishes this from the gesture that produced it.
  */
 internal const val INTERACTION_TYPE_SLIDER = "slider"
+
+/**
+ * A date was chosen from a picker and committed.
+ *
+ * Reported on the picker's confirm button, which is where the choice becomes final. The control
+ * itself stays `ui.control.type = button`, because that is literally what was tapped; this attribute
+ * is what says the tap *meant* a date selection.
+ */
+internal const val INTERACTION_TYPE_DATE_PICKER = "date_picker"
 
 /**
  * Resolves [ATTR_INTERACTION_TYPE] from the normalized [widgetType] that was hit, falling back to

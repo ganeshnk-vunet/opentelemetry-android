@@ -15,6 +15,9 @@ import io.opentelemetry.android.common.RumConstants
 import io.opentelemetry.android.common.RumDiagnostics
 import io.opentelemetry.android.common.internal.instrumentation.ActiveInteractionContext
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_CONTROL_SELECTION_MODE
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_CONTROL_END_DATE
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_CONTROL_SELECTED_DATE
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_CONTROL_START_DATE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_CONTROL_VALUE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_CONTROL_TYPE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_GESTURE_TYPE
@@ -260,7 +263,12 @@ internal class ClickEventGenerator(
                 .setAttribute(ATTR_WIDGET_SOURCE, target.source)
                 .setAttribute(ATTR_WIDGET_TYPE, target.type)
                 .setAttribute(ATTR_CONTROL_TYPE, target.type)
-                .setAttribute(ATTR_INTERACTION_TYPE, resolveInteractionType(target.type, gestureType))
+                // A detector-supplied kind wins: some interactions are invisible in the widget
+                // kind alone -- see TapTarget.interactionKind.
+                .setAttribute(
+                    ATTR_INTERACTION_TYPE,
+                    target.interactionKind ?: resolveInteractionType(target.type, gestureType),
+                )
                 .setAttribute(ATTR_GESTURE_TYPE, gestureType.value)
         resolveSelectionMode(target.type)?.let { spanBuilder.setAttribute(ATTR_CONTROL_SELECTION_MODE, it) }
         val span = spanBuilder.startSpan()
@@ -290,6 +298,16 @@ internal class ClickEventGenerator(
                         when (val value = valueProvider()) {
                             is ControlValue.Checked -> span.setAttribute(ATTR_WIDGET_CHECKED, value.checked)
                             is ControlValue.Percentage -> span.setAttribute(ATTR_CONTROL_VALUE, value.percent)
+                            is ControlValue.SelectedDate ->
+                                span.setAttribute(ATTR_CONTROL_SELECTED_DATE, value.dayOffset)
+
+                            is ControlValue.SelectedDateRange -> {
+                                // Either end may be absent: a range picker can be confirmed with only
+                                // one side chosen.
+                                value.startDayOffset?.let { span.setAttribute(ATTR_CONTROL_START_DATE, it) }
+                                value.endDayOffset?.let { span.setAttribute(ATTR_CONTROL_END_DATE, it) }
+                            }
+
                             null -> Unit
                         }
                     } catch (throwable: Throwable) {

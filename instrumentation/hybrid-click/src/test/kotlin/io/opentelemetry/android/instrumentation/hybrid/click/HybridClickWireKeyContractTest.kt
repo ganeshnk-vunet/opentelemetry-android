@@ -7,11 +7,15 @@ package io.opentelemetry.android.instrumentation.hybrid.click
 
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_CONTROL_SELECTION_MODE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_CONTROL_TYPE
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_CONTROL_END_DATE
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_CONTROL_SELECTED_DATE
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_CONTROL_START_DATE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_CONTROL_VALUE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_GESTURE_TYPE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_INTERACTION_TYPE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.ATTR_WIDGET_CHECKED
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.GestureType
+import io.opentelemetry.android.instrumentation.hybrid.click.shared.INTERACTION_TYPE_DATE_PICKER
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.INTERACTION_TYPE_SLIDER
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.INTERACTION_TYPE_TOGGLE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.SELECTION_MODE_MULTIPLE
@@ -26,6 +30,7 @@ import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_TEXT
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_TOGGLE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.resolveInteractionType
+import io.opentelemetry.android.instrumentation.hybrid.click.view.DatePickerSelectionReader
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.resolveSelectionMode
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.Test
@@ -71,6 +76,35 @@ class HybridClickWireKeyContractTest {
     fun `interaction kinds use the canonical vocabulary`() {
         assertThat(INTERACTION_TYPE_TOGGLE).isEqualTo("toggle")
         assertThat(INTERACTION_TYPE_SLIDER).isEqualTo("slider")
+        assertThat(INTERACTION_TYPE_DATE_PICKER).isEqualTo("date_picker")
+    }
+
+    @Test
+    fun `date selection uses the canonical wire keys`() {
+        assertThat(ATTR_CONTROL_SELECTED_DATE).isEqualTo("ui.control.value.selected_date")
+        assertThat(ATTR_CONTROL_START_DATE).isEqualTo("ui.control.value.start_date")
+        assertThat(ATTR_CONTROL_END_DATE).isEqualTo("ui.control.value.end_date")
+    }
+
+    /**
+     * `MaterialDatePicker` sets this string on its confirm button, but the constant holding it is
+     * package-private, so the literal has to be duplicated here. Every date-picker span depends on
+     * it: if Material ever renames the tag, recognition stops silently and the signal simply
+     * disappears. Pinned so that shows up as a failing test instead.
+     */
+    @Test
+    fun `date picker confirm button tag matches the Material internal`() {
+        assertThat(DatePickerSelectionReader.CONFIRM_BUTTON_TAG).isEqualTo("CONFIRM_BUTTON_TAG")
+    }
+
+    /**
+     * A date picker's confirm button is an ordinary button, so the kind cannot come from the widget
+     * type -- the detector supplies it instead. This pins that `resolveInteractionType` does *not*
+     * quietly grow a `button -> date_picker` rule, which would tag every button in every app.
+     */
+    @Test
+    fun `interaction type is not derived from a plain button`() {
+        assertThat(resolveInteractionType(WIDGET_TYPE_BUTTON, GestureType.TAP)).isNotEqualTo("date_picker")
     }
 
     @Test

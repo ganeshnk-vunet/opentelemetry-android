@@ -4,6 +4,27 @@
 
 ### Added
 
+- Hybrid-click date-picker capture: confirming a Material date picker now reports
+  `interaction.type = date_picker` on the confirm-button span, plus `ui.control.value.selected_date`
+  for a single date or `ui.control.value.start_date` / `.end_date` for a range. That tap already
+  produced a span — an anonymous `button` labelled with a localized "OK" — so this adds meaning to an
+  existing span rather than a new one; there is no double counting and span volume is unchanged.
+  `ui.control.type` deliberately **stays `button`**, because the tapped widget genuinely is a confirm
+  button, so nothing keyed on `ui.control.type` shifts. The dates are **whole-day offsets from today**
+  (`-30` for a month ago), never absolute dates: a chosen date is user-entered data, and this module
+  excludes such values rather than sanitizing them. An offset still answers what a statement or
+  booking flow wants — how far back or forward people reach — and the range length is `end - start`,
+  needing no extra key. **Known limit: that makes these attributes not directly comparable with a
+  platform reporting absolute dates**, the same open question as the slider's percentage-vs-raw; the
+  canonical definition should settle both together. Recognition is by the confirm button's tag plus a
+  duck-typed `getSelection()` on the owning fragment, so it needs no dependency on
+  `com.google.android.material` and covers app subclasses; it is coupled to Material's undocumented
+  `"CONFIRM_BUTTON_TAG"` string, which is pinned by a test so a rename fails the build instead of
+  silently dropping the signal. **Coverage is Material-only by construction:** the framework's
+  `android.app.DatePickerDialog` is a raw `AlertDialog` with no discoverable window and emits nothing,
+  Compose date pickers are not detected, and `MaterialTimePicker` is out of scope (it sets no button
+  tag, and canonical defines no `time_picker` value). Cancelling a picker stays an ordinary `tap`.
+  No public API / `apiCheck` impact.
 - Hybrid-click slider capture, Compose path: a Compose `Slider` now produces a `ui.interaction` span
   with `ui.control.type = slider` and `interaction.type = slider`, completing the slider work across
   both UI frameworks. Compose sliders were previously undetected for a different reason than the
