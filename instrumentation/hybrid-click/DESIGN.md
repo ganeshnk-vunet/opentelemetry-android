@@ -167,6 +167,29 @@ flowchart TD
     next -->|queue empty| result["Return deepest<br/>clickable target"]
 ```
 
+### List and grid rows
+
+An `AdapterView` — `ListView`, `GridView` — marks **itself** clickable and dispatches item clicks
+internally, so its rows are not clickable. Without special handling the deepest clickable target for
+a tap anywhere in a list is the list container, which means every row in a list resolves to the same
+target: same id, same type, and a label taken from whichever row came first in the descendant search
+regardless of which row was tapped.
+
+That is wrong in a way worth spelling out, because it does not look wrong: the label is a real string
+from a real row, so nothing about the span suggests it is misattributed. In a list of transactions or
+contacts, the first row's text — often personal data — ends up stamped on every tap in that list.
+
+Rows of an `AdapterView` are therefore treated as valid tap targets, the same "not clickable, but
+genuinely the thing tapped" exception already made for `EditText`. Resolving the row instead of the
+container fixes identity as well as the label, which a label-only fix would not.
+
+`AbsSpinner` is excluded: a spinner's single child is its *selected* item's view, not a row, so the
+spinner itself stays the target. A spinner's actual options live in a `PopupWindow` this module
+cannot see at all (see *Window Tracking → Not covered*).
+
+`RecyclerView` is unaffected — its rows normally receive click listeners from the adapter, so they
+are already clickable and already resolve correctly.
+
 ### Compose Boundary Gating
 
 The View detector recognizes Compose host views by checking if the class name starts with

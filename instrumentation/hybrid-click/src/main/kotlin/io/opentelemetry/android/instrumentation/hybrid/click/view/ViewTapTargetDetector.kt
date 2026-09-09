@@ -9,6 +9,8 @@ import android.text.InputType
 import android.view.View
 import android.view.ViewGroup
 import android.widget.AbsSeekBar
+import android.widget.AbsSpinner
+import android.widget.AdapterView
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.CheckedTextView
@@ -204,7 +206,31 @@ internal class ViewTapTargetDetector : TapTargetDetector {
     private fun isToggle(view: View): Boolean = view is CompoundButton || view is CheckedTextView
 
     private fun isValidClickTarget(view: View): Boolean =
-        view.isVisible && (view.isClickable || view is EditText || isSeekBar(view))
+        view.isVisible &&
+            (view.isClickable || view is EditText || isSeekBar(view) || isAdapterViewItem(view))
+
+    /**
+     * Whether [view] is a row of an [AdapterView] — a `ListView` or `GridView` item.
+     *
+     * Such rows are not themselves clickable: an [AdapterView] marks *itself* clickable and
+     * dispatches item clicks internally. Without this, the deepest clickable target for a tap
+     * anywhere in a list is the list container, so every row in a list resolved to the same target —
+     * same id, same label, same type — and the label came from whichever row happened to be first in
+     * the descendant search, regardless of which row was actually tapped. Accepting the row instead
+     * fixes identity and label together.
+     *
+     * This is the same "not clickable, but genuinely the thing tapped" exception already made for
+     * [EditText] and for range controls (see [isSeekBar]).
+     *
+     * [AbsSpinner] is excluded because its child is not a row: a spinner's single child is the
+     * *selected* item's view, so treating it as the target would report the inner view instead of the
+     * spinner itself. A spinner's actual options live in a `PopupWindow`, which this module cannot
+     * see at all (see DESIGN.md, "Not covered").
+     */
+    private fun isAdapterViewItem(view: View): Boolean {
+        val parent = view.parent
+        return parent is AdapterView<*> && parent !is AbsSpinner
+    }
 
     private fun isPasswordField(view: EditText): Boolean {
         val variation = view.inputType and InputType.TYPE_MASK_VARIATION

@@ -356,6 +356,20 @@
 
 ### Fixed
 
+- Hybrid-click list attribution: a tap on a `ListView` or `GridView` row now reports **that row**
+  rather than the list container. An `AdapterView` marks itself clickable and dispatches item clicks
+  internally, so its rows are not clickable and the deepest clickable target was the list itself —
+  meaning every row in a list produced an identical `ui.interaction` span (same `app.widget.id`, same
+  `ui.control.type`), labelled from whichever row came first in the descendant search regardless of
+  which row was tapped. List taps were therefore unattributable, and the label was confidently wrong
+  rather than merely generic, so nothing about the span suggested it was misattributed. It also meant
+  the first row's text — often personal data in a list of transactions or contacts — was stamped onto
+  every tap in that list. Rows are now valid tap targets, the same exception already made for
+  `EditText`; resolving the row fixes identity as well as the label. `AbsSpinner` is excluded, since a
+  spinner's single child is its selected-item view rather than a row and the spinner itself should
+  stay the target. `RecyclerView` was never affected — its rows normally get click listeners from the
+  adapter. **Note `app.widget.type` / `ui.control.type` changes for list rows**, from `view` (the
+  container) to whatever the row actually is, usually `text`. No public API / `apiCheck` impact.
 - Cold `app.start` now carries `activity.name` (the launch activity's simple class name), matching
   warm/hot. Previously it was set only on the child `activity.lifecycle` span.
 - OkHttp Byte Buddy advice classes (`OkHttpClientAdvice`, `OkHttpCallbackAdvice`) now ship in `okhttp3-library` so woven `OkHttpClient` bytecode resolves them at runtime (fixes `NoClassDefFoundError` on Android).
