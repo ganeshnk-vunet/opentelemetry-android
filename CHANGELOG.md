@@ -372,6 +372,18 @@
 
 ### Fixed
 
+- Hybrid-click calendar privacy: taps on Material calendar controls no longer report the dates they
+  name. A day cell reports `"calendar day"` instead of `"Friday, September 4"`, the month/year
+  navigation button reports `"calendar month"` instead of `"September 2026"`, and a year cell reports
+  `"calendar year"` instead of `"Navigate to year 2030"` — in each case the control's accessibility
+  label **is** the date. Choosing a date in a picker was therefore putting that date on the wire
+  through the label, defeating the point of reporting the confirmed selection as a relative day offset.
+  Same treatment a password field already gets: where a widget's natural label is the sensitive value
+  itself, it is replaced rather than sanitized. The interaction is still reported — only the date is
+  withheld. Recognition is by the parent's qualified name, so it needs no dependency on
+  `com.google.android.material`; only the day grid matches, since the year selector's cells live in a
+  `RecyclerView`. Ordinary list rows are untouched and keep their labels. No public API / `apiCheck`
+  impact.
 - Hybrid-click list attribution: a tap on a `ListView` or `GridView` row now reports **that row**
   rather than the list container. An `AdapterView` marks itself clickable and dispatches item clicks
   internally, so its rows are not clickable and the deepest clickable target was the list itself —

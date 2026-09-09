@@ -205,6 +205,75 @@ internal class ViewTapTargetDetector : TapTargetDetector {
 
     private fun isToggle(view: View): Boolean = view is CompoundButton || view is CheckedTextView
 
+    /**
+     * A placeholder label for a Material calendar control, or `null` when [view] is not one.
+     *
+     * Every control inside a calendar names a date: a day cell is labelled with its full date, the
+     * navigation button with its month and year, a year cell with its year. Each is replaced with a
+     * constant saying only *what kind* of control was tapped, so the interaction is still counted
+     * while the date stays off the wire.
+     */
+    private fun calendarLabelOf(view: View): String? =
+        when {
+            isCalendarDayCell(view) -> CALENDAR_DAY_LABEL
+            isCalendarMonthSelector(view) -> CALENDAR_MONTH_LABEL
+            isCalendarYearCell(view) -> CALENDAR_YEAR_LABEL
+            else -> null
+        }
+
+    /**
+     * Whether [view] is a day cell of a Material calendar.
+     *
+     * Matched through its parent, by qualified name, because this module must not depend on
+     * `com.google.android.material` — the same approach used for `SwitchCompat`/`MaterialSwitch`.
+     */
+    private fun isCalendarDayCell(view: View): Boolean {
+        var type: Class<*>? = (view.parent as? View)?.javaClass ?: return false
+        while (type != null) {
+            if (type.name == CLASS_NAME_MATERIAL_CALENDAR_GRID) {
+                return true
+            }
+            type = type.superclass
+        }
+        return false
+    }
+
+    /**
+     * Whether [view] is the calendar's month/year navigation button, whose text is the month and
+     * year currently shown ("September 2026").
+     *
+     * Matched on its resource entry *name* rather than its id: the id is a private Material
+     * resource, but the name is readable through [android.content.res.Resources.getResourceEntryName]
+     * without depending on Material at all.
+     */
+    private fun isCalendarMonthSelector(view: View): Boolean = resourceEntryNameOf(view) == RES_NAME_CALENDAR_MONTH_TOGGLE
+
+    /**
+     * Whether [view] is a year cell in the calendar's year picker, labelled with its year.
+     *
+     * Year cells carry no id of their own and are ordinary `TextView`s — indistinguishable from a day
+     * cell in isolation, since both use the same Material style — so they are identified by the
+     * year-selector container they sit inside.
+     */
+    private fun isCalendarYearCell(view: View): Boolean {
+        var ancestor = view.parent
+        while (ancestor is View) {
+            if (resourceEntryNameOf(ancestor) == RES_NAME_CALENDAR_YEAR_FRAME) {
+                return true
+            }
+            ancestor = ancestor.parent
+        }
+        return false
+    }
+
+    /** The resource entry name behind [view]'s id, or `null` when it has none. */
+    private fun resourceEntryNameOf(view: View): String? =
+        try {
+            view.resources?.getResourceEntryName(view.id)
+        } catch (_: Throwable) {
+            null
+        }
+
     private fun isValidClickTarget(view: View): Boolean =
         view.isVisible &&
             (view.isClickable || view is EditText || isSeekBar(view) || isAdapterViewItem(view))
@@ -278,6 +347,13 @@ internal class ViewTapTargetDetector : TapTargetDetector {
         }
 
     private fun viewToLabel(view: View): String {
+        // A calendar control's accessibility label *is* the date it represents — "Friday, September 4",
+        // "September 2026", "Navigate to year 2030" — so resolving one normally would put the date a
+        // user is choosing straight onto the wire. Same reasoning as the password branch below: when
+        // a widget's natural label is the sensitive value itself, it is replaced with a constant
+        // rather than sanitized.
+        calendarLabelOf(view)?.let { return it }
+
         val contentDescription = view.contentDescription?.toString()
 
         // Editable text fields must never expose their typed content (it may be PII or a password).
@@ -387,14 +463,43 @@ internal class ViewTapTargetDetector : TapTargetDetector {
     private val View.isVisible: Boolean
         get() = visibility == View.VISIBLE
 
-    private companion object {
+    /**
+     * `internal` rather than `private` so the wire-visible placeholder labels and the Material
+     * resource names below can be pinned by a contract test. The class itself is `internal`, so this
+     * widens nothing outside the module and does not affect the API dump.
+     */
+    internal companion object {
         /** Upper bound on nodes scanned when resolving a label, to keep traversal cheap. */
         const val MAX_LABEL_SEARCH_NODES = 100
 
         /** Safe placeholder used when a password field has no usable non-value label. */
         const val PASSWORD_FIELD_LABEL = "password field"
 
+        /**
+         * Safe placeholder for a calendar day, whose own label is the date it represents.
+         *
+         * The interaction is still reported — only the date is withheld. Which day was chosen is
+         * carried, when a picker is confirmed, as a relative offset instead.
+         */
+        const val CALENDAR_DAY_LABEL = "calendar day"
+
+        /** Safe placeholder for the calendar's month/year navigation button. */
+        const val CALENDAR_MONTH_LABEL = "calendar month"
+
+        /** Safe placeholder for a year cell in the calendar's year picker. */
+        const val CALENDAR_YEAR_LABEL = "calendar year"
+
+        /** Resource entry name of Material's month/year toggle — see [isCalendarMonthSelector]. */
+        const val RES_NAME_CALENDAR_MONTH_TOGGLE = "month_navigation_fragment_toggle"
+
+        /** Resource entry name of Material's year-picker container — see [isCalendarYearCell]. */
+        const val RES_NAME_CALENDAR_YEAR_FRAME = "mtrl_calendar_year_selector_frame"
+
         /** Qualified name of Material's slider base class — see [isMaterialSlider]. */
         const val CLASS_NAME_MATERIAL_BASE_SLIDER = "com.google.android.material.slider.BaseSlider"
+
+        /** Qualified name of Material's calendar day grid — see [isCalendarDayCell]. */
+        const val CLASS_NAME_MATERIAL_CALENDAR_GRID =
+            "com.google.android.material.datepicker.MaterialCalendarGridView"
     }
 }

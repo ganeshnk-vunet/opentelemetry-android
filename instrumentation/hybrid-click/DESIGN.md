@@ -190,6 +190,45 @@ cannot see at all (see *Window Tracking → Not covered*).
 `RecyclerView` is unaffected — its rows normally receive click listeners from the adapter, so they
 are already clickable and already resolve correctly.
 
+#### Calendar controls
+
+Every control inside a Material calendar names a date through its accessibility label, so resolving
+any of them normally would put the date a user is choosing straight onto the wire:
+
+| tapped | natural label | reported instead |
+|---|---|---|
+| day cell | `Friday, September 4` | `calendar day` |
+| month/year navigation button | `September 2026` | `calendar month` |
+| year cell in the year picker | `Navigate to year 2030` | `calendar year` |
+
+This is the same treatment a password field gets: when a widget's natural label is the sensitive
+value itself, it is replaced rather than sanitized. The interaction is still reported — only the date
+is withheld. Which day was ultimately chosen is carried when the picker is confirmed, as a relative
+day offset.
+
+How each is recognized, none of which requires depending on `com.google.android.material`:
+
+- **Day cell** — its parent's qualified name is `MaterialCalendarGridView`, matched the same way
+  `SwitchCompat`/`MaterialSwitch` and the Material slider already are.
+- **Month button** — its own resource entry *name* is `month_navigation_fragment_toggle`. The id is a
+  private Material resource, but the name is readable via `getResourceEntryName`.
+- **Year cell** — an ancestor's resource entry name is `mtrl_calendar_year_selector_frame`. Year cells
+  have no id of their own and are ordinary `TextView`s using the *same* Material style as day cells,
+  so they are indistinguishable in isolation and must be identified by their container.
+
+The suppression is deliberately narrow: an app button whose text merely reads like a month keeps its
+own label, and ordinary list rows keep theirs — those labels are the reason click telemetry is useful
+at all.
+
+**Known limits.** The three anchors are undocumented Material internals; if any is renamed the
+corresponding suppression stops silently and that date resurfaces. The values are pinned by a
+contract test so *our* changing them is deliberate, but a Material rename can only be caught by
+re-checking against a real picker. The year anchor exists only in Material's horizontal calendar
+layout, which is what the dialog uses; a variant without that frame would not match. And the
+month/year rules are verified against a real picker on device rather than by unit test, because
+Material's private resource names cannot be synthesized in this module's tests — inventing ids there
+would test the stand-in rather than the rule.
+
 ### Compose Boundary Gating
 
 The View detector recognizes Compose host views by checking if the class name starts with

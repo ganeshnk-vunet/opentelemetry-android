@@ -27,6 +27,7 @@ import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.WIDGET_TYPE_TOGGLE
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.resolveInteractionType
 import io.opentelemetry.android.instrumentation.hybrid.click.shared.resolveSelectionMode
+import io.opentelemetry.android.instrumentation.hybrid.click.view.ViewTapTargetDetector
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.Test
 
@@ -163,6 +164,21 @@ class HybridClickWireKeyContractTest {
     @Test
     fun `gesture type and interaction type are distinct keys`() {
         assertThat(ATTR_GESTURE_TYPE).isNotEqualTo(ATTR_INTERACTION_TYPE)
+    }
+
+    /**
+     * The placeholders substituted for calendar controls, and the Material resource names the
+     * month/year rules key on. All five are wire-visible strings or undocumented Material
+     * internals: if Material renames a resource the suppression silently stops and dates resurface,
+     * so the values are pinned here to make any change deliberate rather than invisible.
+     */
+    @Test
+    fun `calendar placeholders and the resource names they key on are pinned`() {
+        assertThat(ViewTapTargetDetector.CALENDAR_DAY_LABEL).isEqualTo("calendar day")
+        assertThat(ViewTapTargetDetector.CALENDAR_MONTH_LABEL).isEqualTo("calendar month")
+        assertThat(ViewTapTargetDetector.CALENDAR_YEAR_LABEL).isEqualTo("calendar year")
+        assertThat(ViewTapTargetDetector.RES_NAME_CALENDAR_MONTH_TOGGLE).isEqualTo("month_navigation_fragment_toggle")
+        assertThat(ViewTapTargetDetector.RES_NAME_CALENDAR_YEAR_FRAME).isEqualTo("mtrl_calendar_year_selector_frame")
     }
 
     @Test
