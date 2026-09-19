@@ -273,16 +273,16 @@ class NavigationSpanEmitterTest {
     }
 
     @Test
-    fun omits_duration_for_a_navigation_with_no_attributable_user_action() {
+    fun reports_zero_for_a_navigation_with_no_attributable_user_action() {
         val exporter = InMemorySpanExporter.create()
         val emitter = NavigationSpanEmitter(tracerFor(exporter))
 
         emitter.emit(candidate())
 
-        // Absent, not zero: a programmatic navigation has no user-perceived wait, and a zero would
-        // be indistinguishable from an instant one.
-        assertThat(durationOfNavigation(exporter))
-            .isNull()
+        // Zero, not absent: the key is present on every ui.navigation span so a consumer never has
+        // to handle a missing column. Zero means "not measurable", and navigation.trigger is what
+        // separates these rows from measured ones.
+        assertThat(durationOfNavigation(exporter)).isEqualTo(0L)
     }
 
     @Test
@@ -325,7 +325,7 @@ class NavigationSpanEmitterTest {
     }
 
     @Test
-    fun omits_a_duration_that_would_be_negative() {
+    fun reports_zero_when_the_elapsed_time_would_be_negative() {
         val exporter = InMemorySpanExporter.create()
         val emitter = NavigationSpanEmitter(tracerFor(exporter))
         val intentAtNanos = 10_000_000_000L
@@ -337,10 +337,9 @@ class NavigationSpanEmitterTest {
             ),
         )
 
-        // A destination committed before the action that caused it is not a duration worth
-        // reporting, whatever produced the ordering.
-        assertThat(durationOfNavigation(exporter))
-            .isNull()
+        // A destination committed before the action that caused it is not a trustworthy
+        // measurement, whatever produced the ordering, so it reports not-measurable.
+        assertThat(durationOfNavigation(exporter)).isEqualTo(0L)
     }
 
     @Test
@@ -406,7 +405,7 @@ class NavigationSpanEmitterTest {
     }
 
     @Test
-    fun omits_a_duration_beyond_the_attribution_limit_rather_than_clamping_it() {
+    fun reports_zero_beyond_the_attribution_limit_rather_than_clamping_it() {
         val exporter = InMemorySpanExporter.create()
         val emitter = NavigationSpanEmitter(tracerFor(exporter))
         val intentAtNanos = 10_000_000_000L
@@ -418,9 +417,9 @@ class NavigationSpanEmitterTest {
             ),
         )
 
-        // Omitted, not clamped: a clamped value would be indistinguishable from a real navigation
-        // of exactly that length.
-        assertThat(durationOfNavigation(exporter)).isNull()
+        // Not clamped: a clamped value would be indistinguishable from a real navigation of
+        // exactly that length. Reported as not-measurable instead.
+        assertThat(durationOfNavigation(exporter)).isEqualTo(0L)
     }
 
     @Test
@@ -459,6 +458,29 @@ class NavigationSpanEmitterTest {
 
         assertThat(navigationSpans(exporter).map { it.attributes.get(NavigationConstants.NAVIGATION_DURATION_MS_KEY) })
             .containsExactly(800L, 800L)
+    }
+
+    @Test
+    fun the_duration_key_is_present_on_every_navigation_span() {
+        val exporter = InMemorySpanExporter.create()
+        val tracer = tracerFor(exporter)
+        val emitter = NavigationSpanEmitter(tracer)
+
+        // A programmatic navigation with nothing behind it...
+        emitter.emit(candidate(destinationName = "Programmatic"))
+        // ...and a tap-driven one.
+        val token = beginClickInteraction(tracer)
+        val tapAtNanos = ActiveInteractionContext.lastInteractionStartedAtNanos()!!
+        ActiveInteractionContext.end(token)
+        emitter.emit(
+            candidate(destinationName = "Tapped").copy(timestampNanos = tapAtNanos + 250L * NANOS_PER_MILLI),
+        )
+
+        // The key is on both, so a consumer never has to handle a missing column. The values are
+        // what separate them; in production navigation.trigger says which is which, and the
+        // collectors always supply one.
+        assertThat(navigationSpans(exporter).map { it.attributes.get(NavigationConstants.NAVIGATION_DURATION_MS_KEY) })
+            .containsExactly(0L, 250L)
     }
 
     private fun tracerFor(exporter: InMemorySpanExporter): Tracer {

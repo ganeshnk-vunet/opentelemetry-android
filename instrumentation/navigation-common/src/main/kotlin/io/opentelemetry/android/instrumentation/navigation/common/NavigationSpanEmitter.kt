@@ -55,9 +55,7 @@ class NavigationSpanEmitter(
             spanBuilder.setAttribute(NAVIGATION_TRIGGER_KEY, it)
         }
 
-        resolveDurationMs(candidate)?.let {
-            spanBuilder.setAttribute(NAVIGATION_DURATION_MS_KEY, it)
-        }
+        spanBuilder.setAttribute(NAVIGATION_DURATION_MS_KEY, resolveDurationMs(candidate))
 
         candidate.stackDepthBefore?.let {
             spanBuilder.setAttribute(NAVIGATION_STACK_DEPTH_BEFORE_KEY, it.toLong())
@@ -169,15 +167,14 @@ class NavigationSpanEmitter(
      * Time the destination then spends composing or loading before anything is drawn is `ttid_ms`,
      * which is not implemented.
      */
-    private fun resolveDurationMs(candidate: NavigationTransitionCandidate): Long? {
+    private fun resolveDurationMs(candidate: NavigationTransitionCandidate): Long {
         val intentAtNanos =
-            candidate.intentAtNanos ?: ActiveInteractionContext.lastInteractionStartedAtNanos()
-        if (intentAtNanos == null) {
-            return null
-        }
+            candidate.intentAtNanos
+                ?: ActiveInteractionContext.lastInteractionStartedAtNanos()
+                ?: return NOT_ATTRIBUTABLE_MS
         val elapsedNanos = candidate.timestampNanos - intentAtNanos
         if (elapsedNanos < 0 || elapsedNanos > MAX_ATTRIBUTION_NANOS) {
-            return null
+            return NOT_ATTRIBUTABLE_MS
         }
         return elapsedNanos / NANOS_PER_MILLI
     }
@@ -192,6 +189,24 @@ class NavigationSpanEmitter(
          * navigation with no user action behind it cannot borrow an unrelated tap's timestamp.
          */
         internal const val MAX_ATTRIBUTION_NANOS = 30_000_000_000L
+
+        /**
+         * Reported when no trustworthy user-action measurement exists, so the key is present on
+         * every `ui.navigation` span rather than missing on some.
+         *
+         * Three cases reach it: no user action at all behind the navigation (a redirect, a timer, a
+         * deep link, a cold-start transition), an action older than [MAX_ATTRIBUTION_NANOS], and a
+         * destination that committed before its own action. The last two are cases where an action
+         * exists but the measurement derived from it cannot be trusted.
+         *
+         * **A consumer must not read this as an instant navigation.** Zero means "not measurable",
+         * and it shares the column with real measurements, so any average or percentile that
+         * includes these rows is pulled toward zero. `navigation.trigger` is the discriminator:
+         * `user_tap` and `back_press` carry a measured value, `programmatic` and `unknown` are the
+         * ones that land here. A genuinely instant navigation is not a practical concern — a real
+         * tap-driven transition does not commit within the same millisecond as its tap.
+         */
+        internal const val NOT_ATTRIBUTABLE_MS = 0L
 
         /** Clears the active navigation context; call from navigation instrumentation [uninstall]. */
         @JvmStatic

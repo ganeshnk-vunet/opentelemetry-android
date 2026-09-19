@@ -16,9 +16,12 @@
   investigating — a 3-second navigation would report no duration rather than 3000 ms. A back
   navigation slower than 1 s is therefore named `programmatic` and still carries its duration.
   Staleness is bounded at 30 s instead, beyond which the attribute is **omitted rather than clamped**,
-  since a clamped value would be indistinguishable from a real navigation of that length. **Absent,
-  never zero, when no user action can be attributed** — a programmatic navigation has no
-  user-perceived wait. Covers up to the framework reporting the destination as current; time spent
+  since a clamped value would be indistinguishable from a real navigation of that length. **Set on every `ui.navigation` span**, reporting
+  `0` when no trustworthy user-action measurement exists — a programmatic navigation, an action
+  older than the limit, or a destination that committed before its own action. `0` means "not
+  measurable", **not** an instant navigation: those rows share the column with real measurements, so
+  filter on `navigation.trigger` (`user_tap`/`back_press` carry a measured value) before computing
+  averages or percentiles. Covers up to the framework reporting the destination as current; time spent
   composing or loading before the first frame is `navigation.ttid_ms`, which is deliberately not
   included.
 

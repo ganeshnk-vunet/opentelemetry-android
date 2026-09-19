@@ -68,16 +68,27 @@ longer than any navigation worth recording, short enough that a navigation with 
 behind it cannot inherit an unrelated earlier tap's timestamp. Beyond it the attribute is **omitted,
 not clamped**: a clamped value would be indistinguishable from a real navigation of that length.
 
-### Absent, never zero
+### Always present; `0` means "not measurable"
 
-No attributable user action → no attribute. A programmatic navigation — a redirect, a timer, a deep
-link — has no user-perceived wait, and a zero would be indistinguishable from an instant navigation
-while dragging every percentile down. Same convention as `navigation.stack_depth.*`. A negative
-result is discarded on the same principle.
+`navigation.duration_ms` is set on **every** `ui.navigation` span, so a consumer never has to handle
+a missing column. It reports `0` when no trustworthy user-action measurement exists — three cases:
+
+- no user action behind the navigation at all (a redirect, a timer, a deep link, a cold-start
+  transition);
+- an action older than the attribution limit;
+- a destination that committed before its own action.
+
+> [!IMPORTANT]
+> **`0` is not an instant navigation.** These rows share the column with real measurements, so any
+> average or percentile computed over all `ui.navigation` spans is pulled toward zero. Filter before
+> aggregating. `navigation.trigger` is the discriminator: `user_tap` and `back_press` carry a
+> measured value; `programmatic` and `unknown` are the ones that report `0`. A genuinely instant
+> navigation is not a practical concern — a real tap-driven transition does not commit within the
+> same millisecond as its tap.
 
 The interaction start is **not consumed on read**, because two navigation collectors can be active
 in one process — a Compose host that also runs the View collector emits a `ui.navigation` span from
-each for the same navigation, and consuming would give the first a duration and the second none.
+each for the same navigation, and consuming would give the first a duration and the second `0`.
 
 ### What it does and does not cover
 
