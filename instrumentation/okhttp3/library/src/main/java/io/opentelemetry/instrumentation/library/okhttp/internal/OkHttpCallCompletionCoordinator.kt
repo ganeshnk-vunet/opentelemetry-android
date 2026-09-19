@@ -41,6 +41,25 @@ import okhttp3.Response
  *    `Response`, `Context` and `Span` for the life of the process. [completePending] also ends the
  *    span before consulting the enricher; that ordering is defensive rather than a fix, since
  *    [configure] always sets the instrumenter and the enricher together.
+ *
+ * ### Why the pending map holds strong references, and what that costs
+ *
+ * A pending entry pins its `Call` until the call completes or the watchdog expires it. OkHttp tracks
+ * its own in-flight calls as `RealConnection.calls: List<Reference<RealCall>>` -- *weak* references,
+ * which is how it notices an abandoned response body and reclaims the socket. Our strong reference
+ * suppresses that detection, so for a leaked body the socket is reclaimed up to one cap later than
+ * it otherwise would be. That is the price of deferring completion at all, and the cap is what
+ * bounds it; before the watchdog existed the suppression was permanent.
+ *
+ * **Weak references cannot be substituted here, and trying is actively worse.** The map's *value*
+ * reaches its own *key* by two independent strong paths: `PendingTrace.chain` is a
+ * `RealInterceptorChain`, which holds `private final RealCall call`, and `PendingTrace.response` is
+ * a `Response`, which holds `private final Exchange exchange`, which holds the same `RealCall`. A
+ * `WeakHashMap` keyed on `Call` would therefore never evict -- an entry keeps its own key strongly
+ * reachable -- turning today's bounded retention into a permanent one. A `ReferenceQueue` over
+ * `WeakReference<Call>` fails for the same reason: the referent stays strongly reachable, nothing is
+ * ever enqueued, and a queue-draining thread would block forever. Both would first need `chain` and
+ * `response` released, and both are required to extract attributes at `Instrumenter.end`.
  */
 internal object OkHttpCallCompletionCoordinator {
     private class PendingTrace(
