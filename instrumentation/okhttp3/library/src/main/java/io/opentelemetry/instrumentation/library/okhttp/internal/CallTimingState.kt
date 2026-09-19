@@ -5,7 +5,14 @@
 
 package io.opentelemetry.instrumentation.library.okhttp.internal
 
-internal class CallTimingState {
+internal class CallTimingState(
+    /**
+     * When this state was created, used only to age out entries for calls that never started a
+     * span. Websocket upgrades are the case that matters: they reach the `EventListener` but skip
+     * network interceptors, so nothing else ever collects their timing state.
+     */
+    var createdAtNanos: Long = System.nanoTime(),
+) {
     var callStartNanos: Long? = null
     var callEndNanos: Long? = null
     var dnsStartNanos: Long? = null

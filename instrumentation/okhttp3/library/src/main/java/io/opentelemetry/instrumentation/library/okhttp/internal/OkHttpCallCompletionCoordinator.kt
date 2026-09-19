@@ -8,31 +8,76 @@ package io.opentelemetry.instrumentation.library.okhttp.internal
 import io.opentelemetry.api.trace.Span
 import io.opentelemetry.context.Context
 import io.opentelemetry.instrumentation.api.instrumenter.Instrumenter
+import io.opentelemetry.instrumentation.library.okhttp.OkHttpInstrumentation
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 import okhttp3.Call
 import okhttp3.Interceptor
 import okhttp3.Response
 
+/**
+ * Owns the end of every OkHttp `http.client` span.
+ *
+ * A span is started by [TimingTracingInterceptor] inside a *network* interceptor and is ended here,
+ * from OkHttp's `EventListener`. The listener is the only source of the response-body events the
+ * `http.client.timing.*` attributes are built from, which is why completion is deferred to it at
+ * all.
+ *
+ * Two properties matter and are easy to lose:
+ *
+ * 1. **A span must end close to when the request actually finished.** OkHttp reports `callEnd` when
+ *    the response body reaches EOF *or is closed*, whichever comes first. A body read to
+ *    exhaustion therefore ends its span promptly, but one that is never read -- an SSE stream, a
+ *    long poll, or a body the caller simply drops -- reports nothing until it is closed, and the
+ *    span stretches across the whole of that wait. Production spans of up to 23 hours came from
+ *    exactly this. The watchdog below bounds it.
+ * 2. **A span must end at all.** A redirect or retry re-entering [registerTraced] completes the
+ *    previous attempt rather than overwriting it, and the watchdog ends anything that outlives its
+ *    deadline. Without that backstop a call whose body is never touched leaks its `Call`,
+ *    `Response`, `Context` and `Span` for the life of the process. [completePending] also ends the
+ *    span before consulting the enricher; that ordering is defensive rather than a fix, since
+ *    [configure] always sets the instrumenter and the enricher together.
+ */
 internal object OkHttpCallCompletionCoordinator {
-    private data class PendingTrace(
+    private class PendingTrace(
         val context: Context,
         val chain: Interceptor.Chain,
         val span: Span,
+        val deadlineNanos: Long,
         @Volatile var response: Response? = null,
         @Volatile var error: Throwable? = null,
     )
 
     private val pendingTraces = ConcurrentHashMap<Call, PendingTrace>()
-    private var instrumenter: Instrumenter<Interceptor.Chain, Response>? = null
-    private var spanEnricher: OkHttpTimingSpanEnricher? = null
+
+    @Volatile private var instrumenter: Instrumenter<Interceptor.Chain, Response>? = null
+
+    @Volatile private var spanEnricher: OkHttpTimingSpanEnricher? = null
+
+    @Volatile private var maxCallDurationNanos: Long =
+        TimeUnit.MILLISECONDS.toNanos(OkHttpInstrumentation.DEFAULT_MAX_CALL_DURATION_MILLIS)
+
+    @Volatile private var nanoTimeSource: () -> Long = { System.nanoTime() }
+
+    @Volatile private var watchdog: ScheduledExecutorService? = null
+
+    @Volatile private var watchdogTask: ScheduledFuture<*>? = null
+
+    @Volatile private var ownsWatchdog: Boolean = false
 
     fun configure(
         instrumenter: Instrumenter<Interceptor.Chain, Response>,
         spanEnricher: OkHttpTimingSpanEnricher,
+        maxCallDurationMillis: Long = OkHttpInstrumentation.DEFAULT_MAX_CALL_DURATION_MILLIS,
     ) {
         this.instrumenter = instrumenter
         this.spanEnricher = spanEnricher
+        this.maxCallDurationNanos = TimeUnit.MILLISECONDS.toNanos(maxCallDurationMillis)
+        startWatchdog(maxCallDurationMillis)
     }
 
     fun registerTraced(
@@ -41,7 +86,19 @@ internal object OkHttpCallCompletionCoordinator {
         chain: Interceptor.Chain,
         span: Span,
     ) {
-        pendingTraces[call] = PendingTrace(context, chain, span)
+        // A network interceptor runs once per wire attempt, so a redirect or an auth retry brings
+        // the same Call back here. Overwriting the entry would strand the previous attempt's span
+        // with no path to end(); the previous response is finished by definition once a new attempt
+        // has begun, so close it out and give each attempt its own correctly ended span.
+        //
+        // Only an existing entry is completed. Routing the first attempt through complete() would
+        // take its untraced branch and discard the timing state that callStart has already
+        // recorded, losing every http.client.timing.* attribute on the call.
+        pendingTraces.remove(call)?.let { previous ->
+            completePending(call, previous, abandoned = false)
+        }
+        pendingTraces[call] =
+            PendingTrace(context, chain, span, deadlineNanosFor(call))
     }
 
     fun setResponse(
@@ -58,9 +115,23 @@ internal object OkHttpCallCompletionCoordinator {
         pendingTraces[call]?.error = error
     }
 
+    /**
+     * Ends a span without going through the pending map, for the case where no `EventListener`
+     * could be installed and nothing would otherwise ever complete it. See
+     * [OkHttpSingletons.eventListenerWiringFailed].
+     */
+    fun endImmediately(
+        context: Context,
+        chain: Interceptor.Chain,
+        response: Response?,
+        error: Throwable?,
+    ) {
+        instrumenter?.end(context, chain, response, error)
+    }
+
     fun onCallEnd(call: Call) {
         OkHttpCallTimingStore.updateIfPresent(call) { state ->
-            state.callEndNanos = System.nanoTime()
+            state.callEndNanos = nanoTimeSource()
         }
         complete(call)
     }
@@ -72,7 +143,7 @@ internal object OkHttpCallCompletionCoordinator {
         OkHttpCallTimingStore.updateIfPresent(call) { state ->
             state.failed = true
             state.phasesComplete = false
-            state.callEndNanos = System.nanoTime()
+            state.callEndNanos = nanoTimeSource()
         }
         pendingTraces[call]?.error = error
         complete(call)
@@ -87,17 +158,35 @@ internal object OkHttpCallCompletionCoordinator {
         complete(call)
     }
 
-    private fun complete(call: Call) {
+    private fun complete(
+        call: Call,
+        abandoned: Boolean = false,
+    ) {
         val pending = pendingTraces.remove(call)
         if (pending == null) {
             OkHttpCallTimingStore.discard(call)
             return
         }
+        completePending(call, pending, abandoned)
+    }
 
-        val instrumenter = instrumenter ?: return
-        val spanEnricher = spanEnricher ?: return
+    private fun completePending(
+        call: Call,
+        pending: PendingTrace,
+        abandoned: Boolean,
+    ) {
+        // Enrichment is best-effort; ending the span is not. Bailing out here on a missing enricher
+        // would leave a started span that nothing can ever close.
+        val enricher = spanEnricher
+        if (enricher != null) {
+            enricher.enrich(pending.span, call)
+        } else {
+            OkHttpCallTimingStore.discard(call)
+        }
+        if (abandoned) {
+            pending.span.setAttribute(OkHttpTimingAttributes.ABANDONED, true)
+        }
 
-        spanEnricher.enrich(pending.span, call)
         // The response is reported even alongside an error. TimingTracingInterceptor sets it as
         // soon as chain.proceed() returns, so a call that received a 200 and then failed while
         // streaming the body still has one — discarding it here dropped the real status code and
@@ -105,10 +194,121 @@ internal object OkHttpCallCompletionCoordinator {
         // captureNetworkTimingPhases is off, which ends the span with the response before the body
         // is read. It also left the failure indistinguishable from a connection that was never
         // established. Both are passed so the span carries the status code *and* the error.
-        instrumenter.end(pending.context, pending.chain, pending.response, pending.error)
+        instrumenter?.end(pending.context, pending.chain, pending.response, pending.error)
     }
 
-    fun clear() {
-        pendingTraces.clear()
+    /**
+     * OkHttp's own `callTimeout` is the application's statement of the longest call it considers
+     * legitimate, so honour it when set. It defaults to 0, meaning no timeout, in which case the
+     * configured cap applies. Read through the public [Call.timeout] rather than by reflection, so
+     * minification cannot break it.
+     */
+    private fun deadlineNanosFor(call: Call): Long {
+        val callTimeoutNanos =
+            try {
+                call.timeout().timeoutNanos()
+            } catch (_: RuntimeException) {
+                0L
+            }
+        val budget = if (callTimeoutNanos > 0L) callTimeoutNanos else maxCallDurationNanos
+        return nanoTimeSource() + budget
     }
+
+    private fun startWatchdog(maxCallDurationMillis: Long) {
+        if (watchdogTask != null) {
+            return
+        }
+        val executor =
+            watchdog ?: Executors
+                .newSingleThreadScheduledExecutor { runnable ->
+                    Thread(runnable, "otel-okhttp-call-watchdog").apply { isDaemon = true }
+                }.also {
+                    watchdog = it
+                    ownsWatchdog = true
+                }
+        // Fixed delay, not fixed rate: when a cached Android process becomes uncached, a
+        // fixed-rate task fires once for every interval it slept through, all at once.
+        val intervalMillis = sweepIntervalMillis(maxCallDurationMillis)
+        watchdogTask =
+            executor.scheduleWithFixedDelay(
+                ::sweepGuarded,
+                intervalMillis,
+                intervalMillis,
+                TimeUnit.MILLISECONDS,
+            )
+    }
+
+    /**
+     * A repeating scheduled task is suppressed permanently the first time it throws, with no
+     * notification. One transient failure while ending a span would otherwise disable the watchdog
+     * for the life of the process, which is precisely the state it exists to prevent, so nothing is
+     * allowed to escape.
+     */
+    internal fun sweepGuarded() {
+        try {
+            sweep()
+        } catch (_: Throwable) {
+            // Deliberately swallowed; see above.
+        }
+    }
+
+    internal fun sweep() {
+        val now = nanoTimeSource()
+        for ((call, pending) in pendingTraces) {
+            // Subtraction, not `now >= deadline`, so a nanoTime wraparound does not expire
+            // every in-flight call at once.
+            if (now - pending.deadlineNanos >= 0) {
+                OkHttpCallTimingStore.updateIfPresent(call) { state ->
+                    state.failed = true
+                    state.phasesComplete = false
+                }
+                complete(call, abandoned = true)
+            }
+        }
+        // Calls that never started a span still leave timing state behind -- websocket upgrades
+        // reach the EventListener but not the network interceptor, so nothing ever collects theirs.
+        OkHttpCallTimingStore.discardOlderThan(now - maxCallDurationNanos) {
+            !pendingTraces.containsKey(it)
+        }
+    }
+
+    /** Number of spans awaiting completion; used by tests to assert nothing is stranded. */
+    internal val pendingCount: Int
+        get() = pendingTraces.size
+
+    internal fun setNanoTimeSource(source: () -> Long) {
+        nanoTimeSource = source
+    }
+
+    internal fun setWatchdogScheduler(scheduler: ScheduledExecutorService?) {
+        stopWatchdog()
+        watchdog = scheduler
+        ownsWatchdog = false
+    }
+
+    private fun stopWatchdog() {
+        watchdogTask?.cancel(false)
+        watchdogTask = null
+        if (ownsWatchdog) {
+            watchdog?.shutdownNow()
+            watchdog = null
+            ownsWatchdog = false
+        }
+    }
+
+    private fun sweepIntervalMillis(maxCallDurationMillis: Long): Long =
+        (maxCallDurationMillis / SWEEPS_PER_WINDOW)
+            .coerceIn(MIN_SWEEP_INTERVAL_MILLIS, MAX_SWEEP_INTERVAL_MILLIS)
+
+    fun clear() {
+        stopWatchdog()
+        pendingTraces.clear()
+        nanoTimeSource = { System.nanoTime() }
+        maxCallDurationNanos =
+            TimeUnit.MILLISECONDS.toNanos(OkHttpInstrumentation.DEFAULT_MAX_CALL_DURATION_MILLIS)
+    }
+
+    private const val SWEEPS_PER_WINDOW = 6L
+    private const val MIN_SWEEP_INTERVAL_MILLIS = 1_000L
+    private const val MAX_SWEEP_INTERVAL_MILLIS = 10_000L
 }

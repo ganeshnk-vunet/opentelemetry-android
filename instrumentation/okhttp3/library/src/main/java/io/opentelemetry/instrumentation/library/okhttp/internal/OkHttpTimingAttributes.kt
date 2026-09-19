@@ -26,6 +26,13 @@ internal object OkHttpTimingAttributes {
     const val PROXY_SELECT_MS = "http.client.timing.proxy_select_ms"
     const val PHASES_COMPLETE = "http.client.timing.phases_complete"
 
+    /**
+     * Set only when a span was ended by the completion watchdog because OkHttp never reported the
+     * call as finished within the allowed window. Absent on every normally completed call, so its
+     * presence alone identifies a truncated duration.
+     */
+    const val ABANDONED = "http.client.timing.abandoned"
+
     const val EVENT_DNS = "http.dns"
     const val EVENT_CONNECT = "http.connect"
     const val EVENT_SECURE_CONNECT = "http.secure_connect"

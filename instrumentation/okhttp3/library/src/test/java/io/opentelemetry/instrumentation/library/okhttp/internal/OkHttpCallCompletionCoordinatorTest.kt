@@ -12,6 +12,8 @@ import io.opentelemetry.api.trace.Span
 import io.opentelemetry.context.Context
 import io.opentelemetry.instrumentation.api.instrumenter.Instrumenter
 import java.io.IOException
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
 import okhttp3.Call
 import okhttp3.Interceptor
 import okhttp3.Response
@@ -71,6 +73,66 @@ class OkHttpCallCompletionCoordinatorTest {
 
         assertThat(OkHttpCallTimingStore.remove(call)).isNull()
         verify(exactly = 0) { instrumenter.end(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `configure schedules the completion watchdog`() {
+        val scheduler = mockk<ScheduledExecutorService>(relaxed = true)
+        OkHttpCallCompletionCoordinator.clear()
+        OkHttpCallCompletionCoordinator.setWatchdogScheduler(scheduler)
+
+        OkHttpCallCompletionCoordinator.configure(instrumenter, OkHttpTimingSpanEnricher(), 60_000L)
+
+        // Without this the watchdog is never started and no cap is enforced at runtime, however
+        // correct sweep() itself is.
+        verify {
+            scheduler.scheduleWithFixedDelay(any(), 10_000L, 10_000L, TimeUnit.MILLISECONDS)
+        }
+    }
+
+    @Test
+    fun `a sweep that throws does not escape and kill the watchdog`() {
+        // scheduleAtFixedRate silently suppresses a repeating task for the life of the process the
+        // first time it throws, which would disable the very backstop this class exists to provide.
+        every { instrumenter.end(any(), any(), any(), any()) } throws RuntimeException("boom")
+        OkHttpCallCompletionCoordinator.setNanoTimeSource { 0L }
+        OkHttpCallCompletionCoordinator.registerTraced(call, Context.root(), chain, span)
+        OkHttpCallCompletionCoordinator.setNanoTimeSource { TimeUnit.SECONDS.toNanos(61) }
+
+        OkHttpCallCompletionCoordinator.sweepGuarded()
+
+        assertThat(OkHttpCallCompletionCoordinator.pendingCount).isZero()
+    }
+
+    @Test
+    fun `re-registering the same call ends the previous attempt's span`() {
+        val firstSpan = mockk<Span>(relaxed = true)
+        val firstChain = mockk<Interceptor.Chain>(relaxed = true)
+        OkHttpCallTimingStore.stateFor(call).callStartNanos = 0L
+        OkHttpCallCompletionCoordinator.registerTraced(call, Context.root(), firstChain, firstSpan)
+
+        // A network interceptor runs once per wire attempt, so a redirect or an auth retry brings
+        // the same Call back. Overwriting would strand the first span with no path to end().
+        OkHttpCallCompletionCoordinator.registerTraced(call, Context.root(), chain, span)
+
+        verify { instrumenter.end(Context.root(), firstChain, null, null) }
+        assertThat(OkHttpCallCompletionCoordinator.pendingCount).isEqualTo(1)
+    }
+
+    @Test
+    fun `re-registering does not discard timing recorded before the first attempt`() {
+        // callStart fires before the network interceptor runs, so timing state already exists on
+        // the very first registration. Routing that through the untraced-completion path would
+        // discard it and strip every http.client.timing.* attribute from the call.
+        val state = OkHttpCallTimingStore.stateFor(call)
+        state.callStartNanos = 0L
+        state.responseHeadersStartNanos = 10_000_000L
+        state.responseBodyEndNanos = 30_000_000L
+
+        OkHttpCallCompletionCoordinator.registerTraced(call, Context.root(), chain, span)
+        OkHttpCallCompletionCoordinator.onCallEnd(call)
+
+        verify { span.setAttribute(OkHttpTimingAttributes.DOWNLOAD_MS, 20L) }
     }
 
     @Test

@@ -78,6 +78,7 @@ class OkHttpInstrumentation : AndroidInstrumentation {
     private var peerServiceMapping: Map<String, String> = mapOf()
     private var emitExperimentalHttpClientTelemetry = false
     private var captureNetworkTimingPhasesEnabled = true
+    private var maxCallDurationMillis = DEFAULT_MAX_CALL_DURATION_MILLIS
 
     /**
      * Adds an [AttributesExtractor] that will extract additional attributes.
@@ -116,10 +117,40 @@ class OkHttpInstrumentation : AndroidInstrumentation {
 
     fun captureNetworkTimingPhases(): Boolean = captureNetworkTimingPhasesEnabled
 
+    /**
+     * Upper bound on how long an `http.client` span may stay open.
+     *
+     * Span completion is driven by OkHttp's `EventListener`, which reports the end of a call only
+     * once its response body has been fully read or closed. A caller that holds a body open -- a
+     * server-sent-event stream, a long poll, or simply a body that is never closed -- would
+     * otherwise produce a span lasting as long as the caller keeps it, which is not a measure of
+     * the request at all.
+     *
+     * Once this much time has passed the span is ended anyway, carrying
+     * `http.client.timing.abandoned`, so no span can outlive the bound. A call that sets OkHttp's
+     * own `callTimeout` is held to that instead, since the application has already stated what it
+     * considers the longest legitimate call.
+     *
+     * @param maxCallDurationMillis Milliseconds; must be positive.
+     */
+    fun setMaxCallDurationMillis(maxCallDurationMillis: Long) {
+        require(maxCallDurationMillis > 0) {
+            "maxCallDurationMillis must be positive but was $maxCallDurationMillis"
+        }
+        this.maxCallDurationMillis = maxCallDurationMillis
+    }
+
+    fun maxCallDurationMillis(): Long = maxCallDurationMillis
+
     override fun install(context: Context, openTelemetryRum: OpenTelemetryRum) {
         RumDiagnostics.d { "okhttp: interceptor install" }
         OkHttpSingletons.configure(this, openTelemetryRum.openTelemetry)
     }
 
     override val name: String = "okhttp"
+
+    companion object {
+        /** Default cap on span lifetime; see [setMaxCallDurationMillis]. */
+        const val DEFAULT_MAX_CALL_DURATION_MILLIS: Long = 60_000L
+    }
 }

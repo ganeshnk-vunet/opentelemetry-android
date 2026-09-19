@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### Fixed
+
+- OkHttp `http.client` spans can no longer run for hours. Since phase-timing capture moved span
+  completion to OkHttp's `EventListener`, a span ended only when the call was reported finished —
+  and OkHttp reports that when the response body reaches EOF **or is closed**. A body read to
+  completion was fine, but one never read (a server-sent-event stream, a long poll, or a response the
+  caller simply dropped) reported nothing until close, so the span covered the caller's entire hold.
+  Production showed durations up to **23.4 hours** on spans whose own `http.client.timing.ttfb_ms`
+  was a few tens of milliseconds. A watchdog now bounds every span: anything still open past the cap
+  is ended and marked `http.client.timing.abandoned = true` with
+  `http.client.timing.phases_complete = false`, so a truncated duration is never mistaken for a slow
+  request. The cap defaults to 60s and is configurable via
+  `OkHttpInstrumentation.setMaxCallDurationMillis`; a client that sets OkHttp's own `callTimeout` is
+  held to that instead. The same sweep reclaims the pending-call state, which previously grew without
+  bound — websocket upgrades in particular reach the `EventListener` but skip network interceptors,
+  so nothing ever collected theirs.
+- A redirect or auth retry no longer strands a span. The tracing interceptor is a *network*
+  interceptor, so it runs once per wire attempt; the second registration silently replaced the first
+  in the pending map, leaving a started span with no path to `end()` — leaked, and never exported.
+  Each attempt now gets its own correctly ended span.
+- `http.client` spans are still emitted in minified builds. R8 renames the private
+  `OkHttpClient.Builder.eventListenerFactory` field the timing listener is installed through, and
+  since that listener became the only thing that ends an OkHttp span, the reflective failure meant
+  **no span was ever ended** — not merely, as previously believed, that `http.client.timing.*`
+  attributes went missing. When the wiring fails the interceptor now ends spans inline, matching the
+  behaviour used when phase timing is switched off.
+
 ### Added
 
 - Hybrid-click date-picker capture: confirming a Material date picker now reports
