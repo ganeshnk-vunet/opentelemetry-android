@@ -7,16 +7,20 @@
 - `ui.navigation` spans now carry **`navigation.duration_ms`**, the time from the user action that
   caused the navigation to the moment the destination was committed. Android previously emitted
   navigation timestamps only, with no duration anywhere, which left the responsiveness pillar with no
-  Android input at all while iOS and Flutter both reported one. Sourced from a back press the trigger
-  resolver accepted, or otherwise from the live click interaction window whose root span start is the
-  originating tap; a back press wins when both apply, matching the precedence that stops
-  `back_press` being upgraded to `user_tap`. Emitted by all three collectors (View, Compose Nav2,
-  Compose Nav3). **Absent, never zero, when no user action can be attributed** — a programmatic
-  navigation has no user-perceived wait, and a zero would be indistinguishable from an instant one.
-  **Known bias:** both intent sources expire (500 ms for the tap window, 1 s for a back press), so a
-  navigation slower than its window reports no duration rather than a large one — the slowest
-  navigations are the likeliest to be missing, and the distribution should be read as "how long fast
-  navigations took". `navigation.ttid_ms` is deliberately not included.
+  Android input at all while iOS and Flutter both reported one. Sourced from a back press the
+  collector recorded, or otherwise from the most recent interaction start, which is the originating
+  tap; a back press wins when both apply. Emitted by all three collectors (View, Compose Nav2,
+  Compose Nav3). **Timing is deliberately not gated on the 500 ms interaction parenting window or the
+  1 s back-press trigger TTL.** Those windows decide span parenting and trigger naming, where a stale
+  signal misleads; bounding *timing* by them would have dropped precisely the slow navigations worth
+  investigating — a 3-second navigation would report no duration rather than 3000 ms. A back
+  navigation slower than 1 s is therefore named `programmatic` and still carries its duration.
+  Staleness is bounded at 30 s instead, beyond which the attribute is **omitted rather than clamped**,
+  since a clamped value would be indistinguishable from a real navigation of that length. **Absent,
+  never zero, when no user action can be attributed** — a programmatic navigation has no
+  user-perceived wait. Covers up to the framework reporting the destination as current; time spent
+  composing or loading before the first frame is `navigation.ttid_ms`, which is deliberately not
+  included.
 
 - Hybrid-click date-picker capture: confirming a Material date picker now reports
   `interaction.type = date_picker` on the confirm-button span, plus `ui.control.value.selected_date`

@@ -86,12 +86,12 @@ internal class ComposeNav2Collector(
                 pendingBackPressTimestampNanos,
                 nowNanos,
             )
-        // Only a back press the resolver actually accepted may time the navigation: one too stale
-        // to name the trigger is equally too stale to measure from.
-        val intentAtNanos =
-            pendingBackPressTimestampNanos?.takeIf {
-                navigationTrigger == NavigationTrigger.BACK_PRESS
-            }
+        // Forwarded whatever the resolver decided. Its 1s TTL governs whether the back press may
+        // *name* the trigger, where a stale signal would mislead; it must not govern whether the
+        // navigation may be *timed*, or a back navigation that took two seconds -- the kind worth
+        // investigating -- would report no duration at all. The emitter bounds staleness with its
+        // own, much longer, attribution limit.
+        val intentAtNanos = pendingBackPressTimestampNanos
         pendingBackPressTimestampNanos = null
 
         emitter.emit(

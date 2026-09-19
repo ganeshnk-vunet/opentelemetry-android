@@ -145,20 +145,23 @@ class ComposeNav2CollectorTest {
     }
 
     @Test
-    fun compose_route_stale_back_press_reports_no_duration() {
+    fun compose_route_back_press_too_stale_to_name_the_trigger_still_times_the_navigation() {
         val collector = createCollector()
         collector.onDestinationChanged(navController, destination("home", id = 1), null)
         entryBelowTopId = 1
         collector.onDestinationChanged(navController, destination("details/{id}", id = 2), null)
 
         collector.recordBackPress()
-        nowNanos += 1_000_000_001L
+        nowNanos += 2_000L * 1_000_000L
         collector.onDestinationChanged(navController, destination("home", id = 1), null)
 
-        // A back press too stale to name the trigger is equally too stale to time: reporting it
-        // would put a fabricated ~1s duration on a navigation nothing is known to have caused.
         assertThat(exporter.finishedSpanItems[2].attributes.get(NavigationConstants.NAVIGATION_DURATION_MS_KEY))
-            .isNull()
+            .isEqualTo(2_000L)
+        // The 1s trigger TTL has expired, so this pop is named programmatic -- but a back
+        // navigation that took two seconds is exactly the one worth investigating, and it must
+        // still carry its duration. Trigger naming and timing are deliberately separate.
+        assertThat(exporter.finishedSpanItems[2].attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY))
+            .isEqualTo("programmatic")
     }
 
     @Test

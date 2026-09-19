@@ -371,6 +371,96 @@ class NavigationSpanEmitterTest {
     private fun durationOfNavigation(exporter: InMemorySpanExporter): Long? =
         navigationSpans(exporter).single().attributes.get(NavigationConstants.NAVIGATION_DURATION_MS_KEY)
 
+    @Test
+    fun reports_a_slow_navigation_after_the_interaction_parenting_window_has_expired() {
+        val exporter = InMemorySpanExporter.create()
+        val tracer = tracerFor(exporter)
+        val emitter = NavigationSpanEmitter(tracer)
+        val token = beginClickInteraction(tracer)
+        val tapAtNanos = ActiveInteractionContext.lastInteractionStartedAtNanos()!!
+
+        // The 500ms parenting window closes long before this navigation commits. It exists to
+        // decide parenting, where a stale parent would be wrong; it must not decide whether the
+        // navigation can be timed, or the slow navigations worth investigating are exactly the
+        // ones that report nothing.
+        ActiveInteractionContext.end(token)
+        assertThat(ActiveInteractionContext.rootContext()).isNull()
+
+        emitter.emit(candidate().copy(timestampNanos = tapAtNanos + 3_200L * NANOS_PER_MILLI))
+
+        assertThat(durationOfNavigation(exporter)).isEqualTo(3_200L)
+    }
+
+    @Test
+    fun reports_a_ten_second_navigation_rather_than_dropping_it() {
+        val exporter = InMemorySpanExporter.create()
+        val tracer = tracerFor(exporter)
+        val emitter = NavigationSpanEmitter(tracer)
+        val token = beginClickInteraction(tracer)
+        val tapAtNanos = ActiveInteractionContext.lastInteractionStartedAtNanos()!!
+        ActiveInteractionContext.end(token)
+
+        emitter.emit(candidate().copy(timestampNanos = tapAtNanos + 10_000L * NANOS_PER_MILLI))
+
+        assertThat(durationOfNavigation(exporter)).isEqualTo(10_000L)
+    }
+
+    @Test
+    fun omits_a_duration_beyond_the_attribution_limit_rather_than_clamping_it() {
+        val exporter = InMemorySpanExporter.create()
+        val emitter = NavigationSpanEmitter(tracerFor(exporter))
+        val intentAtNanos = 10_000_000_000L
+
+        emitter.emit(
+            candidate().copy(
+                intentAtNanos = intentAtNanos,
+                timestampNanos = intentAtNanos + NavigationSpanEmitter.MAX_ATTRIBUTION_NANOS + 1,
+            ),
+        )
+
+        // Omitted, not clamped: a clamped value would be indistinguishable from a real navigation
+        // of exactly that length.
+        assertThat(durationOfNavigation(exporter)).isNull()
+    }
+
+    @Test
+    fun reports_a_duration_exactly_at_the_attribution_limit() {
+        val exporter = InMemorySpanExporter.create()
+        val emitter = NavigationSpanEmitter(tracerFor(exporter))
+        val intentAtNanos = 10_000_000_000L
+
+        emitter.emit(
+            candidate().copy(
+                intentAtNanos = intentAtNanos,
+                timestampNanos = intentAtNanos + NavigationSpanEmitter.MAX_ATTRIBUTION_NANOS,
+            ),
+        )
+
+        assertThat(durationOfNavigation(exporter))
+            .isEqualTo(NavigationSpanEmitter.MAX_ATTRIBUTION_NANOS / NANOS_PER_MILLI)
+    }
+
+    @Test
+    fun the_interaction_start_is_not_consumed_so_two_collectors_both_time_one_navigation() {
+        val exporter = InMemorySpanExporter.create()
+        val tracer = tracerFor(exporter)
+        // A Compose host running the View collector as well emits one ui.navigation span from
+        // each for the same navigation. Consuming the interaction start would give the first a
+        // duration and the second none.
+        val viewEmitter = NavigationSpanEmitter(tracer)
+        val composeEmitter = NavigationSpanEmitter(tracer)
+        val token = beginClickInteraction(tracer)
+        val tapAtNanos = ActiveInteractionContext.lastInteractionStartedAtNanos()!!
+        ActiveInteractionContext.end(token)
+
+        val committedAt = tapAtNanos + 800L * NANOS_PER_MILLI
+        viewEmitter.emit(candidate(destinationName = "Details").copy(timestampNanos = committedAt))
+        composeEmitter.emit(candidate(destinationName = "Details").copy(timestampNanos = committedAt))
+
+        assertThat(navigationSpans(exporter).map { it.attributes.get(NavigationConstants.NAVIGATION_DURATION_MS_KEY) })
+            .containsExactly(800L, 800L)
+    }
+
     private fun tracerFor(exporter: InMemorySpanExporter): Tracer {
         val tracerProvider =
             SdkTracerProvider
@@ -384,11 +474,15 @@ class NavigationSpanEmitterTest {
             .getTracer("test-navigation-common")
     }
 
-    /** Opens a live interaction window, the way `ClickEventGenerator` does on a tap. */
-    private fun beginClickInteraction(tracer: Tracer) {
+    /**
+     * Opens a live interaction window, the way `ClickEventGenerator` does on a tap. Returns the
+     * token so a test can expire the parenting window without clearing the interaction start.
+     */
+    private fun beginClickInteraction(tracer: Tracer): Long {
         val clickSpan = tracer.spanBuilder("ui.interaction").startSpan()
-        ActiveInteractionContext.begin(clickSpan)
+        val token = ActiveInteractionContext.begin(clickSpan)
         clickSpan.end()
+        return token
     }
 
     private fun candidate(

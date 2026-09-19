@@ -98,16 +98,21 @@ class ComposeNav3CollectorTest {
     }
 
     @Test
-    fun stale_back_press_reports_no_duration() {
+    fun back_press_too_stale_to_name_the_trigger_still_times_the_navigation() {
         val collector = createCollector()
         collector.onBackStackChanged(listOf(key("home"), key("details")))
 
         collector.recordBackPress()
-        nowNanos += 1_000_000_001L
+        nowNanos += 2_000L * 1_000_000L
         collector.onBackStackChanged(listOf(key("home")))
 
         assertThat(exporter.finishedSpanItems[1].attributes.get(NavigationConstants.NAVIGATION_DURATION_MS_KEY))
-            .isNull()
+            .isEqualTo(2_000L)
+        // The 1s trigger TTL has expired, so this pop is named programmatic -- but a back
+        // navigation that took two seconds is exactly the one worth investigating, and it must
+        // still carry its duration. Trigger naming and timing are deliberately separate.
+        assertThat(exporter.finishedSpanItems[1].attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY))
+            .isEqualTo("programmatic")
     }
 
     @Test

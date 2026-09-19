@@ -20,11 +20,25 @@ object ActiveInteractionContext {
     private var rootContext: Context? = null
     private var generation: Long = 0
 
+    /**
+     * Start of the most recent interaction, kept deliberately **outside** the parenting window.
+     *
+     * [rootContext] is cleared when the interaction window expires, because parenting a span to a
+     * long-finished tap would be wrong. Timing is the opposite case: the slower a navigation is,
+     * the longer after the tap it commits, and the more worth measuring it is. Reading the start
+     * time through the parenting window therefore lost exactly the navigations worth investigating
+     * — anything slower than the window reported no duration at all rather than a large one.
+     *
+     * Survives [end]; cleared only by [clear] or replaced by the next [begin].
+     */
+    private var lastInteractionStartedAtNanos: Long? = null
+
     /** Starts a new interaction rooted at [root] (for example `ui.interaction`). Clears any stale interaction. */
     fun begin(root: Span): Long =
         synchronized(lock) {
             activeSpan = root
             rootContext = Context.current().with(root)
+            lastInteractionStartedAtNanos = startEpochNanosOf(root)
             ++generation
         }
 
@@ -53,9 +67,22 @@ object ActiveInteractionContext {
      */
     fun rootStartedAtNanos(): Long? {
         val root = synchronized(lock) { rootContext } ?: return null
-        val span = Span.fromContext(root)
-        return (span as? ReadableSpan)?.toSpanData()?.startEpochNanos
+        return startEpochNanosOf(Span.fromContext(root))
     }
+
+    /**
+     * Start of the most recent interaction regardless of whether its parenting window is still
+     * open, for callers that need to measure elapsed time rather than establish a parent.
+     *
+     * Not consumed on read. Two navigation collectors can be active in one process — a Compose
+     * host that also runs the View collector emits a `ui.navigation` span from each — and
+     * consuming here would give the first emitter a duration and the second none for the very same
+     * navigation. Callers bound staleness with their own limit instead.
+     */
+    fun lastInteractionStartedAtNanos(): Long? = synchronized(lock) { lastInteractionStartedAtNanos }
+
+    private fun startEpochNanosOf(span: Span): Long? =
+        (span as? ReadableSpan)?.toSpanData()?.startEpochNanos
 
     /** Ends the interaction identified by [token] only if it is still current (guards rapid taps). */
     fun end(token: Long) {
@@ -69,6 +96,9 @@ object ActiveInteractionContext {
     fun clear() {
         synchronized(lock) {
             clearLocked()
+            // Only a full clear (uninstall, or a test tearing down) drops the interaction start;
+            // end() deliberately leaves it so a slow navigation can still be timed.
+            lastInteractionStartedAtNanos = null
         }
     }
 

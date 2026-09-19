@@ -131,42 +131,67 @@ class NavigationSpanEmitter(
      * was committed, or `null` when no action can be attributed to it.
      *
      * Two sources, in order of specificity:
-     * - [NavigationTransitionCandidate.intentAtNanos], set by a collector for a back press its
-     *   trigger resolver accepted. A back press is the more specific fact and wins outright, for
-     *   the same reason `resolveTrigger` never upgrades `back_press` to `user_tap`.
-     * - The live interaction window, whose root span start is the tap that opened it.
+     * - [NavigationTransitionCandidate.intentAtNanos], the back press a collector recorded.
+     * - The most recent interaction start, which is the tap that began it.
      *
-     * Deliberately absent, never zero, when neither applies — a genuinely programmatic navigation
+     * A back press wins when both apply, for the same reason `resolveTrigger` never upgrades
+     * `back_press` to `user_tap`: it is the more specific fact.
+     *
+     * **Neither source is read through the interaction *parenting* window, and that is the point.**
+     * `ActiveInteractionContext` drops its parent context after
+     * `ClickEventGenerator.DEFAULT_ACTIVE_CONTEXT_WINDOW_MILLIS` (500 ms), and the back-press
+     * trigger signal expires after `NavigationTriggerResolver.BACK_PRESS_SIGNAL_TTL_NANOS` (1 s).
+     * Those windows exist to decide *parenting* and *trigger naming*, where a stale signal is
+     * actively harmful. Timing is the opposite case: a navigation that takes three seconds is
+     * precisely the one worth measuring, and reading the start time through a 500 ms window meant
+     * every slow navigation reported no duration at all rather than a large one — the metric
+     * showed only the navigations nobody needed to investigate.
+     *
+     * Staleness is bounded by [MAX_ATTRIBUTION_NANOS] instead, chosen to be far longer than any
+     * navigation worth recording but short enough that a navigation with no user action behind it
+     * cannot inherit a timestamp from some unrelated earlier tap. Beyond it the attribute is
+     * omitted rather than clamped, because a clamped value would be indistinguishable from a real
+     * navigation of that length.
+     *
+     * Deliberately absent, never zero, when nothing applies: a genuinely programmatic navigation
      * has no user-perceived wait to report, and a zero would be indistinguishable from an instant
-     * one and would drag every percentile down.
+     * one while dragging every percentile down. A negative result is discarded on the same
+     * principle — a destination committed before the action that caused it is not a duration.
      *
-     * A negative result is discarded. It would mean the destination was committed before the action
-     * that caused it, which is not a duration worth reporting whatever produced it.
+     * Known limits, both inherited from `resolveTrigger`:
+     * - A programmatic navigation landing within [MAX_ATTRIBUTION_NANOS] of an unrelated tap is
+     *   timed from that tap. The interaction start is refreshed by every tap, so in practice this
+     *   needs a navigation with no user activity at all before it.
+     * - A chain of navigations from one tap each reports time since that tap, not since the
+     *   previous step, so the steps accumulate rather than partition.
      *
-     * **Known limit, and it biases the metric:** both sources expire — the interaction window after
-     * `ClickEventGenerator.DEFAULT_ACTIVE_CONTEXT_WINDOW_MILLIS` (500 ms) and a back press after
-     * `NavigationTriggerResolver.BACK_PRESS_SIGNAL_TTL_NANOS` (1 s). A navigation that takes longer
-     * than its window therefore reports no duration at all, so the slowest navigations are the ones
-     * most likely to be missing rather than the ones recorded as slow. Read the resulting
-     * distribution as "how long fast navigations took", not "how long navigations took", until the
-     * attribution window is decoupled from the parenting window. Note the interaction window is
-     * posted on the main looper, so a navigation delayed by a blocked main thread does not lose its
-     * context the way one delayed by background work does.
-     *
-     * It also inherits `resolveTrigger`'s misattribution limit: a programmatic navigation landing
-     * inside an unrelated tap's window is timed from that tap.
+     * This measures up to the point the navigation framework reports the destination as current.
+     * Time the destination then spends composing or loading before anything is drawn is `ttid_ms`,
+     * which is not implemented.
      */
     private fun resolveDurationMs(candidate: NavigationTransitionCandidate): Long? {
-        val intentAtNanos = candidate.intentAtNanos ?: ActiveInteractionContext.rootStartedAtNanos()
+        val intentAtNanos =
+            candidate.intentAtNanos ?: ActiveInteractionContext.lastInteractionStartedAtNanos()
         if (intentAtNanos == null) {
             return null
         }
         val elapsedNanos = candidate.timestampNanos - intentAtNanos
-        return if (elapsedNanos < 0) null else elapsedNanos / NANOS_PER_MILLI
+        if (elapsedNanos < 0 || elapsedNanos > MAX_ATTRIBUTION_NANOS) {
+            return null
+        }
+        return elapsedNanos / NANOS_PER_MILLI
     }
 
     companion object {
         private const val NANOS_PER_MILLI = 1_000_000L
+
+        /**
+         * Longest gap between a user action and a destination commit that is still treated as the
+         * same navigation. Generous on purpose: a ten-second navigation is a finding, not noise,
+         * and must be reported rather than dropped. It only has to be short enough that a
+         * navigation with no user action behind it cannot borrow an unrelated tap's timestamp.
+         */
+        internal const val MAX_ATTRIBUTION_NANOS = 30_000_000_000L
 
         /** Clears the active navigation context; call from navigation instrumentation [uninstall]. */
         @JvmStatic
