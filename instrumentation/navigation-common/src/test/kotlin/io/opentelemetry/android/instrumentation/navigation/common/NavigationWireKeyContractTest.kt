@@ -35,6 +35,18 @@ class NavigationWireKeyContractTest {
         assertThat(NavigationConstants.NAVIGATION_IS_INITIAL_KEY.key).isEqualTo("navigation.is_initial")
         assertThat(NavigationConstants.NAVIGATION_STACK_DEPTH_BEFORE_KEY.key).isEqualTo("navigation.stack_depth.before")
         assertThat(NavigationConstants.NAVIGATION_STACK_DEPTH_AFTER_KEY.key).isEqualTo("navigation.stack_depth.after")
+        assertThat(NavigationConstants.NAVIGATION_DURATION_MS_KEY.key).isEqualTo("navigation.duration_ms")
+    }
+
+    /**
+     * The duration key is deliberately `navigation.duration_ms`, matching what iOS and Flutter
+     * already emit, so the three platforms land in one column. A `_ns` spelling would mirror
+     * `navigation.timestamp_ns` in this module but diverge from the other two SDKs, which is the
+     * more expensive mistake.
+     */
+    @Test
+    fun `duration wire key matches the other platforms rather than the local timestamp suffix`() {
+        assertThat(NavigationConstants.NAVIGATION_DURATION_MS_KEY.key).isNotEqualTo("navigation.duration_ns")
     }
 
     @Test

@@ -30,6 +30,41 @@ Each new click starts a fresh interaction trace. Navigation active context is no
 
 This keeps View and Compose navigation instrumentations aligned on one schema and avoids duplicated logic.
 
+## `navigation.duration_ms`
+
+How long the user waited: from the action that caused the navigation to the moment the destination
+was committed. Two sources, in order of specificity:
+
+1. A **back press** the trigger resolver accepted, forwarded by the collector as
+   `NavigationTransitionCandidate.intentAtNanos`.
+2. The **live click interaction window**, whose root span start is the tap that opened it.
+
+A back press wins when both apply, the same precedence that stops `resolveTrigger` upgrading
+`back_press` to `user_tap`.
+
+The attribute is **absent, never zero**, when neither applies. A genuinely programmatic navigation —
+a redirect, a timer, a deep link — has no user-perceived wait to report, and a zero would be
+indistinguishable from an instant navigation while dragging every percentile down.
+
+> [!IMPORTANT]
+> **This metric is biased toward fast navigations, and that has to be read into any dashboard built
+> on it.** Both intent sources expire: the interaction window after 500 ms
+> (`ClickEventGenerator.DEFAULT_ACTIVE_CONTEXT_WINDOW_MILLIS`) and a back press after 1 s
+> (`NavigationTriggerResolver.BACK_PRESS_SIGNAL_TTL_NANOS`). A navigation slower than its window
+> reports *no duration at all* rather than a large one, so the slowest navigations are the ones most
+> likely to be missing. Read the distribution as "how long fast navigations took", not "how long
+> navigations took", until the attribution window is decoupled from the parenting window.
+>
+> The interaction window is posted on the main looper, so a navigation delayed by a blocked main
+> thread keeps its context; one delayed by background work (a fetch before the screen renders) does
+> not.
+>
+> It also inherits the trigger resolver's misattribution limit: a programmatic navigation landing
+> inside an unrelated tap's window is timed from that tap.
+
+`navigation.ttid_ms` — time to initial display — is **not** implemented; it needs a draw callback
+and is tracked separately.
+
 ## Internal-Only Module
 
 This module is **internal implementation detail** and is **not intended for direct customer use**.

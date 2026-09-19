@@ -13,6 +13,7 @@ import io.opentelemetry.android.instrumentation.navigation.common.models.Navigat
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationNodeType
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTransitionCandidate
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTransitionType
+import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTrigger
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTriggerResolver
 import androidx.navigation3.runtime.NavKey
 
@@ -44,12 +45,19 @@ internal class ComposeNav3Collector(
         }
 
         val transitionType = inferTransition(previousSnapshot, snapshot)
+        val nowNanos = clock.now()
         val navigationTrigger =
             NavigationTriggerResolver.resolve(
                 transitionType,
                 pendingBackPressTimestampNanos,
-                clock.now(),
+                nowNanos,
             )
+        // Only a back press the resolver actually accepted may time the navigation: one too stale
+        // to name the trigger is equally too stale to measure from.
+        val intentAtNanos =
+            pendingBackPressTimestampNanos?.takeIf {
+                navigationTrigger == NavigationTrigger.BACK_PRESS
+            }
         pendingBackPressTimestampNanos = null
         val sourceNode = sourceKey?.toNavigationNode()
         val destinationNode = destinationKey?.toNavigationNode()
@@ -64,9 +72,10 @@ internal class ComposeNav3Collector(
                 destination = destinationNode,
                 transitionType = transitionType,
                 entryType = NavigationEntryType.INTERNAL,
-                timestampNanos = clock.now(),
+                timestampNanos = nowNanos,
                 stackDepthBefore = previousSnapshot.size,
                 stackDepthAfter = snapshot.size,
+                intentAtNanos = intentAtNanos,
             ),
             navigationTrigger = navigationTrigger.value,
         )

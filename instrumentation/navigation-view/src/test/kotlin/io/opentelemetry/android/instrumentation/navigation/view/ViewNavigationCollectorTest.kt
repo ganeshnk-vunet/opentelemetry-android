@@ -179,6 +179,44 @@ class ViewNavigationCollectorTest {
     }
 
     @Test
+    fun activity_pop_after_recent_back_press_reports_the_navigation_duration() {
+        val first = mockActivity()
+        val second = mockActivity()
+        every { first.isFinishing } returns true
+
+        val collector = createCollector(mapOf(first to "HomeActivity", second to "DetailsActivity"))
+
+        collector.onActivityResumed(first)
+        collector.recordBackPress()
+        nowNanos += 75L * 1_000_000L
+        collector.onActivityPaused(first)
+        collector.onActivityResumed(second)
+
+        // Without the collector forwarding its back-press timestamp the emitter has no user action
+        // to measure from, and the attribute would be absent.
+        assertThat(exporter.finishedSpanItems[1].attributes.get(NavigationConstants.NAVIGATION_DURATION_MS_KEY))
+            .isEqualTo(75L)
+    }
+
+    @Test
+    fun stale_back_press_reports_no_duration_for_activity_pop() {
+        val first = mockActivity()
+        val second = mockActivity()
+        every { first.isFinishing } returns true
+
+        val collector = createCollector(mapOf(first to "HomeActivity", second to "DetailsActivity"))
+
+        collector.onActivityResumed(first)
+        collector.recordBackPress()
+        nowNanos += 1_000_000_001L
+        collector.onActivityPaused(first)
+        collector.onActivityResumed(second)
+
+        assertThat(exporter.finishedSpanItems[1].attributes.get(NavigationConstants.NAVIGATION_DURATION_MS_KEY))
+            .isNull()
+    }
+
+    @Test
     fun stale_back_press_signal_falls_back_to_programmatic_for_activity_pop() {
         val first = mockActivity()
         val second = mockActivity()

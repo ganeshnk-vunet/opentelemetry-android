@@ -258,6 +258,119 @@ class NavigationSpanEmitterTest {
         assertThat(attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY)).isEqualTo("unknown")
     }
 
+    @Test
+    fun reports_duration_from_the_tap_that_opened_the_interaction_window() {
+        val exporter = InMemorySpanExporter.create()
+        val tracer = tracerFor(exporter)
+        val emitter = NavigationSpanEmitter(tracer)
+        beginClickInteraction(tracer)
+        val tapAtNanos = ActiveInteractionContext.rootStartedAtNanos()!!
+
+        emitter.emit(candidate().copy(timestampNanos = tapAtNanos + 40L * NANOS_PER_MILLI))
+
+        assertThat(durationOfNavigation(exporter))
+            .isEqualTo(40L)
+    }
+
+    @Test
+    fun omits_duration_for_a_navigation_with_no_attributable_user_action() {
+        val exporter = InMemorySpanExporter.create()
+        val emitter = NavigationSpanEmitter(tracerFor(exporter))
+
+        emitter.emit(candidate())
+
+        // Absent, not zero: a programmatic navigation has no user-perceived wait, and a zero would
+        // be indistinguishable from an instant one.
+        assertThat(durationOfNavigation(exporter))
+            .isNull()
+    }
+
+    @Test
+    fun reports_duration_from_a_back_press_without_any_interaction_window() {
+        val exporter = InMemorySpanExporter.create()
+        val emitter = NavigationSpanEmitter(tracerFor(exporter))
+        val backPressAtNanos = 10_000_000_000L
+
+        emitter.emit(
+            candidate().copy(
+                intentAtNanos = backPressAtNanos,
+                timestampNanos = backPressAtNanos + 120L * NANOS_PER_MILLI,
+            ),
+        )
+
+        assertThat(durationOfNavigation(exporter))
+            .isEqualTo(120L)
+    }
+
+    @Test
+    fun a_back_press_takes_precedence_over_a_live_interaction_window() {
+        val exporter = InMemorySpanExporter.create()
+        val tracer = tracerFor(exporter)
+        val emitter = NavigationSpanEmitter(tracer)
+        beginClickInteraction(tracer)
+        val tapAtNanos = ActiveInteractionContext.rootStartedAtNanos()!!
+        val backPressAtNanos = tapAtNanos + 200L * NANOS_PER_MILLI
+
+        emitter.emit(
+            candidate().copy(
+                intentAtNanos = backPressAtNanos,
+                timestampNanos = backPressAtNanos + 15L * NANOS_PER_MILLI,
+            ),
+        )
+
+        // A back press is the more specific fact, the same precedence resolveTrigger applies when
+        // it refuses to upgrade back_press to user_tap. Timing from the tap would report 215.
+        assertThat(durationOfNavigation(exporter))
+            .isEqualTo(15L)
+    }
+
+    @Test
+    fun omits_a_duration_that_would_be_negative() {
+        val exporter = InMemorySpanExporter.create()
+        val emitter = NavigationSpanEmitter(tracerFor(exporter))
+        val intentAtNanos = 10_000_000_000L
+
+        emitter.emit(
+            candidate().copy(
+                intentAtNanos = intentAtNanos,
+                timestampNanos = intentAtNanos - NANOS_PER_MILLI,
+            ),
+        )
+
+        // A destination committed before the action that caused it is not a duration worth
+        // reporting, whatever produced the ordering.
+        assertThat(durationOfNavigation(exporter))
+            .isNull()
+    }
+
+    @Test
+    fun duration_is_anchored_to_the_tap_and_does_not_slide_to_the_previous_navigation() {
+        val exporter = InMemorySpanExporter.create()
+        val tracer = tracerFor(exporter)
+        val emitter = NavigationSpanEmitter(tracer)
+        beginClickInteraction(tracer)
+        val tapAtNanos = ActiveInteractionContext.rootStartedAtNanos()!!
+
+        // The first navigation calls ActiveInteractionContext.activate, replacing the *active*
+        // span. If the start time were read from that instead of the root context, the second
+        // navigation would be timed from the first navigation rather than from the tap.
+        emitter.emit(candidate(destinationName = "First").copy(timestampNanos = tapAtNanos + 30L * NANOS_PER_MILLI))
+        emitter.emit(candidate(destinationName = "Second").copy(timestampNanos = tapAtNanos + 90L * NANOS_PER_MILLI))
+
+        assertThat(navigationSpans(exporter).map { it.attributes.get(NavigationConstants.NAVIGATION_DURATION_MS_KEY) })
+            .containsExactly(30L, 90L)
+    }
+
+    /**
+     * `beginClickInteraction` ends its `ui.interaction` span on the same exporter, so the raw list
+     * starts with the tap. Filtering by name keeps these assertions about navigation spans.
+     */
+    private fun navigationSpans(exporter: InMemorySpanExporter) =
+        exporter.finishedSpanItems.filter { it.name == NavigationConstants.SPAN_NAME }
+
+    private fun durationOfNavigation(exporter: InMemorySpanExporter): Long? =
+        navigationSpans(exporter).single().attributes.get(NavigationConstants.NAVIGATION_DURATION_MS_KEY)
+
     private fun tracerFor(exporter: InMemorySpanExporter): Tracer {
         val tracerProvider =
             SdkTracerProvider
@@ -291,4 +404,8 @@ class NavigationSpanEmitterTest {
         stackDepthBefore = stackDepthBefore,
         stackDepthAfter = stackDepthAfter,
     )
+
+    private companion object {
+        const val NANOS_PER_MILLI = 1_000_000L
+    }
 }

@@ -128,6 +128,40 @@ class ComposeNav2CollectorTest {
     }
 
     @Test
+    fun compose_route_pop_after_recent_back_press_reports_the_navigation_duration() {
+        val collector = createCollector()
+        collector.onDestinationChanged(navController, destination("home", id = 1), null)
+        entryBelowTopId = 1
+        collector.onDestinationChanged(navController, destination("details/{id}", id = 2), null)
+
+        collector.recordBackPress()
+        nowNanos += 120L * 1_000_000L
+        collector.onDestinationChanged(navController, destination("home", id = 1), null)
+
+        // Without the collector forwarding its back-press timestamp, the emitter has no user action
+        // to measure from and the attribute would be absent.
+        assertThat(exporter.finishedSpanItems[2].attributes.get(NavigationConstants.NAVIGATION_DURATION_MS_KEY))
+            .isEqualTo(120L)
+    }
+
+    @Test
+    fun compose_route_stale_back_press_reports_no_duration() {
+        val collector = createCollector()
+        collector.onDestinationChanged(navController, destination("home", id = 1), null)
+        entryBelowTopId = 1
+        collector.onDestinationChanged(navController, destination("details/{id}", id = 2), null)
+
+        collector.recordBackPress()
+        nowNanos += 1_000_000_001L
+        collector.onDestinationChanged(navController, destination("home", id = 1), null)
+
+        // A back press too stale to name the trigger is equally too stale to time: reporting it
+        // would put a fabricated ~1s duration on a navigation nothing is known to have caused.
+        assertThat(exporter.finishedSpanItems[2].attributes.get(NavigationConstants.NAVIGATION_DURATION_MS_KEY))
+            .isNull()
+    }
+
+    @Test
     fun compose_route_stale_back_press_signal_falls_back_to_programmatic() {
         val collector = createCollector()
         collector.onDestinationChanged(navController, destination("home", id = 1), null)

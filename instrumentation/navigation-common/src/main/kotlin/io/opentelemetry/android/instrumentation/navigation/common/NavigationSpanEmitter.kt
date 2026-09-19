@@ -10,6 +10,7 @@ import io.opentelemetry.android.common.RumDiagnostics
 import io.opentelemetry.android.common.internal.instrumentation.ActiveInteractionContext
 import io.opentelemetry.android.instrumentation.navigation.common.NavigationConstants.NAVIGATION_DESTINATION_NAME_KEY
 import io.opentelemetry.android.instrumentation.navigation.common.NavigationConstants.NAVIGATION_DESTINATION_TYPE_KEY
+import io.opentelemetry.android.instrumentation.navigation.common.NavigationConstants.NAVIGATION_DURATION_MS_KEY
 import io.opentelemetry.android.instrumentation.navigation.common.NavigationConstants.NAVIGATION_ENTRY_TYPE_KEY
 import io.opentelemetry.android.instrumentation.navigation.common.NavigationConstants.NAVIGATION_IS_INITIAL_KEY
 import io.opentelemetry.android.instrumentation.navigation.common.NavigationConstants.NAVIGATION_SOURCE_NAME_KEY
@@ -52,6 +53,10 @@ class NavigationSpanEmitter(
 
         resolveTrigger(navigationTrigger, interactionContext != null)?.let {
             spanBuilder.setAttribute(NAVIGATION_TRIGGER_KEY, it)
+        }
+
+        resolveDurationMs(candidate)?.let {
+            spanBuilder.setAttribute(NAVIGATION_DURATION_MS_KEY, it)
         }
 
         candidate.stackDepthBefore?.let {
@@ -121,7 +126,48 @@ class NavigationSpanEmitter(
         }
     }
 
+    /**
+     * Milliseconds from the user action that caused this navigation to the moment the destination
+     * was committed, or `null` when no action can be attributed to it.
+     *
+     * Two sources, in order of specificity:
+     * - [NavigationTransitionCandidate.intentAtNanos], set by a collector for a back press its
+     *   trigger resolver accepted. A back press is the more specific fact and wins outright, for
+     *   the same reason `resolveTrigger` never upgrades `back_press` to `user_tap`.
+     * - The live interaction window, whose root span start is the tap that opened it.
+     *
+     * Deliberately absent, never zero, when neither applies — a genuinely programmatic navigation
+     * has no user-perceived wait to report, and a zero would be indistinguishable from an instant
+     * one and would drag every percentile down.
+     *
+     * A negative result is discarded. It would mean the destination was committed before the action
+     * that caused it, which is not a duration worth reporting whatever produced it.
+     *
+     * **Known limit, and it biases the metric:** both sources expire — the interaction window after
+     * `ClickEventGenerator.DEFAULT_ACTIVE_CONTEXT_WINDOW_MILLIS` (500 ms) and a back press after
+     * `NavigationTriggerResolver.BACK_PRESS_SIGNAL_TTL_NANOS` (1 s). A navigation that takes longer
+     * than its window therefore reports no duration at all, so the slowest navigations are the ones
+     * most likely to be missing rather than the ones recorded as slow. Read the resulting
+     * distribution as "how long fast navigations took", not "how long navigations took", until the
+     * attribution window is decoupled from the parenting window. Note the interaction window is
+     * posted on the main looper, so a navigation delayed by a blocked main thread does not lose its
+     * context the way one delayed by background work does.
+     *
+     * It also inherits `resolveTrigger`'s misattribution limit: a programmatic navigation landing
+     * inside an unrelated tap's window is timed from that tap.
+     */
+    private fun resolveDurationMs(candidate: NavigationTransitionCandidate): Long? {
+        val intentAtNanos = candidate.intentAtNanos ?: ActiveInteractionContext.rootStartedAtNanos()
+        if (intentAtNanos == null) {
+            return null
+        }
+        val elapsedNanos = candidate.timestampNanos - intentAtNanos
+        return if (elapsedNanos < 0) null else elapsedNanos / NANOS_PER_MILLI
+    }
+
     companion object {
+        private const val NANOS_PER_MILLI = 1_000_000L
+
         /** Clears the active navigation context; call from navigation instrumentation [uninstall]. */
         @JvmStatic
         fun clearActiveContext() {

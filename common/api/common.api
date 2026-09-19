@@ -188,6 +188,7 @@ public final class io/opentelemetry/android/common/internal/instrumentation/Acti
 	public final fun end (J)V
 	public static final fun parentContextOr (Lio/opentelemetry/context/Context;)Lio/opentelemetry/context/Context;
 	public final fun rootContext ()Lio/opentelemetry/context/Context;
+	public final fun rootStartedAtNanos ()Ljava/lang/Long;
 }
 
 public final class io/opentelemetry/android/common/internal/instrumentation/ExporterMarker {

@@ -178,12 +178,19 @@ internal class ViewNavigationCollector(
             return
         }
 
+        val nowNanos = clock.now()
         val navigationTrigger =
             NavigationTriggerResolver.resolve(
                 transitionType,
                 pendingBackPressTimestampNanos,
-                clock.now(),
+                nowNanos,
             )
+        // Only a back press the resolver actually accepted may time the navigation: one too stale
+        // to name the trigger is equally too stale to measure from.
+        val intentAtNanos =
+            pendingBackPressTimestampNanos?.takeIf {
+                navigationTrigger == NavigationTrigger.BACK_PRESS
+            }
         pendingBackPressTimestampNanos = null
         emitter.emit(
             NavigationTransitionCandidate(
@@ -191,9 +198,10 @@ internal class ViewNavigationCollector(
                 destination = destination,
                 transitionType = transitionType,
                 entryType = entryType,
-                timestampNanos = clock.now(),
+                timestampNanos = nowNanos,
                 stackDepthBefore = stackDepthBefore,
                 stackDepthAfter = stackDepthAfter,
+                intentAtNanos = intentAtNanos,
             ),
             navigationTrigger = navigationTrigger.value,
         )

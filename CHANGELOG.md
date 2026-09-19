@@ -4,6 +4,20 @@
 
 ### Added
 
+- `ui.navigation` spans now carry **`navigation.duration_ms`**, the time from the user action that
+  caused the navigation to the moment the destination was committed. Android previously emitted
+  navigation timestamps only, with no duration anywhere, which left the responsiveness pillar with no
+  Android input at all while iOS and Flutter both reported one. Sourced from a back press the trigger
+  resolver accepted, or otherwise from the live click interaction window whose root span start is the
+  originating tap; a back press wins when both apply, matching the precedence that stops
+  `back_press` being upgraded to `user_tap`. Emitted by all three collectors (View, Compose Nav2,
+  Compose Nav3). **Absent, never zero, when no user action can be attributed** — a programmatic
+  navigation has no user-perceived wait, and a zero would be indistinguishable from an instant one.
+  **Known bias:** both intent sources expire (500 ms for the tap window, 1 s for a back press), so a
+  navigation slower than its window reports no duration rather than a large one — the slowest
+  navigations are the likeliest to be missing, and the distribution should be read as "how long fast
+  navigations took". `navigation.ttid_ms` is deliberately not included.
+
 - Hybrid-click date-picker capture: confirming a Material date picker now reports
   `interaction.type = date_picker` on the confirm-button span, plus `ui.control.value.selected_date`
   for a single date or `ui.control.value.start_date` / `.end_date` for a range. That tap already

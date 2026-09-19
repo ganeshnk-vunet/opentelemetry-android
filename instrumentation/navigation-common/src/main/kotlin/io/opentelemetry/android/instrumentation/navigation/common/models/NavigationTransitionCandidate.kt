@@ -19,6 +19,11 @@ package io.opentelemetry.android.instrumentation.navigation.common.models
  *   pop (3 → 2, not 3 → 1); the View collector reports per-`FragmentManager` back-stack counts for
  *   Fragment transitions and `null` for Activity transitions, which have no depth concept.
  * @property stackDepthAfter Depth of the same tracked stack after the transition, or `null`.
+ * @property intentAtNanos When the user action that caused this transition happened, on the same
+ *   clock as [timestampNanos], or `null` when the collector cannot attribute one. Collectors set
+ *   this only for a back press the trigger resolver actually accepted, so a back press too stale to
+ *   name the trigger is also too stale to time. A tap-driven navigation carries `null` here and is
+ *   timed by `NavigationSpanEmitter` from the live interaction context instead.
  */
 data class NavigationTransitionCandidate(
     val source: NavigationNode?,
@@ -28,4 +33,5 @@ data class NavigationTransitionCandidate(
     val timestampNanos: Long,
     val stackDepthBefore: Int? = null,
     val stackDepthAfter: Int? = null,
+    val intentAtNanos: Long? = null,
 )

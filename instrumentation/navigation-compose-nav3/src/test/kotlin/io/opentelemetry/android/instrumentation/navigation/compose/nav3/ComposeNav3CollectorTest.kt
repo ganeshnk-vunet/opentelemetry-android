@@ -85,6 +85,32 @@ class ComposeNav3CollectorTest {
     }
 
     @Test
+    fun pop_after_recent_back_press_reports_the_navigation_duration() {
+        val collector = createCollector()
+        collector.onBackStackChanged(listOf(key("home"), key("details")))
+
+        collector.recordBackPress()
+        nowNanos += 45L * 1_000_000L
+        collector.onBackStackChanged(listOf(key("home")))
+
+        assertThat(exporter.finishedSpanItems[1].attributes.get(NavigationConstants.NAVIGATION_DURATION_MS_KEY))
+            .isEqualTo(45L)
+    }
+
+    @Test
+    fun stale_back_press_reports_no_duration() {
+        val collector = createCollector()
+        collector.onBackStackChanged(listOf(key("home"), key("details")))
+
+        collector.recordBackPress()
+        nowNanos += 1_000_000_001L
+        collector.onBackStackChanged(listOf(key("home")))
+
+        assertThat(exporter.finishedSpanItems[1].attributes.get(NavigationConstants.NAVIGATION_DURATION_MS_KEY))
+            .isNull()
+    }
+
+    @Test
     fun stale_back_press_signal_falls_back_to_programmatic() {
         val collector = createCollector()
         collector.onBackStackChanged(listOf(key("home"), key("details")))
