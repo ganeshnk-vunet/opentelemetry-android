@@ -16,7 +16,11 @@ import io.mockk.mockk
 import io.mockk.verify
 import io.opentelemetry.api.trace.Span
 import io.opentelemetry.context.Context as OtelContext
+import io.opentelemetry.sdk.common.Clock
+import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
 import io.opentelemetry.sdk.testing.junit5.OpenTelemetryExtension
+import io.opentelemetry.sdk.trace.SdkTracerProvider
+import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
@@ -46,6 +50,9 @@ class OtelSideEffectModelLoaderTest {
         @JvmField
         @RegisterExtension
         val otelTesting: OpenTelemetryExtension = OpenTelemetryExtension.create()
+
+        /** Five seconds, far larger than any real drift, so the assertion cannot be flaky. */
+        private const val SKEW_NANOS = 5_000_000_000L
     }
 
     private lateinit var tracer: io.opentelemetry.api.trace.Tracer
@@ -115,8 +122,44 @@ class OtelSideEffectModelLoaderTest {
         assertThat(GlideSpanStore.spans).containsKey(System.identityHashCode(model))
     }
 
+    /**
+     * The model-loader half of the same defect the listener test covers.
+     *
+     * `buildLoadData` used to stamp the start from `System.currentTimeMillis() * 1_000_000` while
+     * `span.end()` took the end from the SDK clock. On device the SDK clock is `OtelAndroidClock`
+     * — a wall-clock baseline sampled once at process start plus `elapsedRealtimeNanos()` — so the
+     * two drift apart and never re-sync, and a fast load could end before it started.
+     *
+     * A default-clock test cannot show this because the two agree; this one gives the tracer a
+     * clock deliberately behind wall time, which is the shape of the real drift.
+     */
     @Test
-    fun `buildLoadData span has non-zero start epoch set via setStartTimestamp`() {
+    fun `buildLoadData span does not invert when the sdk clock lags wall time`() {
+        val laggingClock =
+            object : Clock {
+                override fun now(): Long = System.currentTimeMillis() * 1_000_000 - SKEW_NANOS
+
+                override fun nanoTime(): Long = System.nanoTime()
+            }
+        val exporter = InMemorySpanExporter.create()
+        val provider =
+            SdkTracerProvider
+                .builder()
+                .setClock(laggingClock)
+                .addSpanProcessor(SimpleSpanProcessor.create(exporter))
+                .build()
+        val loader = OtelContextModelLoader(provider.get("test"), makeFakeModelLoader(makeFakeFetcher()))
+        val model = "https://cdn.bank.com/logo.png"
+
+        loader.buildLoadData(model, 100, 100, Options())
+        GlideSpanStore.spans[System.identityHashCode(model)]?.end()
+
+        val span = exporter.finishedSpanItems.single()
+        assertThat(span.endEpochNanos).isGreaterThanOrEqualTo(span.startEpochNanos)
+    }
+
+    @Test
+    fun `buildLoadData span has a non-zero start epoch and a non-negative duration`() {
         val loader = makeLoader()
         val model = "https://cdn.bank.com/logo.png"
 

@@ -208,10 +208,25 @@ In practice BFSI apps load remote images via URL/`String`/`Uri`, which are all c
 relies heavily on `File` or resource-ID loads and you need spans for them, additional model types
 would have to be registered in `GlideInstrumentation.registerGlideComponents`.
 
-### Timestamp precision
+### Span timing
 
-The `image.load` span start time is set from `System.currentTimeMillis() * 1_000_000`, i.e.
-**millisecond** wall-clock resolution rescaled to nanoseconds — not true nanosecond precision.
-Sub-millisecond operations (notably memory-cache hits) may therefore report a near-zero duration in
-the backend. This is an accepted tradeoff for RUM; finer resolution would require pairing a
-`System.nanoTime()` delta with a clock offset (a pattern used elsewhere in the SDK).
+Both ends of an `image.load` span come from the **SDK clock** — the same one that stamps every other
+span. The network/disk path sets no explicit start at all (the span begins exactly where it is
+created), and the memory-cache path backdates its synthetic start with `GlideInstrumentation.clock`,
+the clock captured at install.
+
+This is not a style preference. The start used to come from `System.currentTimeMillis() * 1_000_000`
+while `span.end()` took the end from the SDK clock, which on Android is `OtelAndroidClock`: a
+wall-clock baseline sampled **once** at process start plus `SystemClock.elapsedRealtimeNanos()`. The
+two therefore drift apart and never re-sync, and for a memory-cache hit — where start and end are
+microseconds apart — the drift was enough to invert them. Production emitted `image.load` spans that
+**ended before they started**.
+
+Reading both ends from the SDK clock also makes the invariant structural rather than lucky: that
+clock is a fixed baseline plus a monotonic counter, so an end read from it can never precede a start
+read from it. Using `System.currentTimeMillis()` for *both* ends would have fixed the domain
+mismatch but not this, since wall-clock time is not monotonic and an NTP correction mid-load would
+reintroduce a negative duration.
+
+Precision improves as a side effect: `currentTimeMillis` carries only millisecond resolution, so the
+sub-millisecond durations the memory-cache path exists to report were previously truncated away.

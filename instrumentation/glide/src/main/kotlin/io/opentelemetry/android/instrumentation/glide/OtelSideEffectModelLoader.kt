@@ -15,7 +15,6 @@ import com.bumptech.glide.load.model.MultiModelLoaderFactory
 import io.opentelemetry.api.trace.Tracer
 import io.opentelemetry.context.Context as OtelContext
 import java.io.InputStream
-import java.util.concurrent.TimeUnit
 
 /**
  * Factory that produces [OtelContextModelLoader] instances for a specific model type.
@@ -79,13 +78,6 @@ internal class OtelContextModelLoader<Model : Any>(
 
         return try {
             val key = System.identityHashCode(model)
-            // Span start timestamp in wall-clock epoch nanoseconds. Note this is millisecond
-            // resolution: System.currentTimeMillis() * 1_000_000 only rescales ms → ns and does
-            // not provide true sub-millisecond precision, so very fast loads may report a near-zero
-            // duration. This is an accepted RUM tradeoff (documented in the README); finer
-            // resolution would require pairing a System.nanoTime() delta with a clock offset.
-            val startEpochNanos = System.currentTimeMillis() * 1_000_000
-
             // Clean up any stale in-flight span for this model instance (e.g. Glide retry).
             GlideSpanStore.spans.remove(key)?.let { stale ->
                 try { stale.end() } catch (_: Throwable) {}
@@ -94,7 +86,12 @@ internal class OtelContextModelLoader<Model : Any>(
             val span =
                 tracer
                     .spanBuilder(IMAGE_LOAD_SPAN_NAME)
-                    .setStartTimestamp(startEpochNanos, TimeUnit.NANOSECONDS)
+                    // No explicit start timestamp: the span begins exactly here, so there is
+                    // nothing to backdate. Letting the SDK stamp both ends keeps this span in one
+                    // time domain, which is what Coil already does. The previous
+                    // System.currentTimeMillis() start was read from a different clock than the
+                    // implicit end, and the gap between them made fast loads end before they
+                    // started.
                     .setAttribute(ATTR_IMAGE_URL, sanitizeModel(model.toString()))
                     .setAttribute(ATTR_IMAGE_MODEL_TYPE, model.javaClass.name)
                     .startSpan()

@@ -10,6 +10,7 @@ import com.google.auto.service.AutoService
 import io.opentelemetry.android.OpenTelemetryRum
 import io.opentelemetry.android.instrumentation.AndroidInstrumentation
 import io.opentelemetry.api.trace.Tracer
+import io.opentelemetry.sdk.common.Clock
 
 /**
  * [AndroidInstrumentation] entry point that activates OpenTelemetry image-load telemetry for
@@ -50,6 +51,7 @@ class GlideInstrumentation : AndroidInstrumentation {
         if (tracer != null) {
             return
         }
+        clock = openTelemetryRum.clock
         tracer =
             openTelemetryRum.openTelemetry
                 .tracerProvider
@@ -62,6 +64,7 @@ class GlideInstrumentation : AndroidInstrumentation {
         openTelemetryRum: OpenTelemetryRum,
     ) {
         tracer = null
+        clock = null
         // End any in-flight spans. Glide scopes are opened and closed on Glide's background
         // executor thread inside OtelContextDataFetcher.loadData() via .use { }, so they are
         // never stored here and require no cleanup.
@@ -80,6 +83,19 @@ class GlideInstrumentation : AndroidInstrumentation {
         @Volatile
         @JvmField
         internal var tracer: Tracer? = null
+
+        /**
+         * The SDK's own clock, captured at install so explicit timestamps land in the same time
+         * domain as every implicitly stamped span.
+         *
+         * This matters more than it looks. `OtelAndroidClock.now()` is a fixed per-process baseline
+         * plus `SystemClock.elapsedRealtimeNanos()`, so it is **monotonic** — a start and an end
+         * both read from it can never invert. `System.currentTimeMillis()` is neither monotonic nor
+         * in that domain: it is corrected by NTP, and it is anchored differently from the SDK
+         * baseline, which is what produced `image.load` spans ending before they started.
+         */
+        @Volatile
+        internal var clock: Clock? = null
 
         /**
          * Registers the OTel model-loader factory into Glide's [Registry].

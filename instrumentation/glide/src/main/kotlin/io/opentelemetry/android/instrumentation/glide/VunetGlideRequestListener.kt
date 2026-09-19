@@ -56,7 +56,7 @@ class VunetGlideRequestListener : RequestListener<Any> {
         // so this is the only timestamp we have. The memory-cache path is fully synchronous
         // (Engine.load → onResourceReady runs without leaving the calling thread), so this
         // timestamp is within microseconds of when the request was submitted.
-        val receivedAtEpochNanos = System.currentTimeMillis() * 1_000_000
+        val receivedAtEpochNanos = nowEpochNanos()
         return try {
             // Normal path: span was started by OtelContextModelLoader (disk / network) with
             // setStartTimestamp, so its duration already reflects real fetch time.
@@ -89,7 +89,7 @@ class VunetGlideRequestListener : RequestListener<Any> {
         target: Target<Any>,
         isFirstResource: Boolean,
     ): Boolean {
-        val receivedAtEpochNanos = System.currentTimeMillis() * 1_000_000
+        val receivedAtEpochNanos = nowEpochNanos()
         return try {
             // A failure must never be dropped: when no span was pre-created — memory-cache path, an
             // uncovered model type, or a null model such as `load(null)` — synthesise one so the
@@ -121,14 +121,31 @@ class VunetGlideRequestListener : RequestListener<Any> {
      *
      * Returns `null` — and therefore reports nothing — when the SDK has not installed a tracer.
      */
+    /**
+     * Reads the SDK's own clock, the same one that stamps the implicit `span.end()` below.
+     *
+     * Returns `null` before the instrumentation is installed, in which case the synthetic span
+     * falls back to an implicit start. Never `System.currentTimeMillis()`: that is a different
+     * time domain from the SDK clock *and* is not monotonic, so a backdated start read from it
+     * could land after an end read from the SDK — which is exactly how `image.load` spans came to
+     * end before they started.
+     */
+    private fun nowEpochNanos(): Long? = GlideInstrumentation.clock?.now()
+
     private fun startSyntheticSpan(
         model: Any?,
-        startEpochNanos: Long,
+        startEpochNanos: Long?,
     ): Span? {
         val tracer = GlideInstrumentation.tracer ?: return null
         return tracer
             .spanBuilder(IMAGE_LOAD_SPAN_NAME)
-            .setStartTimestamp(startEpochNanos, TimeUnit.NANOSECONDS)
+            .apply {
+                // Backdated to the moment the terminal callback was entered so the span still has
+                // a real duration. Both ends now come from the SDK clock, which is a fixed
+                // baseline plus elapsedRealtimeNanos() and therefore monotonic, so the end can
+                // never precede the start.
+                startEpochNanos?.let { setStartTimestamp(it, TimeUnit.NANOSECONDS) }
+            }
             .setAttribute(ATTR_IMAGE_URL, model?.let { sanitizeModel(it.toString()) } ?: VALUE_UNKNOWN)
             .setAttribute(ATTR_IMAGE_MODEL_TYPE, model?.javaClass?.name ?: VALUE_UNKNOWN)
             .startSpan()

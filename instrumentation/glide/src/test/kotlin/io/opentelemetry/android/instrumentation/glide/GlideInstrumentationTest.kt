@@ -7,6 +7,7 @@ package io.opentelemetry.android.instrumentation.glide
 
 import android.app.Application
 import io.mockk.every
+import io.opentelemetry.sdk.common.Clock
 import io.mockk.mockk
 import io.opentelemetry.android.OpenTelemetryRum
 import io.opentelemetry.sdk.testing.junit5.OpenTelemetryExtension
@@ -30,16 +31,21 @@ class GlideInstrumentationTest {
     @BeforeEach
     fun setUp() {
         GlideInstrumentation.tracer = null
+        GlideInstrumentation.clock = null
         GlideSpanStore.spans.clear()
         instrumentation = GlideInstrumentation()
         context = mockk(relaxed = true)
         openTelemetryRum = mockk()
         every { openTelemetryRum.openTelemetry } returns otelTesting.openTelemetry
+        // Glide now reads the SDK clock at install so explicit timestamps share a time domain
+        // with implicitly stamped ends.
+        every { openTelemetryRum.clock } returns Clock.getDefault()
     }
 
     @AfterEach
     fun tearDown() {
         GlideInstrumentation.tracer = null
+        GlideInstrumentation.clock = null
         GlideSpanStore.spans.clear()
     }
 
@@ -48,6 +54,25 @@ class GlideInstrumentationTest {
         assertThat(GlideInstrumentation.tracer).isNull()
         instrumentation.install(context, openTelemetryRum)
         assertThat(GlideInstrumentation.tracer).isNotNull()
+    }
+
+    /**
+     * Without the clock, backdated synthetic spans fall back to an implicit start — correct, but it
+     * silently gives up the sub-millisecond duration the memory-cache path exists to report, and
+     * nothing else in the module would notice.
+     */
+    @Test
+    fun `install captures the sdk clock`() {
+        assertThat(GlideInstrumentation.clock).isNull()
+        instrumentation.install(context, openTelemetryRum)
+        assertThat(GlideInstrumentation.clock).isNotNull()
+    }
+
+    @Test
+    fun `uninstall clears the sdk clock`() {
+        instrumentation.install(context, openTelemetryRum)
+        instrumentation.uninstall(context, openTelemetryRum)
+        assertThat(GlideInstrumentation.clock).isNull()
     }
 
     @Test
