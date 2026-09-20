@@ -264,7 +264,7 @@ class NavigationSpanEmitterTest {
         val tracer = tracerFor(exporter)
         val emitter = NavigationSpanEmitter(tracer)
         beginClickInteraction(tracer)
-        val tapAtNanos = ActiveInteractionContext.rootStartedAtNanos()!!
+        val tapAtNanos = ActiveInteractionContext.lastInteractionStartedAtNanos()!!
 
         emitter.emit(candidate().copy(timestampNanos = tapAtNanos + 40L * NANOS_PER_MILLI))
 
@@ -311,7 +311,7 @@ class NavigationSpanEmitterTest {
         val tracer = tracerFor(exporter)
         val emitter = NavigationSpanEmitter(tracer)
         beginClickInteraction(tracer)
-        val tapAtNanos = ActiveInteractionContext.rootStartedAtNanos()!!
+        val tapAtNanos = ActiveInteractionContext.lastInteractionStartedAtNanos()!!
         val backPressAtNanos = tapAtNanos + 200L * NANOS_PER_MILLI
 
         emitter.emit(
@@ -387,7 +387,7 @@ class NavigationSpanEmitterTest {
         val tracer = tracerFor(exporter)
         val emitter = NavigationSpanEmitter(tracer)
         beginClickInteraction(tracer)
-        val tapAtNanos = ActiveInteractionContext.rootStartedAtNanos()!!
+        val tapAtNanos = ActiveInteractionContext.lastInteractionStartedAtNanos()!!
 
         // The first navigation calls ActiveInteractionContext.activate, replacing the *active*
         // span. If the start time were read from that instead of the root context, the second

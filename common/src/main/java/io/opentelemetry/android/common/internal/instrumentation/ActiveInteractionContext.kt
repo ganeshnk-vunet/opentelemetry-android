@@ -53,24 +53,6 @@ object ActiveInteractionContext {
     fun rootContext(): Context? = synchronized(lock) { rootContext }
 
     /**
-     * When the interaction began, as epoch nanoseconds on the SDK clock, or `null` if there is no
-     * live interaction or its root span does not carry a readable start time.
-     *
-     * Read from the root span rather than stored separately so the value comes from the same clock
-     * that stamped the span, with no second time source to drift out of the domain other telemetry
-     * is recorded in. [activate] replaces the *active* span as navigation proceeds, but never
-     * [rootContext], so this stays anchored to the originating interaction rather than sliding
-     * forward to the most recent navigation.
-     *
-     * Returns `null` for a non-SDK span (a no-op tracer, or a propagated remote parent), which is
-     * why every caller must treat an unknown start time as "do not report" rather than zero.
-     */
-    fun rootStartedAtNanos(): Long? {
-        val root = synchronized(lock) { rootContext } ?: return null
-        return startEpochNanosOf(Span.fromContext(root))
-    }
-
-    /**
      * Start of the most recent interaction regardless of whether its parenting window is still
      * open, for callers that need to measure elapsed time rather than establish a parent.
      *
