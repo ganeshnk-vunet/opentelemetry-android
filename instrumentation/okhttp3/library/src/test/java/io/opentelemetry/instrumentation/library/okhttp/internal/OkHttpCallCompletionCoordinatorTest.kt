@@ -102,6 +102,9 @@ class OkHttpCallCompletionCoordinatorTest {
         OkHttpCallCompletionCoordinator.sweepGuarded()
 
         assertThat(OkHttpCallCompletionCoordinator.pendingCount).isZero()
+        // instrumenter.end threw, but the span must still be closed -- pendingCount==0 without
+        // end() used to lock in a stranded, never-exported span.
+        verify { span.end() }
     }
 
     /**
@@ -164,7 +167,55 @@ class OkHttpCallCompletionCoordinatorTest {
         OkHttpCallCompletionCoordinator.registerTraced(call, Context.root(), chain, span)
 
         verify { instrumenter.end(Context.root(), firstChain, null, null) }
+        verify { firstSpan.setAttribute(OkHttpTimingAttributes.PHASES_COMPLETE, false) }
         assertThat(OkHttpCallCompletionCoordinator.pendingCount).isEqualTo(1)
+    }
+
+    @Test
+    fun `re-registering leaves timing for the surviving attempt`() {
+        val firstSpan = mockk<Span>(relaxed = true)
+        val firstChain = mockk<Interceptor.Chain>(relaxed = true)
+        val state = OkHttpCallTimingStore.stateFor(call)
+        state.callStartNanos = 0L
+        state.responseHeadersStartNanos = 10_000_000L
+        state.responseBodyEndNanos = 30_000_000L
+
+        OkHttpCallCompletionCoordinator.registerTraced(call, Context.root(), firstChain, firstSpan)
+        OkHttpCallCompletionCoordinator.registerTraced(call, Context.root(), chain, span)
+        OkHttpCallCompletionCoordinator.onCallEnd(call)
+
+        // The first attempt must not consume the per-Call timing row.
+        verify(exactly = 0) { firstSpan.setAttribute(OkHttpTimingAttributes.DOWNLOAD_MS, 20L) }
+        verify { span.setAttribute(OkHttpTimingAttributes.DOWNLOAD_MS, 20L) }
+    }
+
+    @Test
+    fun `sweep does not abandon a newer attempt when an older snapshot expires`() {
+        val firstSpan = mockk<Span>(relaxed = true)
+        val firstChain = mockk<Interceptor.Chain>(relaxed = true)
+        OkHttpCallCompletionCoordinator.setNanoTimeSource { 0L }
+        OkHttpCallCompletionCoordinator.registerTraced(call, Context.root(), firstChain, firstSpan)
+
+        // Deadline of the first attempt has passed, then a redirect replaces it.
+        OkHttpCallCompletionCoordinator.setNanoTimeSource { TimeUnit.SECONDS.toNanos(301) }
+        OkHttpCallCompletionCoordinator.registerTraced(call, Context.root(), chain, span)
+
+        assertThat(OkHttpCallCompletionCoordinator.abandonIfCurrent(call, firstSpan)).isFalse()
+        assertThat(OkHttpCallCompletionCoordinator.pendingCount).isEqualTo(1)
+        verify(exactly = 0) { instrumenter.end(Context.root(), chain, any(), any()) }
+    }
+
+    @Test
+    fun `a throwing enricher still ends the span`() {
+        val throwingEnricher = mockk<OkHttpTimingSpanEnricher>()
+        every { throwingEnricher.enrich(any(), any()) } throws RuntimeException("boom")
+        OkHttpCallCompletionCoordinator.configure(instrumenter, throwingEnricher)
+        OkHttpCallCompletionCoordinator.registerTraced(call, Context.root(), chain, span)
+
+        OkHttpCallCompletionCoordinator.onCallEnd(call)
+
+        verify { instrumenter.end(Context.root(), chain, null, null) }
+        assertThat(OkHttpCallCompletionCoordinator.pendingCount).isZero()
     }
 
     @Test

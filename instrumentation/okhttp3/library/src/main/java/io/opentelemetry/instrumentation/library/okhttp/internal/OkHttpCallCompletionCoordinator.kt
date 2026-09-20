@@ -38,9 +38,12 @@ import okhttp3.Response
  * 2. **A span must end at all.** A redirect or retry re-entering [registerTraced] completes the
  *    previous attempt rather than overwriting it, and the watchdog ends anything that outlives its
  *    deadline. Without that backstop a call whose body is never touched leaks its `Call`,
- *    `Response`, `Context` and `Span` for the life of the process. [completePending] also ends the
- *    span before consulting the enricher; that ordering is defensive rather than a fix, since
- *    [configure] always sets the instrumenter and the enricher together.
+ *    `Response`, `Context` and `Span` for the life of the process. Timing state is per-`Call`, so a
+ *    re-registration must end the previous span *without* consuming the store -- otherwise the
+ *    surviving attempt loses every `http.client.timing.*` attribute. [completePending] writes
+ *    timing attributes first (they are dropped after `Span.end`) and always ends the span in a
+ *    `finally`, including via `span.end()` if [Instrumenter.end] throws, so a throwing enricher
+ *    cannot strand a started span.
  *
  * ### Why the pending map holds strong references, and what that costs
  *
@@ -115,7 +118,10 @@ internal object OkHttpCallCompletionCoordinator {
         // take its untraced branch and discard the timing state that callStart has already
         // recorded, losing every http.client.timing.* attribute on the call.
         pendingTraces.remove(call)?.let { previous ->
-            completePending(call, previous, abandoned = false)
+            // Timing is stored per Call, not per attempt. Consuming it here would strip
+            // http.client.timing.* from the surviving attempt -- a regression against the leak
+            // this path exists to close, where the final span still received callEnd enrichment.
+            completePending(call, previous, abandoned = false, consumeTiming = false)
         }
         val budgetNanos = budgetNanosFor(call)
         pendingTraces[call] =
@@ -189,43 +195,88 @@ internal object OkHttpCallCompletionCoordinator {
         complete(call)
     }
 
-    private fun complete(
-        call: Call,
-        abandoned: Boolean = false,
-    ) {
+    private fun complete(call: Call) {
         val pending = pendingTraces.remove(call)
         if (pending == null) {
             OkHttpCallTimingStore.discard(call)
             return
         }
-        completePending(call, pending, abandoned)
+        completePending(call, pending, abandoned = false, consumeTiming = true)
+    }
+
+    /**
+     * Ends [span] only if it is still the in-flight attempt for [call]. A redirect replaces the
+     * map value under the same `Call` key; completing by key alone would abandon the new attempt.
+     */
+    internal fun abandonIfCurrent(
+        call: Call,
+        span: Span,
+    ): Boolean {
+        val pending = pendingTraces[call] ?: return false
+        if (pending.span !== span) {
+            return false
+        }
+        if (nanoTimeSource() - pending.deadlineNanos < 0) {
+            return false
+        }
+        if (!pendingTraces.remove(call, pending)) {
+            return false
+        }
+        OkHttpCallTimingStore.updateIfPresent(call) { state ->
+            state.failed = true
+            state.phasesComplete = false
+        }
+        completePending(call, pending, abandoned = true, consumeTiming = true)
+        return true
     }
 
     private fun completePending(
         call: Call,
         pending: PendingTrace,
         abandoned: Boolean,
+        consumeTiming: Boolean,
     ) {
-        // Enrichment is best-effort; ending the span is not. Bailing out here on a missing enricher
-        // would leave a started span that nothing can ever close.
-        val enricher = spanEnricher
-        if (enricher != null) {
-            enricher.enrich(pending.span, call)
-        } else {
-            OkHttpCallTimingStore.discard(call)
+        try {
+            if (abandoned) {
+                pending.span.setAttribute(OkHttpTimingAttributes.ABANDONED, true)
+            }
+            if (consumeTiming) {
+                try {
+                    val enricher = spanEnricher
+                    if (enricher != null) {
+                        enricher.enrich(pending.span, call)
+                    } else {
+                        OkHttpCallTimingStore.discard(call)
+                    }
+                } catch (_: RuntimeException) {
+                    OkHttpCallTimingStore.discard(call)
+                }
+            } else {
+                pending.span.setAttribute(OkHttpTimingAttributes.PHASES_COMPLETE, false)
+            }
+        } finally {
+            // Timing attributes must be written before end -- they are dropped afterwards -- but
+            // ending is not optional. Instrumenter.end throwing used to leave the span started
+            // after it had already been removed from the pending map, with nothing to retry.
+            try {
+                val inst = instrumenter
+                if (inst != null) {
+                    // Response is reported even alongside an error. TimingTracingInterceptor sets
+                    // it as soon as chain.proceed() returns, so a call that received a 200 and
+                    // then failed while streaming the body still has one. Both are passed so the
+                    // span carries the status code *and* the error.
+                    inst.end(pending.context, pending.chain, pending.response, pending.error)
+                } else {
+                    pending.span.end()
+                }
+            } catch (_: RuntimeException) {
+                try {
+                    pending.span.end()
+                } catch (_: RuntimeException) {
+                    // last resort; sweepGuarded still swallows so the watchdog survives
+                }
+            }
         }
-        if (abandoned) {
-            pending.span.setAttribute(OkHttpTimingAttributes.ABANDONED, true)
-        }
-
-        // The response is reported even alongside an error. TimingTracingInterceptor sets it as
-        // soon as chain.proceed() returns, so a call that received a 200 and then failed while
-        // streaming the body still has one — discarding it here dropped the real status code and
-        // made this path disagree with the plain TracingInterceptor used when
-        // captureNetworkTimingPhases is off, which ends the span with the response before the body
-        // is read. It also left the failure indistinguishable from a connection that was never
-        // established. Both are passed so the span carries the status code *and* the error.
-        instrumenter?.end(pending.context, pending.chain, pending.response, pending.error)
     }
 
     /**
@@ -286,17 +337,15 @@ internal object OkHttpCallCompletionCoordinator {
         val now = nanoTimeSource()
         for ((call, pending) in pendingTraces) {
             // Subtraction, not `now >= deadline`, so a nanoTime wraparound does not expire
-            // every in-flight call at once.
+            // every in-flight call at once. Completing by identity, not by Call key: a redirect
+            // replaces the map value, and a stale iterator snapshot must not end the new attempt.
             if (now - pending.deadlineNanos >= 0) {
-                OkHttpCallTimingStore.updateIfPresent(call) { state ->
-                    state.failed = true
-                    state.phasesComplete = false
-                }
-                complete(call, abandoned = true)
+                abandonIfCurrent(call, pending.span)
             }
         }
         // Calls that never started a span still leave timing state behind -- websocket upgrades
         // reach the EventListener but not the network interceptor, so nothing ever collects theirs.
+        // In-flight DNS/connect is the same "not in pendingTraces" shape and must not be reclaimed.
         OkHttpCallTimingStore.discardOlderThan(now - maxCallDurationNanos) {
             !pendingTraces.containsKey(it)
         }

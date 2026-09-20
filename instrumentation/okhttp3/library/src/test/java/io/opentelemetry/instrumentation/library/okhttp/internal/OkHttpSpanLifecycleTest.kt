@@ -8,6 +8,7 @@ package io.opentelemetry.instrumentation.library.okhttp.internal
 import io.mockk.mockk
 import io.opentelemetry.instrumentation.library.okhttp.OkHttpInstrumentation
 import io.opentelemetry.sdk.testing.junit5.OpenTelemetryExtension
+import io.opentelemetry.sdk.trace.data.SpanData
 import java.util.concurrent.TimeUnit
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
@@ -82,14 +83,15 @@ class OkHttpSpanLifecycleTest {
         val client = instrument()
 
         val response = get(client)
-        // Read to exhaustion but deliberately leave the body open. OkHttp reports callEnd only
-        // once a body is closed, so before this fix the span stayed open for as long as the caller
-        // held it -- the 23-hour durations seen in production.
+        // Read to exhaustion but deliberately leave the body open. OkHttp reports callEnd when the
+        // body reaches EOF *or* is closed, whichever comes first, so a fully consumed body ends
+        // the span even if the caller never closes it.
         val body = response.body!!.source().readUtf8()
 
         assertThat(body).isEqualTo("hello")
         assertThat(otel.spans).hasSize(1)
         assertThat(otel.spans[0].hasEnded()).isTrue()
+        assertThat(otel.spans[0].endEpochNanos - otel.spans[0].startEpochNanos).isPositive()
         assertThat(OkHttpCallCompletionCoordinator.pendingCount).isZero()
 
         response.close()
@@ -221,7 +223,7 @@ class OkHttpSpanLifecycleTest {
         fakeNanos += TimeUnit.SECONDS.toNanos(6)
         OkHttpCallCompletionCoordinator.sweep()
 
-        // 6s is well inside the 60s default but past the client's own 5s callTimeout.
+        // 6s is well inside the 5-minute default but past the client's own 5s callTimeout.
         assertThat(otel.spans).hasSize(1)
 
         response.close()
@@ -249,15 +251,25 @@ class OkHttpSpanLifecycleTest {
         assertThat(otel.spans).hasSize(2)
         assertThat(otel.spans).allMatch { it.hasEnded() }
         assertThat(OkHttpCallCompletionCoordinator.pendingCount).isZero()
+
+        val attrs = { span: SpanData -> span.attributes.asMap().mapKeys { it.key.key } }
+        // Previous attempt is closed without consuming the per-Call timing row.
+        assertThat(attrs(otel.spans[0])).containsEntry(OkHttpTimingAttributes.PHASES_COMPLETE, false)
+        assertThat(attrs(otel.spans[0])).doesNotContainKey(OkHttpTimingAttributes.DNS_MS)
+        // The surviving attempt still gets phase timing recorded against the Call.
+        // total_ms is not asserted here: tests inject a fake nanoTime for the watchdog
+        // deadline, which would make callEnd < callStart and drop total_ms.
+        assertThat(attrs(otel.spans[1])).containsKey(OkHttpTimingAttributes.DNS_MS)
+        assertThat(attrs(otel.spans[1])).containsKey(OkHttpTimingAttributes.TTFB_MS)
     }
 
     @Test
     fun `spans still end when the event listener could not be wired`() {
         server.enqueue(MockResponse.Builder().body("minified").build())
-        val client = instrument()
-        // Simulates a minified build in which R8 renamed OkHttpClient.Builder.eventListenerFactory,
-        // so the reflective wiring failed and no timing listener exists to complete anything.
+        // Must be set *before* applyClientInstrumentation: a minified build never installs the
+        // listener, and a successful wrap after flipping this flag is not the failure mode.
         OkHttpSingletons.eventListenerWiringFailed = true
+        val client = instrument()
 
         val response = get(client)
 
@@ -283,5 +295,22 @@ class OkHttpSpanLifecycleTest {
         OkHttpCallCompletionCoordinator.sweep()
 
         assertThat(OkHttpCallTimingStore.remove(orphan)).isNull()
+    }
+
+    @Test
+    fun `timing state for an in-flight dns lookup is not reclaimed`() {
+        instrument()
+        val inFlight = mockk<Call>(relaxed = true)
+        OkHttpCallTimingStore.stateFor(inFlight).apply {
+            createdAtNanos = fakeNanos
+            callStartNanos = fakeNanos
+            dnsStartNanos = fakeNanos
+        }
+
+        fakeNanos += TimeUnit.SECONDS.toNanos(301)
+        OkHttpCallCompletionCoordinator.sweep()
+
+        val timing = OkHttpCallTimingStore.remove(inFlight)
+        assertThat(timing).isNotNull()
     }
 }

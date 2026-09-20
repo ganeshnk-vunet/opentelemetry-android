@@ -34,4 +34,14 @@ class CallTimingStateTest {
         assertThat(timing.totalMs).isEqualTo(100L)
         assertThat(timing.phasesComplete).isTrue()
     }
+
+    @Test
+    fun `hasOpenNetworkPhase is true while dns has started and not ended`() {
+        val state = CallTimingState()
+        state.dnsStartNanos = 1L
+        assertThat(state.hasOpenNetworkPhase()).isTrue()
+
+        state.dnsEndNanos = 2L
+        assertThat(state.hasOpenNetworkPhase()).isFalse()
+    }
 }

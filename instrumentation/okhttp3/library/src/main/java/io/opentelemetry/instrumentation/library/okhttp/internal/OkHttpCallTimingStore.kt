@@ -43,7 +43,10 @@ internal object OkHttpCallTimingStore {
         val iterator = timings.entries.iterator()
         while (iterator.hasNext()) {
             val (call, state) = iterator.next()
-            if (cutoffNanos - state.createdAtNanos >= 0 && isEligible(call)) {
+            if (cutoffNanos - state.createdAtNanos >= 0 &&
+                !state.hasOpenNetworkPhase() &&
+                isEligible(call)
+            ) {
                 iterator.remove()
             }
         }

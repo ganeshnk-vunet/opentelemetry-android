@@ -50,16 +50,17 @@ object OkHttpSingletons {
 
     /**
      * Set when the reflective `eventListenerFactory` lookup failed, which happens in minified
-     * builds where R8 renames the private field.
+     * builds where R8 renames the private field. Failure is process-wide -- the field is either
+     * present for every `OkHttpClient.Builder` or for none -- so this is sticky: later builders
+     * skip wrapping rather than retrying a lookup that cannot succeed.
      *
      * This is not merely a loss of `http.client.timing.*` attributes. Since completion moved to
      * the `EventListener`, that listener is the only thing that ends an OkHttp span, so without it
      * spans would be started and never ended at all. [TimingTracingInterceptor] reads this to fall
      * back to ending inline.
      */
-    @JvmField
     @Volatile
-    var eventListenerWiringFailed: Boolean = false
+    internal var eventListenerWiringFailed: Boolean = false
 
     @JvmStatic
     fun wrapEventListenerFactory(delegate: EventListener.Factory): EventListener.Factory =
@@ -79,7 +80,7 @@ object OkHttpSingletons {
         if (!builder.networkInterceptors().contains(tracingInterceptor)) {
             builder.addNetworkInterceptor(tracingInterceptor)
         }
-        if (captureNetworkTimingPhases) {
+        if (captureNetworkTimingPhases && !eventListenerWiringFailed) {
             wrapEventListenerFactoryOnBuilder(builder)
         }
     }

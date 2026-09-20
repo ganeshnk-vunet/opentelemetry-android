@@ -48,4 +48,23 @@ class OkHttpCallTimingStoreTest {
 
         assertThat(OkHttpCallTimingStore.remove(call)).isNull()
     }
+
+    @Test
+    fun `discardOlderThan skips calls with an open network phase`() {
+        val inFlight = mockk<Call>(relaxed = true)
+        val finished = mockk<Call>(relaxed = true)
+        OkHttpCallTimingStore.stateFor(inFlight).apply {
+            createdAtNanos = 0L
+            dnsStartNanos = 0L
+        }
+        OkHttpCallTimingStore.stateFor(finished).apply {
+            createdAtNanos = 0L
+            callStartNanos = 0L
+        }
+
+        OkHttpCallTimingStore.discardOlderThan(1L) { true }
+
+        assertThat(OkHttpCallTimingStore.remove(inFlight)).isNotNull()
+        assertThat(OkHttpCallTimingStore.remove(finished)).isNull()
+    }
 }

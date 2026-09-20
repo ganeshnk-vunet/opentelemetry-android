@@ -35,6 +35,21 @@ internal class CallTimingState(
     var failed: Boolean = false
     var phasesComplete: Boolean = true
 
+    /**
+     * True while a network phase has started and not yet finished. The watchdog must not reclaim
+     * this row in that state: a call still in DNS or connect is absent from the pending-span map
+     * (the network interceptor has not run) but is not a websocket leftover.
+     */
+    fun hasOpenNetworkPhase(): Boolean =
+        isOpen(dnsStartNanos, dnsEndNanos) ||
+            isOpen(connectStartNanos, connectEndNanos) ||
+            isOpen(secureConnectStartNanos, secureConnectEndNanos) ||
+            isOpen(proxySelectStartNanos, proxySelectEndNanos) ||
+            isOpen(requestHeadersStartNanos, requestHeadersEndNanos) ||
+            isOpen(requestBodyStartNanos, requestBodyEndNanos) ||
+            isOpen(responseHeadersStartNanos, responseHeadersEndNanos) ||
+            isOpen(responseBodyStartNanos, responseBodyEndNanos)
+
     fun finalizeTiming(nowNanos: Long = System.nanoTime()): OkHttpTimingResult {
         val callEnd = callEndNanos ?: nowNanos
         return OkHttpTimingResult(
@@ -52,6 +67,11 @@ internal class CallTimingState(
             phasesComplete = phasesComplete && !failed,
         )
     }
+
+    private fun isOpen(
+        startNanos: Long?,
+        endNanos: Long?,
+    ): Boolean = startNanos != null && endNanos == null
 
     private fun durationMs(
         startNanos: Long?,

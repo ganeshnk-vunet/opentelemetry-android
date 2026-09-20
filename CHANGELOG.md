@@ -24,7 +24,9 @@
 - A redirect or auth retry no longer strands a span. The tracing interceptor is a *network*
   interceptor, so it runs once per wire attempt; the second registration silently replaced the first
   in the pending map, leaving a started span with no path to `end()` — leaked, and never exported.
-  Each attempt now gets its own correctly ended span.
+  Each attempt now gets its own correctly ended span. Timing state is per-`Call`, so the previous
+  attempt is ended without consuming the store; the surviving attempt still receives
+  `http.client.timing.*` on `callEnd`.
 - `http.client` spans are still emitted in minified builds. R8 renames the private
   `OkHttpClient.Builder.eventListenerFactory` field the timing listener is installed through, and
   since that listener became the only thing that ends an OkHttp span, the reflective failure meant
