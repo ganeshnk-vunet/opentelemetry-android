@@ -13,7 +13,10 @@
   was a few tens of milliseconds. A watchdog now bounds every span: anything still open past the cap
   is ended and marked `http.client.timing.abandoned = true` with
   `http.client.timing.phases_complete = false`, so a truncated duration is never mistaken for a slow
-  request. The cap defaults to 60s and is configurable via
+  request. Every call that finishes inside the cap reports its true duration however slow it was, so
+  a genuinely two-minute request is recorded as two minutes rather than truncated; the cap is set
+  above any plausible real request precisely so that slow requests, the ones worth investigating,
+  are never deleted by it. The cap defaults to 5 minutes and is configurable via
   `OkHttpInstrumentation.setMaxCallDurationMillis`; a client that sets OkHttp's own `callTimeout` is
   held to that instead. The same sweep reclaims the pending-call state, which previously grew without
   bound — websocket upgrades in particular reach the `EventListener` but skip network interceptors,

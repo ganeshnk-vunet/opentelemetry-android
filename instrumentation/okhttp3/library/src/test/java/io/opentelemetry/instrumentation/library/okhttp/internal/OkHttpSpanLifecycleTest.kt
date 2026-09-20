@@ -104,7 +104,7 @@ class OkHttpSpanLifecycleTest {
         // Nothing reads the body, so neither responseBodyEnd nor callEnd will ever arrive.
         assertThat(otel.spans).isEmpty()
 
-        fakeNanos += TimeUnit.SECONDS.toNanos(61)
+        fakeNanos += TimeUnit.SECONDS.toNanos(301)
         OkHttpCallCompletionCoordinator.sweep()
 
         assertThat(otel.spans).hasSize(1)
@@ -124,11 +124,35 @@ class OkHttpSpanLifecycleTest {
         val client = instrument()
 
         val response = get(client)
-        fakeNanos += TimeUnit.SECONDS.toNanos(59)
+        fakeNanos += TimeUnit.SECONDS.toNanos(299)
         OkHttpCallCompletionCoordinator.sweep()
 
         assertThat(otel.spans).isEmpty()
         assertThat(OkHttpCallCompletionCoordinator.pendingCount).isEqualTo(1)
+
+        response.close()
+    }
+
+    @Test
+    fun `a genuinely slow call reports its real duration and is not truncated`() {
+        server.enqueue(MockResponse.Builder().body("slow").build())
+        val client = instrument()
+
+        val response = get(client)
+        // Two minutes is slow, not broken -- a finding this SDK exists to surface. The watchdog
+        // must leave it alone so the span carries its true duration; capping it here would delete
+        // exactly the signal worth having.
+        fakeNanos += TimeUnit.MINUTES.toNanos(2)
+        OkHttpCallCompletionCoordinator.sweep()
+
+        assertThat(otel.spans).isEmpty()
+        assertThat(OkHttpCallCompletionCoordinator.pendingCount).isEqualTo(1)
+
+        // It completes on its own and is reported normally, with no abandoned marker.
+        response.body!!.source().readUtf8()
+        val span = otel.spans.single()
+        assertThat(span.attributes.asMap().mapKeys { it.key.key })
+            .doesNotContainKey(OkHttpTimingAttributes.ABANDONED)
 
         response.close()
     }
@@ -214,7 +238,7 @@ class OkHttpSpanLifecycleTest {
             callStartNanos = fakeNanos
         }
 
-        fakeNanos += TimeUnit.SECONDS.toNanos(61)
+        fakeNanos += TimeUnit.SECONDS.toNanos(301)
         OkHttpCallCompletionCoordinator.sweep()
 
         assertThat(OkHttpCallTimingStore.remove(orphan)).isNull()

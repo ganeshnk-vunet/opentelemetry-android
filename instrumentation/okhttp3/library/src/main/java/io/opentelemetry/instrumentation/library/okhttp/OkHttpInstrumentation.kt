@@ -131,6 +131,15 @@ class OkHttpInstrumentation : AndroidInstrumentation {
      * own `callTimeout` is held to that instead, since the application has already stated what it
      * considers the longest legitimate call.
      *
+     * **Every call that finishes inside the cap reports its true duration**, however slow it was --
+     * a two-minute request is recorded as two minutes, not truncated. The cap only applies to calls
+     * that never report completion at all, and those are marked rather than silently shortened, so
+     * `abandoned = true` should be read as "ran at least this long, exact duration unknown" and
+     * excluded from latency percentiles.
+     *
+     * Set it below the slowest request worth investigating and real findings disappear; that is the
+     * failure mode to avoid when tuning it.
+     *
      * @param maxCallDurationMillis Milliseconds; must be positive.
      */
     fun setMaxCallDurationMillis(maxCallDurationMillis: Long) {
@@ -150,7 +159,15 @@ class OkHttpInstrumentation : AndroidInstrumentation {
     override val name: String = "okhttp"
 
     companion object {
-        /** Default cap on span lifetime; see [setMaxCallDurationMillis]. */
-        const val DEFAULT_MAX_CALL_DURATION_MILLIS: Long = 60_000L
+        /**
+         * Default cap on span lifetime; see [setMaxCallDurationMillis].
+         *
+         * Deliberately generous. The cap exists to stop a span running for hours, **not** to decide
+         * what counts as slow -- a request that genuinely takes two minutes is a finding this SDK
+         * exists to surface, and truncating it at a tight bound would destroy exactly the signal
+         * worth having. Five minutes sits above any plausible real request while still removing the
+         * multi-hour pathology.
+         */
+        const val DEFAULT_MAX_CALL_DURATION_MILLIS: Long = 300_000L
     }
 }

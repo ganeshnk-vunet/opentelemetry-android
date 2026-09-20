@@ -108,8 +108,20 @@ the span would otherwise stretch across the whole of that wait.
 A watchdog bounds this. Any span still open after the cap is ended anyway and carries
 `http.client.timing.abandoned = true` alongside `http.client.timing.phases_complete = false`, so a
 truncated duration is always identifiable and never silently mistaken for a slow request. The cap
-defaults to 60 seconds; a client that sets OkHttp's own `callTimeout` is held to that instead, since
-the application has already stated the longest call it considers legitimate.
+defaults to **5 minutes**; a client that sets OkHttp's own `callTimeout` is held to that instead,
+since the application has already stated the longest call it considers legitimate.
+
+> [!IMPORTANT]
+> **The cap is not a definition of "too slow".** Every call that finishes inside it reports its true
+> duration, however slow — a request that genuinely takes two minutes is recorded as two minutes.
+> The cap only applies to calls that never report completion at all, and it is deliberately set
+> above any plausible real request so that slow requests, which are the ones worth investigating,
+> are never deleted by it.
+>
+> Read `abandoned = true` as *"ran at least this long, exact duration unknown"* and exclude those
+> rows from latency percentiles rather than treating them as measurements. Lowering the cap below
+> the slowest request you care about will silently remove real findings — that is the failure mode
+> to avoid when tuning it.
 
 ```java
 OkHttpInstrumentation instrumentation = AndroidInstrumentationLoader.getInstrumentation(OkHttpInstrumentation.class);

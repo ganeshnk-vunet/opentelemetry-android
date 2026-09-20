@@ -97,7 +97,7 @@ class OkHttpCallCompletionCoordinatorTest {
         every { instrumenter.end(any(), any(), any(), any()) } throws RuntimeException("boom")
         OkHttpCallCompletionCoordinator.setNanoTimeSource { 0L }
         OkHttpCallCompletionCoordinator.registerTraced(call, Context.root(), chain, span)
-        OkHttpCallCompletionCoordinator.setNanoTimeSource { TimeUnit.SECONDS.toNanos(61) }
+        OkHttpCallCompletionCoordinator.setNanoTimeSource { TimeUnit.SECONDS.toNanos(301) }
 
         OkHttpCallCompletionCoordinator.sweepGuarded()
 
