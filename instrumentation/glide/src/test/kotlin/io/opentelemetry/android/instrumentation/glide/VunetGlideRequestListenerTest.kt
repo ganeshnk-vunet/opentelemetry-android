@@ -6,6 +6,7 @@
 
 package io.opentelemetry.android.instrumentation.glide
 
+import android.app.Application
 import android.content.res.Resources
 import android.graphics.drawable.Drawable
 import android.view.View
@@ -17,15 +18,17 @@ import com.bumptech.glide.request.target.Target
 import com.bumptech.glide.request.transition.Transition
 import io.mockk.every
 import io.mockk.mockk
+import io.opentelemetry.android.OpenTelemetryRum
 import io.opentelemetry.android.common.internal.imageload.ImageLoadAttributes
 import io.opentelemetry.api.trace.Span
 import io.opentelemetry.api.trace.StatusCode
+import io.opentelemetry.sdk.OpenTelemetrySdk
 import io.opentelemetry.sdk.common.Clock
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
-import io.opentelemetry.sdk.trace.SdkTracerProvider
-import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor
 import io.opentelemetry.sdk.testing.junit5.OpenTelemetryExtension
+import io.opentelemetry.sdk.trace.SdkTracerProvider
 import io.opentelemetry.sdk.trace.data.StatusData
+import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
@@ -48,6 +51,8 @@ class VunetGlideRequestListenerTest {
     @BeforeEach
     fun setUp() {
         GlideSpanStore.spans.clear()
+        GlideInstrumentation.tracer = null
+        GlideInstrumentation.clock = null
         listener = VunetGlideRequestListener()
     }
 
@@ -55,6 +60,7 @@ class VunetGlideRequestListenerTest {
     fun tearDown() {
         GlideSpanStore.spans.clear()
         GlideInstrumentation.tracer = null
+        GlideInstrumentation.clock = null
     }
 
     /** Simulates what OtelSideEffectModelLoader does before the request fires. */
@@ -223,29 +229,18 @@ class VunetGlideRequestListenerTest {
     }
 
     /**
-     * The defect this guards: the span start came from `System.currentTimeMillis() * 1_000_000`
-     * while `span.end()` stamped the end from the SDK clock — a different, differently-anchored
-     * time domain. For a memory-cache hit the two are microseconds apart, so the skew between the
-     * clocks was enough to invert them, and production emitted `image.load` spans that ended
-     * before they started.
-     *
-     * Both ends now come from the SDK clock, which is a fixed baseline plus
-     * `elapsedRealtimeNanos()` and therefore monotonic, so this cannot invert.
-     */
-    /**
-     * Reproduces the production defect deterministically.
+     * Reproduces the production defect through the real install wiring.
      *
      * On device the SDK clock is `OtelAndroidClock`: a wall-clock baseline sampled **once** at
      * process start, plus `SystemClock.elapsedRealtimeNanos()`. It therefore drifts away from
      * `System.currentTimeMillis()` and never re-syncs. Reading the span start from
-     * `currentTimeMillis()` while `span.end()` stamps the end from the SDK clock puts the two ends
-     * in different time domains, and for a memory-cache hit — where they are microseconds apart —
+     * `currentTimeMillis()` — or from `Clock.getDefault()` — while `span.end()` stamps the end
+     * from the SDK clock puts the two ends in different time domains, and for a memory-cache hit
      * the drift is enough to invert them.
      *
-     * A default-clock test cannot show this, because there the two agree. Here the tracer is given
-     * a clock deliberately behind wall time, which is exactly the shape of the real drift. Reading
-     * the start from `currentTimeMillis()` under this tracer produces a span ending five seconds
-     * before it starts; reading it from the same clock the tracer uses cannot.
+     * Assigning tracer and clock by hand would not catch `install` capturing `Clock.getDefault()`
+     * instead of `openTelemetryRum.clock`. This test goes through [GlideInstrumentation.install]
+     * with a rum whose clock and tracer provider share the same lagging instance.
      */
     @Test
     fun `synthetic span does not invert when the sdk clock lags wall time`() {
@@ -262,16 +257,24 @@ class VunetGlideRequestListenerTest {
                 .setClock(laggingClock)
                 .addSpanProcessor(SimpleSpanProcessor.create(exporter))
                 .build()
-        GlideInstrumentation.tracer = provider.get("test")
-        GlideInstrumentation.clock = laggingClock
+        val rum = mockk<OpenTelemetryRum>()
+        every { rum.clock } returns laggingClock
+        every { rum.openTelemetry } returns
+            OpenTelemetrySdk.builder().setTracerProvider(provider).build()
+
+        GlideInstrumentation().install(mockk<Application>(relaxed = true), rum)
+        assertThat(GlideInstrumentation.clock).isSameAs(laggingClock)
 
         listener.onResourceReady(Any(), "https://cdn.bank.com/logo.png", null, DataSource.MEMORY_CACHE, true)
 
         val span = exporter.finishedSpanItems.single()
         assertThat(span.endEpochNanos).isGreaterThanOrEqualTo(span.startEpochNanos)
+        // Wall-clock start would sit ~SKEW ahead of this tracer's end and fail the check above;
+        // this one also fails if install captured Clock.getDefault() instead of rum.clock.
+        assertThat(span.startEpochNanos)
+            .isLessThan(System.currentTimeMillis() * 1_000_000 - SKEW_NANOS / 2)
 
-        GlideInstrumentation.tracer = null
-        GlideInstrumentation.clock = null
+        provider.shutdown()
     }
 
     @Test

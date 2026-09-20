@@ -7,9 +7,9 @@ package io.opentelemetry.android.instrumentation.glide
 
 import android.app.Application
 import io.mockk.every
-import io.opentelemetry.sdk.common.Clock
 import io.mockk.mockk
 import io.opentelemetry.android.OpenTelemetryRum
+import io.opentelemetry.sdk.common.Clock
 import io.opentelemetry.sdk.testing.junit5.OpenTelemetryExtension
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
@@ -28,6 +28,18 @@ class GlideInstrumentationTest {
     private lateinit var context: Application
     private lateinit var openTelemetryRum: OpenTelemetryRum
 
+    /**
+     * Distinct from [Clock.getDefault]. `isSameAs` against the default singleton would still pass
+     * if install assigned `Clock.getDefault()` instead of `openTelemetryRum.clock` — which is the
+     * original wall-clock domain mismatch.
+     */
+    private val rumClock =
+        object : Clock {
+            override fun now(): Long = Clock.getDefault().now()
+
+            override fun nanoTime(): Long = Clock.getDefault().nanoTime()
+        }
+
     @BeforeEach
     fun setUp() {
         GlideInstrumentation.tracer = null
@@ -37,9 +49,7 @@ class GlideInstrumentationTest {
         context = mockk(relaxed = true)
         openTelemetryRum = mockk()
         every { openTelemetryRum.openTelemetry } returns otelTesting.openTelemetry
-        // Glide now reads the SDK clock at install so explicit timestamps share a time domain
-        // with implicitly stamped ends.
-        every { openTelemetryRum.clock } returns Clock.getDefault()
+        every { openTelemetryRum.clock } returns rumClock
     }
 
     @AfterEach
@@ -65,7 +75,7 @@ class GlideInstrumentationTest {
     fun `install captures the sdk clock`() {
         assertThat(GlideInstrumentation.clock).isNull()
         instrumentation.install(context, openTelemetryRum)
-        assertThat(GlideInstrumentation.clock).isNotNull()
+        assertThat(GlideInstrumentation.clock).isSameAs(openTelemetryRum.clock)
     }
 
     @Test
