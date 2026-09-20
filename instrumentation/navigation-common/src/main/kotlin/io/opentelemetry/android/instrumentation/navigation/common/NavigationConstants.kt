@@ -37,6 +37,16 @@ object NavigationConstants {
     @JvmField
     val NAVIGATION_TIMESTAMP_NS_KEY: AttributeKey<Long> = AttributeKey.longKey("navigation.timestamp_ns")
 
+    /**
+     * Milliseconds from the user action that caused the navigation to the moment the destination
+     * was committed. Present on every `ui.navigation` span; `0` means "not measurable", not an
+     * instant navigation, so aggregate over `> 0` rather than filtering on `navigation.trigger` —
+     * see `NavigationTransitionCandidate.intentAtNanos` and
+     * `NavigationSpanEmitter.resolveDurationMs`.
+     */
+    @JvmField
+    val NAVIGATION_DURATION_MS_KEY: AttributeKey<Long> = AttributeKey.longKey("navigation.duration_ms")
+
     /** True on the first navigation of the process. See `NavigationColdStartTracker`. */
     @JvmField
     val NAVIGATION_IS_INITIAL_KEY: AttributeKey<Boolean> = AttributeKey.booleanKey("navigation.is_initial")

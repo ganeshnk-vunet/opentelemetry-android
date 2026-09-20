@@ -171,6 +171,25 @@ fun OkHttpDemoScreen(onBack: () -> Unit) {
                             runCatching {
                                 withContext(Dispatchers.IO) {
                                     val request =
+                                        Request.Builder().url("https://httpbin.org/redirect/1").get().build()
+                                    val code = client.newCall(request).execute().use { it.code }
+                                    "OkHttp redirect: HTTP $code"
+                                }
+                            }.getOrElse { e -> "OkHttp redirect demo: ${e.message}" }
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                },
+                text = "GET redirect (1 hop)",
+            )
+            OkHttpDemoActionButton(
+                onClick = {
+                    scope.launch {
+                        val msg =
+                            runCatching {
+                                withContext(Dispatchers.IO) {
+                                    val request =
                                         Request.Builder().url("https://httpbin.org/delay/3").get().build()
                                     val code = client.newCall(request).execute().use { it.code }
                                     "OkHttp slow GET: HTTP $code (~3s)"

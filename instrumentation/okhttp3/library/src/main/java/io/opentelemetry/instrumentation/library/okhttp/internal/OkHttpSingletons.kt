@@ -48,6 +48,20 @@ object OkHttpSingletons {
 
     private val eventListenerFactoryWarningLogged = AtomicBoolean(false)
 
+    /**
+     * Set when the reflective `eventListenerFactory` lookup failed, which happens in minified
+     * builds where R8 renames the private field. Failure is process-wide -- the field is either
+     * present for every `OkHttpClient.Builder` or for none -- so this is sticky: later builders
+     * skip wrapping rather than retrying a lookup that cannot succeed.
+     *
+     * This is not merely a loss of `http.client.timing.*` attributes. Since completion moved to
+     * the `EventListener`, that listener is the only thing that ends an OkHttp span, so without it
+     * spans would be started and never ended at all. [TimingTracingInterceptor] reads this to fall
+     * back to ending inline.
+     */
+    @Volatile
+    internal var eventListenerWiringFailed: Boolean = false
+
     @JvmStatic
     fun wrapEventListenerFactory(delegate: EventListener.Factory): EventListener.Factory =
         OkHttpTimingEventListenerFactory.wrap(delegate)
@@ -66,7 +80,7 @@ object OkHttpSingletons {
         if (!builder.networkInterceptors().contains(tracingInterceptor)) {
             builder.addNetworkInterceptor(tracingInterceptor)
         }
-        if (captureNetworkTimingPhases) {
+        if (captureNetworkTimingPhases && !eventListenerWiringFailed) {
             wrapEventListenerFactoryOnBuilder(builder)
         }
     }
@@ -83,10 +97,12 @@ object OkHttpSingletons {
                 eventListenerFactoryField.set(builder, wrappedFactory)
             }
         } catch (exception: ReflectiveOperationException) {
+            eventListenerWiringFailed = true
             if (eventListenerFactoryWarningLogged.compareAndSet(false, true)) {
                 Log.w(
                     RumConstants.OTEL_RUM_LOG_TAG,
-                    "Failed to wire OkHttp timing EventListener factory; network phase timing disabled",
+                    "Failed to wire OkHttp timing EventListener factory; network phase timing " +
+                        "disabled and http.client spans will be ended inline",
                     exception,
                 )
             }
@@ -145,7 +161,11 @@ object OkHttpSingletons {
         connectionErrorInterceptor = ConnectionErrorSpanInterceptor(instrumenter)
         val tracing =
             if (instrumentation.captureNetworkTimingPhases()) {
-                OkHttpCallCompletionCoordinator.configure(instrumenter, timingSpanEnricher)
+                OkHttpCallCompletionCoordinator.configure(
+                    instrumenter,
+                    timingSpanEnricher,
+                    instrumentation.maxCallDurationMillis(),
+                )
                 TimingTracingInterceptor(instrumenter, openTelemetry.propagators)
             } else {
                 TracingInterceptor(instrumenter, openTelemetry.propagators)

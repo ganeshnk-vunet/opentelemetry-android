@@ -79,12 +79,19 @@ internal class ComposeNav2Collector(
                 type = NavigationNodeType.COMPOSE_ROUTE,
                 name = destinationNameExtractor(destination),
             )
+        val nowNanos = clock.now()
         val navigationTrigger =
             NavigationTriggerResolver.resolve(
                 transitionType,
                 pendingBackPressTimestampNanos,
-                clock.now(),
+                nowNanos,
             )
+        // Forwarded whatever the resolver decided. Its 1s TTL governs whether the back press may
+        // *name* the trigger, where a stale signal would mislead; it must not govern whether the
+        // navigation may be *timed*, or a back navigation that took two seconds -- the kind worth
+        // investigating -- would report no duration at all. The emitter bounds staleness with its
+        // own, much longer, attribution limit.
+        val intentAtNanos = pendingBackPressTimestampNanos
         pendingBackPressTimestampNanos = null
 
         emitter.emit(
@@ -93,9 +100,10 @@ internal class ComposeNav2Collector(
                 destination = destinationNode,
                 transitionType = transitionType,
                 entryType = NavigationEntryType.INTERNAL,
-                timestampNanos = clock.now(),
+                timestampNanos = nowNanos,
                 stackDepthBefore = stackDepthBefore,
                 stackDepthAfter = stackDepthAfter,
+                intentAtNanos = intentAtNanos,
             ),
             navigationTrigger = navigationTrigger.value,
         )

@@ -30,16 +30,33 @@ internal class TimingTracingInterceptor(
         val context = instrumenter.start(parentContext, chain)
         val injectedRequest = injectContextToRequest(request, context)
         val span = Span.fromContext(context)
-        OkHttpCallCompletionCoordinator.registerTraced(call, context, chain, span)
+
+        // Deferring completion only works while an EventListener is actually installed, because
+        // the listener is the sole caller of the coordinator's completion entry points. When the
+        // reflective wiring failed -- a minified build whose eventListenerFactory field R8 renamed
+        // -- nothing would ever end these spans, so fall back to ending inline, exactly as the
+        // upstream TracingInterceptor does when phase timing is switched off.
+        val deferCompletion = !OkHttpSingletons.eventListenerWiringFailed
+        if (deferCompletion) {
+            OkHttpCallCompletionCoordinator.registerTraced(call, context, chain, span)
+        }
 
         return try {
             context.makeCurrent().use {
                 val response = chain.proceed(injectedRequest)
-                OkHttpCallCompletionCoordinator.setResponse(call, response)
+                if (deferCompletion) {
+                    OkHttpCallCompletionCoordinator.setResponse(call, response)
+                } else {
+                    OkHttpCallCompletionCoordinator.endImmediately(context, chain, response, null)
+                }
                 response
             }
         } catch (throwable: Throwable) {
-            OkHttpCallCompletionCoordinator.setError(call, throwable)
+            if (deferCompletion) {
+                OkHttpCallCompletionCoordinator.setError(call, throwable)
+            } else {
+                OkHttpCallCompletionCoordinator.endImmediately(context, chain, null, throwable)
+            }
             throw throwable
         }
     }

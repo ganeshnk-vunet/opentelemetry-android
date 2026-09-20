@@ -29,6 +29,29 @@ internal object OkHttpCallTimingStore {
         return state.finalizeTiming()
     }
 
+    /**
+     * Drops entries created before [cutoffNanos] for which [isEligible] holds. Used by the
+     * completion watchdog to reclaim state belonging to calls that never started a span, which
+     * nothing else would ever remove.
+     */
+    fun discardOlderThan(
+        cutoffNanos: Long,
+        isEligible: (Call) -> Boolean,
+    ) {
+        // An explicit iterator rather than Collection.removeIf, which is unavailable below API 24
+        // and this module's minSdk is 23.
+        val iterator = timings.entries.iterator()
+        while (iterator.hasNext()) {
+            val (call, state) = iterator.next()
+            if (cutoffNanos - state.createdAtNanos >= 0 &&
+                !state.hasOpenNetworkPhase() &&
+                isEligible(call)
+            ) {
+                iterator.remove()
+            }
+        }
+    }
+
     fun clear() {
         timings.clear()
     }
