@@ -22,6 +22,7 @@ import io.opentelemetry.android.instrumentation.navigation.common.NavigationCons
 import io.opentelemetry.android.instrumentation.navigation.common.NavigationConstants.NAVIGATION_TRANSITION_TYPE_KEY
 import io.opentelemetry.android.instrumentation.navigation.common.NavigationConstants.SPAN_NAME
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTransitionCandidate
+import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTransitionType
 import io.opentelemetry.android.instrumentation.navigation.common.models.NavigationTrigger
 import io.opentelemetry.api.trace.Tracer
 
@@ -129,11 +130,20 @@ class NavigationSpanEmitter(
      * was committed, or [NOT_ATTRIBUTABLE_MS] when no action can be attributed to it.
      *
      * Two sources, in order of specificity:
-     * - [NavigationTransitionCandidate.intentAtNanos], the back press a collector recorded.
+     * - [NavigationTransitionCandidate.intentAtNanos], the back press a collector recorded, **and
+     *   only on a [NavigationTransitionType.POP]**.
      * - The most recent interaction start, which is the tap that began it.
      *
      * A back press wins when both apply, for the same reason `resolveTrigger` never upgrades
      * `back_press` to `user_tap`: it is the more specific fact.
+     *
+     * The pop check is what stops a back press timing a screen it did not open. A collector holds
+     * the press until some transition consumes it, and a press does not always produce a pop — it
+     * may dismiss a dialog, or the user may change their mind and tap forward instead. Without the
+     * check, the next transition of *any* direction inherited that timestamp, so a forward
+     * navigation from a later tap reported the time since the abandoned back press: a long
+     * navigation that never happened. A back press can only explain a pop, so on a push or replace
+     * the tap below is the right source.
      *
      * **Neither source is read through the interaction *parenting* window, and that is the point.**
      * `ActiveInteractionContext` drops its parent context after
@@ -167,7 +177,7 @@ class NavigationSpanEmitter(
      */
     private fun resolveDurationMs(candidate: NavigationTransitionCandidate): Long {
         val intentAtNanos =
-            candidate.intentAtNanos
+            candidate.intentAtNanos?.takeIf { candidate.transitionType == NavigationTransitionType.POP }
                 ?: ActiveInteractionContext.lastInteractionStartedAtNanos()
                 ?: return NOT_ATTRIBUTABLE_MS
         val elapsedNanos = candidate.timestampNanos - intentAtNanos

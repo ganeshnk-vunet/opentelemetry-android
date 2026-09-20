@@ -295,6 +295,7 @@ class NavigationSpanEmitterTest {
 
         emitter.emit(
             candidate().copy(
+                transitionType = NavigationTransitionType.POP,
                 intentAtNanos = backPressAtNanos,
                 timestampNanos = backPressAtNanos + 120L * NANOS_PER_MILLI,
             ),
@@ -315,6 +316,7 @@ class NavigationSpanEmitterTest {
 
         emitter.emit(
             candidate().copy(
+                transitionType = NavigationTransitionType.POP,
                 intentAtNanos = backPressAtNanos,
                 timestampNanos = backPressAtNanos + 15L * NANOS_PER_MILLI,
             ),
@@ -326,6 +328,40 @@ class NavigationSpanEmitterTest {
             .isEqualTo(15L)
     }
 
+    /**
+     * A back press only explains the pop it caused, never whatever transition happens to come
+     * next.
+     *
+     * A collector holds the press until some transition consumes it, and a press does not always
+     * produce a pop: it may dismiss a dialog, or the user may change their mind and tap forward
+     * instead. Forwarding it to that forward navigation timed a screen the press never opened, and
+     * reported a long navigation that never happened -- the abandoned press is arbitrarily old,
+     * so the inflation is unbounded up to the attribution limit.
+     */
+    @Test
+    fun a_pending_back_press_does_not_time_a_later_forward_navigation() {
+        val exporter = InMemorySpanExporter.create()
+        val tracer = tracerFor(exporter)
+        val emitter = NavigationSpanEmitter(tracer)
+        beginClickInteraction(tracer)
+        val tapAtNanos = ActiveInteractionContext.lastInteractionStartedAtNanos()!!
+        // Pressed back five seconds before the tap, and nothing popped: it closed a dialog, or was
+        // thought better of. The collector is still holding it when the tap pushes a new screen.
+        val abandonedBackPressAtNanos = tapAtNanos - 5_000L * NANOS_PER_MILLI
+
+        emitter.emit(
+            candidate().copy(
+                transitionType = NavigationTransitionType.PUSH,
+                intentAtNanos = abandonedBackPressAtNanos,
+                timestampNanos = tapAtNanos + 90L * NANOS_PER_MILLI,
+            ),
+            navigationTrigger = "unknown",
+        )
+
+        // 90ms since the tap that actually opened the screen, not 5090ms since the back press.
+        assertThat(durationOfNavigation(exporter)).isEqualTo(90L)
+    }
+
     @Test
     fun reports_zero_when_the_elapsed_time_would_be_negative() {
         val exporter = InMemorySpanExporter.create()
@@ -334,6 +370,7 @@ class NavigationSpanEmitterTest {
 
         emitter.emit(
             candidate().copy(
+                transitionType = NavigationTransitionType.POP,
                 intentAtNanos = intentAtNanos,
                 timestampNanos = intentAtNanos - NANOS_PER_MILLI,
             ),
@@ -463,6 +500,7 @@ class NavigationSpanEmitterTest {
 
         emitter.emit(
             candidate().copy(
+                transitionType = NavigationTransitionType.POP,
                 intentAtNanos = intentAtNanos,
                 timestampNanos = intentAtNanos + NavigationSpanEmitter.MAX_ATTRIBUTION_NANOS + 1,
             ),
@@ -481,6 +519,7 @@ class NavigationSpanEmitterTest {
 
         emitter.emit(
             candidate().copy(
+                transitionType = NavigationTransitionType.POP,
                 intentAtNanos = intentAtNanos,
                 timestampNanos = intentAtNanos + NavigationSpanEmitter.MAX_ATTRIBUTION_NANOS,
             ),

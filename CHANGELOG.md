@@ -9,7 +9,9 @@
   navigation timestamps only, with no duration anywhere, which left the responsiveness pillar with no
   Android input at all while iOS and Flutter both reported one. Sourced from a back press the
   collector recorded, or otherwise from the most recent interaction start, which is the originating
-  tap; a back press wins when both apply. Emitted by all three collectors (View, Compose Nav2,
+  tap; a back press wins when both apply. A back press is used **only for the pop it caused** — a
+  press that dismissed a dialog, or that the user abandoned by tapping forward instead, does not
+  time the next screen, which would report a long navigation that never happened. Emitted by all three collectors (View, Compose Nav2,
   Compose Nav3). **Timing is deliberately not gated on the 500 ms interaction parenting window or the
   1 s back-press trigger TTL.** Those windows decide span parenting and trigger naming, where a stale
   signal misleads; bounding *timing* by them would have dropped precisely the slow navigations worth

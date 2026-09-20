@@ -36,12 +36,19 @@ How long the user waited: from the action that caused the navigation to the mome
 was committed. Two sources, in order of specificity:
 
 1. A **back press** recorded by the collector, forwarded as
-   `NavigationTransitionCandidate.intentAtNanos`.
+   `NavigationTransitionCandidate.intentAtNanos` — used **only on a `POP`**.
 2. The **most recent interaction start**, which is the tap that began it
    (`ActiveInteractionContext.lastInteractionStartedAtNanos`).
 
 A back press wins when both apply, the same precedence that stops `resolveTrigger` upgrading
 `back_press` to `user_tap`.
+
+> [!NOTE]
+> **A back press only times the pop it caused.** A collector holds the press until some transition
+> consumes it, and a press does not always produce a pop — it may dismiss a dialog, or the user may
+> change their mind and tap forward instead. On a `PUSH`/`REPLACE` the press is therefore ignored
+> for timing and the tap below is used, so a forward navigation is never timed from an abandoned
+> back press. Pinned by `a_pending_back_press_does_not_time_a_later_forward_navigation`.
 
 ### Timing is deliberately not gated on the parenting or trigger windows
 
