@@ -35,6 +35,9 @@ internal class ActivityTracer(
     private val screenName: String = screenName ?: "unknown_screen"
     private val activityName = activity.javaClass.simpleName
 
+    /** Set when a warm `app.start` span is created, so its end can wait for the first frame. */
+    private var awaitingFirstDraw: Boolean = false
+
     fun startSpanIfNoneInProgress(lifecycleEvent: String): ActivityTracer {
         if (activeSpan.spanInProgress()) {
             return this
@@ -65,6 +68,10 @@ internal class ActivityTracer(
             return createLifecycleSpanWithParent("Created", appStartupTimer.startupSpan)
         }
         if (activityName == initialAppActivity) {
+            // A warm start re-runs onCreate, so the hierarchy is inflated, measured and laid out
+            // from scratch -- the same work cold start measures. Its TTID is therefore comparable
+            // with cold's, and worth waiting for the frame to record.
+            awaitingFirstDraw = true
             return createAppStartSpan("warm")
         }
         return createLifecycleSpan("Created")
@@ -126,11 +133,39 @@ internal class ActivityTracer(
         return span
     }
 
-    fun endSpanForActivityResumed() {
+    fun endSpanForActivityResumed(activity: Activity? = null) {
         if (initialAppActivity == null) {
             initialAppActivity = activityName
         }
+        if (awaitingFirstDraw) {
+            awaitingFirstDraw = false
+            if (activity != null && deferEndUntilFirstDraw(activity)) {
+                return
+            }
+        }
         endActiveSpan()
+    }
+
+    /**
+     * Holds the warm `app.start` span open until the first frame is on screen, then records
+     * [AppStartupTimer.EVENT_TTID] and ends it.
+     *
+     * Returns `false` when no listener could be attached, so the caller ends the span immediately
+     * rather than leaving it open for a callback that will never arrive.
+     *
+     * The span is ended only if it is still the one held when the wait began. Every other
+     * lifecycle callback ends the active span, so backgrounding before the first frame legitimately
+     * closes this span early -- correctly, without a TTID, because no frame was ever shown. Without
+     * the identity check the late callback would then end whichever span had started since.
+     */
+    private fun deferEndUntilFirstDraw(activity: Activity): Boolean {
+        val deferred = activeSpan.currentSpan() ?: return false
+        return FirstDrawNotifier.onNextDraw(activity) {
+            if (activeSpan.currentSpan() === deferred) {
+                activeSpan.addEvent(AppStartupTimer.EVENT_TTID)
+                endActiveSpan()
+            }
+        }
     }
 
     fun endActiveSpan() {

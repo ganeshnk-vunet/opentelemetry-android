@@ -47,6 +47,9 @@ internal class ActivityCallbacksTest {
         val testHarness = ActivityCallbackTestHarness(activityCallbacks)
 
         val activity = mockk<Activity>()
+        // No window on a bare mock: FirstDrawNotifier falls back to ending the span
+        // immediately, which is the behaviour asserted below.
+        every { activity.window } returns null
         testHarness.runAppStartupLifecycle(activity)
 
         val spans = otelTesting.spans
@@ -90,6 +93,9 @@ internal class ActivityCallbacksTest {
         startupAppAndClearSpans(testHarness)
 
         val activity = mockk<Activity>()
+        // No window on a bare mock: FirstDrawNotifier falls back to ending the span
+        // immediately, which is the behaviour asserted below.
+        every { activity.window } returns null
         testHarness.runActivityCreationLifecycle(activity)
         val spans = otelTesting.spans
         assertEquals(1, spans.size)
@@ -138,6 +144,9 @@ internal class ActivityCallbacksTest {
         startupAppAndClearSpans(testHarness)
 
         val activity = mockk<Activity>()
+        // No window on a bare mock: FirstDrawNotifier falls back to ending the span
+        // immediately, which is the behaviour asserted below.
+        every { activity.window } returns null
         testHarness.runActivityRestartedLifecycle(activity)
 
         val spans = otelTesting.spans
@@ -178,6 +187,9 @@ internal class ActivityCallbacksTest {
         startupAppAndClearSpans(testHarness)
 
         val activity = mockk<Activity>()
+        // No window on a bare mock: FirstDrawNotifier falls back to ending the span
+        // immediately, which is the behaviour asserted below.
+        every { activity.window } returns null
         testHarness.runActivityResumedLifecycle(activity)
 
         val spans = otelTesting.spans
@@ -216,6 +228,9 @@ internal class ActivityCallbacksTest {
         startupAppAndClearSpans(testHarness)
 
         val activity = mockk<Activity>()
+        // No window on a bare mock: FirstDrawNotifier falls back to ending the span
+        // immediately, which is the behaviour asserted below.
+        every { activity.window } returns null
         testHarness.runActivityDestroyedFromStoppedLifecycle(activity)
 
         val spans = otelTesting.spans
@@ -251,6 +266,9 @@ internal class ActivityCallbacksTest {
         startupAppAndClearSpans(testHarness)
 
         val activity = mockk<Activity>()
+        // No window on a bare mock: FirstDrawNotifier falls back to ending the span
+        // immediately, which is the behaviour asserted below.
+        every { activity.window } returns null
         testHarness.runActivityDestroyedFromPausedLifecycle(activity)
 
         val spans = otelTesting.spans
@@ -307,6 +325,9 @@ internal class ActivityCallbacksTest {
         startupAppAndClearSpans(testHarness)
 
         val activity = mockk<Activity>()
+        // No window on a bare mock: FirstDrawNotifier falls back to ending the span
+        // immediately, which is the behaviour asserted below.
+        every { activity.window } returns null
         testHarness.runActivityStoppedFromRunningLifecycle(activity)
 
         val spans = otelTesting.spans

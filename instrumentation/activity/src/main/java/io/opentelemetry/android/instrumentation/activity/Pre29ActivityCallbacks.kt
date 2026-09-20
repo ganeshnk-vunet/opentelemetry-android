@@ -28,7 +28,7 @@ internal class Pre29ActivityCallbacks(
             .startSpanIfNoneInProgress(activity, "Resumed")
             .addEvent("activityResumed")
             .addPreviousScreenAttribute()
-            .endSpanForActivityResumed()
+            .endSpanForActivityResumed(activity)
     }
 
     override fun onActivityPaused(activity: Activity) {

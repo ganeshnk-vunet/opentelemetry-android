@@ -17,6 +17,16 @@ class ActiveSpan(
 
     fun spanInProgress(): Boolean = span != null
 
+    /**
+     * The span currently held, or `null`.
+     *
+     * Exposed so a caller that defers [endActiveSpan] to a later callback can check the span it
+     * meant to end is still the active one. Between the two points this holder may have been
+     * emptied and refilled -- a lifecycle callback ending the span and the next one starting
+     * another -- and ending then would close an unrelated span.
+     */
+    fun currentSpan(): Span? = span
+
     // it's fine to not close the scope here, will be closed in endActiveSpan()
     fun startSpan(spanCreator: () -> Span) {
         // don't start one if there's already one in progress

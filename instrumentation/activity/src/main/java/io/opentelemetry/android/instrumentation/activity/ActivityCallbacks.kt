@@ -57,7 +57,7 @@ internal class ActivityCallbacks(
         tracers
             .addEvent(activity, "activityPostResumed")
             .addPreviousScreenAttribute()
-            .endSpanForActivityResumed()
+            .endSpanForActivityResumed(activity)
     }
 
     override fun onActivityPrePaused(activity: Activity) {
