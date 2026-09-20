@@ -14,6 +14,7 @@ import io.opentelemetry.android.instrumentation.navigation.common.models.Navigat
 import io.opentelemetry.sdk.OpenTelemetrySdk
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
 import io.opentelemetry.sdk.trace.SdkTracerProvider
+import io.opentelemetry.sdk.trace.ReadableSpan
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor
 import io.opentelemetry.android.common.internal.instrumentation.ActiveInteractionContext
 import io.opentelemetry.api.trace.Tracer
@@ -263,8 +264,7 @@ class NavigationSpanEmitterTest {
         val exporter = InMemorySpanExporter.create()
         val tracer = tracerFor(exporter)
         val emitter = NavigationSpanEmitter(tracer)
-        beginClickInteraction(tracer)
-        val tapAtNanos = ActiveInteractionContext.lastInteractionStartedAtNanos()!!
+        val tapAtNanos = beginClickInteraction(tracer).startedAtNanos
 
         emitter.emit(candidate().copy(timestampNanos = tapAtNanos + 40L * NANOS_PER_MILLI))
 
@@ -310,8 +310,7 @@ class NavigationSpanEmitterTest {
         val exporter = InMemorySpanExporter.create()
         val tracer = tracerFor(exporter)
         val emitter = NavigationSpanEmitter(tracer)
-        beginClickInteraction(tracer)
-        val tapAtNanos = ActiveInteractionContext.lastInteractionStartedAtNanos()!!
+        val tapAtNanos = beginClickInteraction(tracer).startedAtNanos
         val backPressAtNanos = tapAtNanos + 200L * NANOS_PER_MILLI
 
         emitter.emit(
@@ -343,8 +342,7 @@ class NavigationSpanEmitterTest {
         val exporter = InMemorySpanExporter.create()
         val tracer = tracerFor(exporter)
         val emitter = NavigationSpanEmitter(tracer)
-        beginClickInteraction(tracer)
-        val tapAtNanos = ActiveInteractionContext.lastInteractionStartedAtNanos()!!
+        val tapAtNanos = beginClickInteraction(tracer).startedAtNanos
         // Pressed back five seconds before the tap, and nothing popped: it closed a dialog, or was
         // thought better of. The collector is still holding it when the tap pushes a new screen.
         val abandonedBackPressAtNanos = tapAtNanos - 5_000L * NANOS_PER_MILLI
@@ -386,8 +384,7 @@ class NavigationSpanEmitterTest {
         val exporter = InMemorySpanExporter.create()
         val tracer = tracerFor(exporter)
         val emitter = NavigationSpanEmitter(tracer)
-        beginClickInteraction(tracer)
-        val tapAtNanos = ActiveInteractionContext.lastInteractionStartedAtNanos()!!
+        val tapAtNanos = beginClickInteraction(tracer).startedAtNanos
 
         // The first navigation calls ActiveInteractionContext.activate, replacing the *active*
         // span. If the start time were read from that instead of the root context, the second
@@ -412,19 +409,83 @@ class NavigationSpanEmitterTest {
     private fun triggerOfNavigation(exporter: InMemorySpanExporter): String? =
         navigationSpans(exporter).single().attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY)
 
+    /**
+     * A tap explains the navigation it causes, and nothing the app does later on its own.
+     *
+     * The interaction start outlives the 500 ms parenting window so a slow navigation can still be
+     * timed, which previously left it readable for the full 30 s attribution limit. A user who
+     * tapped, sat still, and was then redirected by a session expiry got that idle time reported
+     * as navigation duration -- a twenty-second wait nobody experienced, and one that survives a
+     * `duration_ms > 0` filter because it is not zero.
+     */
+    @Test
+    fun a_spent_tap_does_not_time_a_screen_the_app_opened_by_itself() {
+        val exporter = InMemorySpanExporter.create()
+        val tracer = tracerFor(exporter)
+        val emitter = NavigationSpanEmitter(tracer)
+        val tapAtNanos = beginClickInteraction(tracer).startedAtNanos
+
+        // Tapped Profile, which arrived promptly.
+        emitter.emit(
+            candidate(destinationName = "Profile")
+                .copy(timestampNanos = tapAtNanos + 100L * NANOS_PER_MILLI),
+        )
+
+        // Sat on Profile for twenty seconds, then the session expired and the app moved itself to
+        // Login. Well inside the 30s attribution limit, so only the claim stops it.
+        emitter.emit(
+            candidate(destinationName = "Login")
+                .copy(timestampNanos = tapAtNanos + 20_000L * NANOS_PER_MILLI),
+            navigationTrigger = "unknown",
+        )
+
+        val durations =
+            navigationSpans(exporter).map {
+                it.attributes.get(NavigationConstants.NAVIGATION_DURATION_MS_KEY)
+            }
+        assertThat(durations).containsExactly(100L, 0L)
+    }
+
+    /**
+     * A Compose host that also runs the View collector emits a `ui.navigation` span from each for
+     * one navigation. Claiming the tap exclusively would give the first emitter a duration and the
+     * second a zero for the very same screen, so the claim stays open briefly.
+     */
+    @Test
+    fun two_collectors_reporting_one_navigation_are_both_timed() {
+        val exporter = InMemorySpanExporter.create()
+        val tracer = tracerFor(exporter)
+        val emitter = NavigationSpanEmitter(tracer)
+        val tapAtNanos = beginClickInteraction(tracer).startedAtNanos
+        val committedAtNanos = tapAtNanos + 120L * NANOS_PER_MILLI
+
+        // The second collector reacts a couple of frames after the first, still the same screen.
+        emitter.emit(candidate(destinationName = "Details").copy(timestampNanos = committedAtNanos))
+        emitter.emit(
+            candidate(destinationName = "DetailsFragment")
+                .copy(timestampNanos = committedAtNanos + 32L * NANOS_PER_MILLI),
+        )
+
+        val durations =
+            navigationSpans(exporter).map {
+                it.attributes.get(NavigationConstants.NAVIGATION_DURATION_MS_KEY)
+            }
+        assertThat(durations).containsExactly(120L, 152L)
+    }
+
     @Test
     fun reports_a_slow_navigation_after_the_interaction_parenting_window_has_expired() {
         val exporter = InMemorySpanExporter.create()
         val tracer = tracerFor(exporter)
         val emitter = NavigationSpanEmitter(tracer)
-        val token = beginClickInteraction(tracer)
-        val tapAtNanos = ActiveInteractionContext.lastInteractionStartedAtNanos()!!
+        val interaction = beginClickInteraction(tracer)
+        val tapAtNanos = interaction.startedAtNanos
 
         // The 500ms parenting window closes long before this navigation commits. It exists to
         // decide parenting, where a stale parent would be wrong; it must not decide whether the
         // navigation can be timed, or the slow navigations worth investigating are exactly the
         // ones that report nothing.
-        ActiveInteractionContext.end(token)
+        ActiveInteractionContext.end(interaction.token)
         assertThat(ActiveInteractionContext.rootContext()).isNull()
 
         emitter.emit(candidate().copy(timestampNanos = tapAtNanos + 3_200L * NANOS_PER_MILLI))
@@ -448,9 +509,9 @@ class NavigationSpanEmitterTest {
         // left for resolveTrigger to upgrade, so the collector's `unknown` stands.
         val tapExporter = InMemorySpanExporter.create()
         val tapTracer = tracerFor(tapExporter)
-        val token = beginClickInteraction(tapTracer)
-        val tapAtNanos = ActiveInteractionContext.lastInteractionStartedAtNanos()!!
-        ActiveInteractionContext.end(token)
+        val interaction = beginClickInteraction(tapTracer)
+        val tapAtNanos = interaction.startedAtNanos
+        ActiveInteractionContext.end(interaction.token)
 
         NavigationSpanEmitter(tapTracer).emit(
             candidate().copy(timestampNanos = tapAtNanos + 2_035L * NANOS_PER_MILLI),
@@ -483,9 +544,9 @@ class NavigationSpanEmitterTest {
         val exporter = InMemorySpanExporter.create()
         val tracer = tracerFor(exporter)
         val emitter = NavigationSpanEmitter(tracer)
-        val token = beginClickInteraction(tracer)
-        val tapAtNanos = ActiveInteractionContext.lastInteractionStartedAtNanos()!!
-        ActiveInteractionContext.end(token)
+        val interaction = beginClickInteraction(tracer)
+        val tapAtNanos = interaction.startedAtNanos
+        ActiveInteractionContext.end(interaction.token)
 
         emitter.emit(candidate().copy(timestampNanos = tapAtNanos + 10_000L * NANOS_PER_MILLI))
 
@@ -538,9 +599,9 @@ class NavigationSpanEmitterTest {
         // duration and the second none.
         val viewEmitter = NavigationSpanEmitter(tracer)
         val composeEmitter = NavigationSpanEmitter(tracer)
-        val token = beginClickInteraction(tracer)
-        val tapAtNanos = ActiveInteractionContext.lastInteractionStartedAtNanos()!!
-        ActiveInteractionContext.end(token)
+        val interaction = beginClickInteraction(tracer)
+        val tapAtNanos = interaction.startedAtNanos
+        ActiveInteractionContext.end(interaction.token)
 
         val committedAt = tapAtNanos + 800L * NANOS_PER_MILLI
         viewEmitter.emit(candidate(destinationName = "Details").copy(timestampNanos = committedAt))
@@ -559,9 +620,9 @@ class NavigationSpanEmitterTest {
         // A programmatic navigation with nothing behind it...
         emitter.emit(candidate(destinationName = "Programmatic"))
         // ...and a tap-driven one.
-        val token = beginClickInteraction(tracer)
-        val tapAtNanos = ActiveInteractionContext.lastInteractionStartedAtNanos()!!
-        ActiveInteractionContext.end(token)
+        val interaction = beginClickInteraction(tracer)
+        val tapAtNanos = interaction.startedAtNanos
+        ActiveInteractionContext.end(interaction.token)
         emitter.emit(
             candidate(destinationName = "Tapped").copy(timestampNanos = tapAtNanos + 250L * NANOS_PER_MILLI),
         )
@@ -587,15 +648,27 @@ class NavigationSpanEmitterTest {
     }
 
     /**
-     * Opens a live interaction window, the way `ClickEventGenerator` does on a tap. Returns the
-     * token so a test can expire the parenting window without clearing the interaction start.
+     * Opens a live interaction window, the way `ClickEventGenerator` does on a tap.
+     *
+     * Carries the tap's own start time, because reading it back through
+     * `ActiveInteractionContext.lastInteractionStartedAtNanos` would *claim* the interaction and
+     * leave nothing for the emitter under test. The token lets a test expire the parenting window
+     * without clearing the interaction start.
      */
-    private fun beginClickInteraction(tracer: Tracer): Long {
+    private fun beginClickInteraction(tracer: Tracer): ClickInteraction {
         val clickSpan = tracer.spanBuilder("ui.interaction").startSpan()
         val token = ActiveInteractionContext.begin(clickSpan)
         clickSpan.end()
-        return token
+        return ClickInteraction(
+            token = token,
+            startedAtNanos = (clickSpan as ReadableSpan).toSpanData().startEpochNanos,
+        )
     }
+
+    private data class ClickInteraction(
+        val token: Long,
+        val startedAtNanos: Long,
+    )
 
     private fun candidate(
         destinationName: String = "Details",

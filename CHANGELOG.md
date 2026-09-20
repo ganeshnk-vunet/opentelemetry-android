@@ -11,7 +11,10 @@
   collector recorded, or otherwise from the most recent interaction start, which is the originating
   tap; a back press wins when both apply. A back press is used **only for the pop it caused** — a
   press that dismissed a dialog, or that the user abandoned by tapping forward instead, does not
-  time the next screen, which would report a long navigation that never happened. Emitted by all three collectors (View, Compose Nav2,
+  time the next screen, which would report a long navigation that never happened. A tap is likewise
+  claimed by the first navigation that uses it, so a screen the app opens by itself later — a
+  session-expiry redirect, a timer, a deep link — reports `0` rather than the user's idle time since
+  the last tap. A second collector reporting the *same* navigation is still served, for 250 ms. Emitted by all three collectors (View, Compose Nav2,
   Compose Nav3). **Timing is deliberately not gated on the 500 ms interaction parenting window or the
   1 s back-press trigger TTL.** Those windows decide span parenting and trigger naming, where a stale
   signal misleads; bounding *timing* by them would have dropped precisely the slow navigations worth

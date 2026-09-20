@@ -164,12 +164,16 @@ class NavigationSpanEmitter(
      * [NOT_ATTRIBUTABLE_MS] likewise when nothing applies at all, and when the result would be
      * negative — a destination committed before the action that caused it is not a duration.
      *
-     * Known limits, both inherited from `resolveTrigger`:
-     * - A programmatic navigation landing within [MAX_ATTRIBUTION_NANOS] of an unrelated tap is
-     *   timed from that tap. The interaction start is refreshed by every tap, so in practice this
-     *   needs a navigation with no user activity at all before it.
-     * - A chain of navigations from one tap each reports time since that tap, not since the
-     *   previous step, so the steps accumulate rather than partition.
+     * A tap is claimed by the first navigation that uses it
+     * (`ActiveInteractionContext.lastInteractionStartedAtNanos`), so it cannot go on explaining
+     * screens the user never asked for: sit on a screen after tapping, get redirected by a session
+     * expiry twenty seconds later, and that redirect reports [NOT_ATTRIBUTABLE_MS] rather than a
+     * twenty-second wait nobody experienced.
+     *
+     * Known limit: a navigation chain that steps again within
+     * `ActiveInteractionContext.CONCURRENT_COLLECTOR_GRACE_NANOS` is still timed from the tap, so
+     * those steps accumulate rather than partition. Left alone deliberately — at that spacing the
+     * user really did wait from the tap.
      *
      * This measures up to the point the navigation framework reports the destination as current.
      * Time the destination then spends composing or loading before anything is drawn is `ttid_ms`,
@@ -178,7 +182,7 @@ class NavigationSpanEmitter(
     private fun resolveDurationMs(candidate: NavigationTransitionCandidate): Long {
         val intentAtNanos =
             candidate.intentAtNanos?.takeIf { candidate.transitionType == NavigationTransitionType.POP }
-                ?: ActiveInteractionContext.lastInteractionStartedAtNanos()
+                ?: ActiveInteractionContext.lastInteractionStartedAtNanos(candidate.timestampNanos)
                 ?: return NOT_ATTRIBUTABLE_MS
         val elapsedNanos = candidate.timestampNanos - intentAtNanos
         if (elapsedNanos < 0 || elapsedNanos > MAX_ATTRIBUTION_NANOS) {

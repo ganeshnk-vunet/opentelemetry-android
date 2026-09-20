@@ -109,9 +109,33 @@ a missing column. It reports `0` when no trustworthy user-action measurement exi
 > `navigation.duration_ms > 0` answers "is this measured?" Pinned by
 > `a_slow_navigation_carries_a_real_duration_under_an_unmeasured_looking_trigger`.
 
-The interaction start is **not consumed on read**, because two navigation collectors can be active
-in one process — a Compose host that also runs the View collector emits a `ui.navigation` span from
-each for the same navigation, and consuming would give the first a duration and the second `0`.
+### A tap times one navigation
+
+The interaction start is **claimed by the first navigation that uses it**. A tap explains the screen
+it opens and nothing the app does afterwards on its own.
+
+Without the claim, the start time stayed readable for the full 30 s limit, so this happened:
+
+1. You tap Profile. Profile arrives in 100 ms → `duration_ms = 100`. Correct.
+2. You sit on Profile. No taps.
+3. Twenty seconds later the session expires and the app moves you to Login.
+4. Login reported `duration_ms = 20000` — a twenty-second wait nobody experienced, and one that
+   survives a `duration_ms > 0` filter because it is not zero.
+
+Step 4 now reports `0`. Same for a deep link, a timer, or any "continue to next step" the user did
+not ask for.
+
+The claim is **not exclusive immediately**. Two navigation collectors can be active in one process —
+a Compose host that also runs the View collector emits a `ui.navigation` span from each for the same
+navigation — and a hard claim would give the first a duration and the second `0`. Both are served
+for `ActiveInteractionContext.CONCURRENT_COLLECTOR_GRACE_NANOS` (**250 ms**) after the first claim,
+sized for a second collector reacting to one navigation, not for a second navigation.
+
+> [!NOTE]
+> A navigation chain that steps again within that 250 ms is still timed from the tap, so those steps
+> accumulate rather than partition. Left alone deliberately: at that spacing the user really did
+> wait from the tap, so the number is not wrong. What the window has to exclude is idle time, which
+> is orders of magnitude larger.
 
 ### What it does and does not cover
 
