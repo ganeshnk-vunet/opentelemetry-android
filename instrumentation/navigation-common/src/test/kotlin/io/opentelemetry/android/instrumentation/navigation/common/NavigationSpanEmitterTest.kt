@@ -280,8 +280,10 @@ class NavigationSpanEmitterTest {
         emitter.emit(candidate())
 
         // Zero, not absent: the key is present on every ui.navigation span so a consumer never has
-        // to handle a missing column. Zero means "not measurable", and navigation.trigger is what
-        // separates these rows from measured ones.
+        // to handle a missing column. Zero means "not measurable", and the value itself is what
+        // separates these rows from measured ones -- see
+        // a_slow_navigation_carries_a_real_duration_under_an_unmeasured_looking_trigger for why
+        // navigation.trigger cannot do that job.
         assertThat(durationOfNavigation(exporter)).isEqualTo(0L)
     }
 
@@ -370,6 +372,9 @@ class NavigationSpanEmitterTest {
     private fun durationOfNavigation(exporter: InMemorySpanExporter): Long? =
         navigationSpans(exporter).single().attributes.get(NavigationConstants.NAVIGATION_DURATION_MS_KEY)
 
+    private fun triggerOfNavigation(exporter: InMemorySpanExporter): String? =
+        navigationSpans(exporter).single().attributes.get(NavigationConstants.NAVIGATION_TRIGGER_KEY)
+
     @Test
     fun reports_a_slow_navigation_after_the_interaction_parenting_window_has_expired() {
         val exporter = InMemorySpanExporter.create()
@@ -388,6 +393,52 @@ class NavigationSpanEmitterTest {
         emitter.emit(candidate().copy(timestampNanos = tapAtNanos + 3_200L * NANOS_PER_MILLI))
 
         assertThat(durationOfNavigation(exporter)).isEqualTo(3_200L)
+    }
+
+    /**
+     * The rule the docs hand consumers: `navigation.duration_ms > 0` is the discriminator for a
+     * measured navigation, and `navigation.trigger` is **not**.
+     *
+     * Timing deliberately outlives both naming windows, so the two slowest shapes of navigation
+     * report a real duration under a trigger that reads as unmeasured. A dashboard filtering to
+     * `user_tap`/`back_press` would keep an 80 ms tap and drop both of these -- precisely the
+     * navigations this attribute exists to surface. Anything that re-couples trigger naming to
+     * timing, or that documents the trigger as the discriminator again, fails here.
+     */
+    @Test
+    fun a_slow_navigation_carries_a_real_duration_under_an_unmeasured_looking_trigger() {
+        // A tap whose navigation commits long after the 500ms parenting window closed: nothing is
+        // left for resolveTrigger to upgrade, so the collector's `unknown` stands.
+        val tapExporter = InMemorySpanExporter.create()
+        val tapTracer = tracerFor(tapExporter)
+        val token = beginClickInteraction(tapTracer)
+        val tapAtNanos = ActiveInteractionContext.lastInteractionStartedAtNanos()!!
+        ActiveInteractionContext.end(token)
+
+        NavigationSpanEmitter(tapTracer).emit(
+            candidate().copy(timestampNanos = tapAtNanos + 2_035L * NANOS_PER_MILLI),
+            navigationTrigger = "unknown",
+        )
+
+        assertThat(triggerOfNavigation(tapExporter)).isEqualTo("unknown")
+        assertThat(durationOfNavigation(tapExporter)).isEqualTo(2_035L)
+
+        // A back press older than the 1s trigger TTL: NavigationTriggerResolver names the pop
+        // `programmatic`, and the collector forwards intentAtNanos regardless.
+        val backExporter = InMemorySpanExporter.create()
+        val backPressAtNanos = 10_000_000_000L
+
+        NavigationSpanEmitter(tracerFor(backExporter)).emit(
+            candidate().copy(
+                transitionType = NavigationTransitionType.POP,
+                intentAtNanos = backPressAtNanos,
+                timestampNanos = backPressAtNanos + 2_000L * NANOS_PER_MILLI,
+            ),
+            navigationTrigger = "programmatic",
+        )
+
+        assertThat(triggerOfNavigation(backExporter)).isEqualTo("programmatic")
+        assertThat(durationOfNavigation(backExporter)).isEqualTo(2_000L)
     }
 
     @Test

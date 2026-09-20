@@ -126,7 +126,7 @@ class NavigationSpanEmitter(
 
     /**
      * Milliseconds from the user action that caused this navigation to the moment the destination
-     * was committed, or `null` when no action can be attributed to it.
+     * was committed, or [NOT_ATTRIBUTABLE_MS] when no action can be attributed to it.
      *
      * Two sources, in order of specificity:
      * - [NavigationTransitionCandidate.intentAtNanos], the back press a collector recorded.
@@ -147,14 +147,12 @@ class NavigationSpanEmitter(
      *
      * Staleness is bounded by [MAX_ATTRIBUTION_NANOS] instead, chosen to be far longer than any
      * navigation worth recording but short enough that a navigation with no user action behind it
-     * cannot inherit a timestamp from some unrelated earlier tap. Beyond it the attribute is
-     * omitted rather than clamped, because a clamped value would be indistinguishable from a real
-     * navigation of that length.
+     * cannot inherit a timestamp from some unrelated earlier tap. Beyond it the result is
+     * [NOT_ATTRIBUTABLE_MS] rather than a clamp, because a clamped value would be
+     * indistinguishable from a real navigation of that length.
      *
-     * Deliberately absent, never zero, when nothing applies: a genuinely programmatic navigation
-     * has no user-perceived wait to report, and a zero would be indistinguishable from an instant
-     * one while dragging every percentile down. A negative result is discarded on the same
-     * principle — a destination committed before the action that caused it is not a duration.
+     * [NOT_ATTRIBUTABLE_MS] likewise when nothing applies at all, and when the result would be
+     * negative — a destination committed before the action that caused it is not a duration.
      *
      * Known limits, both inherited from `resolveTrigger`:
      * - A programmatic navigation landing within [MAX_ATTRIBUTION_NANOS] of an unrelated tap is
@@ -201,9 +199,16 @@ class NavigationSpanEmitter(
          *
          * **A consumer must not read this as an instant navigation.** Zero means "not measurable",
          * and it shares the column with real measurements, so any average or percentile that
-         * includes these rows is pulled toward zero. `navigation.trigger` is the discriminator:
-         * `user_tap` and `back_press` carry a measured value, `programmatic` and `unknown` are the
-         * ones that land here. A genuinely instant navigation is not a practical concern — a real
+         * includes these rows is pulled toward zero. **The discriminator is the value itself:
+         * aggregate over `navigation.duration_ms > 0`.**
+         *
+         * `navigation.trigger` must *not* be used for this. Timing is deliberately not gated on
+         * the parenting or trigger-TTL windows (see [resolveDurationMs]), so a slow navigation
+         * carries a real duration under a `unknown` or `programmatic` trigger: the 500 ms window
+         * closed before it committed, so the trigger was never upgraded to `user_tap`, and a back
+         * press older than the 1 s TTL is named `programmatic`. Filtering to `user_tap`/`back_press`
+         * therefore keeps the fast navigations and drops exactly the slow ones this attribute
+         * exists to surface. A genuinely instant navigation is not a practical concern — a real
          * tap-driven transition does not commit within the same millisecond as its tap.
          */
         internal const val NOT_ATTRIBUTABLE_MS = 0L

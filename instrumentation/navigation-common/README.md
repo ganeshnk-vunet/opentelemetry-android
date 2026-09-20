@@ -65,8 +65,8 @@ divergence is intentional: trigger naming and timing answer different questions.
 
 Staleness is bounded by `NavigationSpanEmitter.MAX_ATTRIBUTION_NANOS` (**30 s**) instead — far
 longer than any navigation worth recording, short enough that a navigation with no user action
-behind it cannot inherit an unrelated earlier tap's timestamp. Beyond it the attribute is **omitted,
-not clamped**: a clamped value would be indistinguishable from a real navigation of that length.
+behind it cannot inherit an unrelated earlier tap's timestamp. Beyond it the value is **`0`, not a
+clamp**: a clamped value would be indistinguishable from a real navigation of that length.
 
 ### Always present; `0` means "not measurable"
 
@@ -81,10 +81,26 @@ a missing column. It reports `0` when no trustworthy user-action measurement exi
 > [!IMPORTANT]
 > **`0` is not an instant navigation.** These rows share the column with real measurements, so any
 > average or percentile computed over all `ui.navigation` spans is pulled toward zero. Filter before
-> aggregating. `navigation.trigger` is the discriminator: `user_tap` and `back_press` carry a
-> measured value; `programmatic` and `unknown` are the ones that report `0`. A genuinely instant
-> navigation is not a practical concern — a real tap-driven transition does not commit within the
-> same millisecond as its tap.
+> aggregating — **the discriminator is the value itself: `navigation.duration_ms > 0`.** A genuinely
+> instant navigation is not a practical concern — a real tap-driven transition does not commit
+> within the same millisecond as its tap.
+
+> [!WARNING]
+> **Do not filter on `navigation.trigger` to find the measured rows.** It looks like the
+> discriminator and is not one. Timing is deliberately not gated on the two short windows above, so
+> a slow navigation carries a real duration under a trigger that reads as unmeasured:
+>
+> | Navigation | `navigation.trigger` | `navigation.duration_ms` |
+> |---|---|---|
+> | tap → commit in 80 ms | `user_tap` | `80` |
+> | tap → commit in 2 s (500 ms parenting window closed, so never upgraded) | `unknown` | `2035` |
+> | back press → commit in 2 s (1 s trigger TTL expired) | `programmatic` | `2000` |
+> | launch, redirect, timer — no user action at all | `programmatic` / `unknown` | `0` |
+>
+> Keeping only `user_tap`/`back_press` keeps row 1 and drops rows 2 and 3 — exactly the slow
+> navigations this attribute exists to surface. `navigation.trigger` answers "what caused this?";
+> `navigation.duration_ms > 0` answers "is this measured?" Pinned by
+> `a_slow_navigation_carries_a_real_duration_under_an_unmeasured_looking_trigger`.
 
 The interaction start is **not consumed on read**, because two navigation collectors can be active
 in one process — a Compose host that also runs the View collector emits a `ui.navigation` span from

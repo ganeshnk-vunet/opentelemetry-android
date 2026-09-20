@@ -39,8 +39,10 @@ object NavigationConstants {
 
     /**
      * Milliseconds from the user action that caused the navigation to the moment the destination
-     * was committed. Absent when no user action can be attributed to the transition — see
-     * `NavigationTransitionCandidate.intentAtNanos` and `NavigationSpanEmitter.resolveDurationMs`.
+     * was committed. Present on every `ui.navigation` span; `0` means "not measurable", not an
+     * instant navigation, so aggregate over `> 0` rather than filtering on `navigation.trigger` —
+     * see `NavigationTransitionCandidate.intentAtNanos` and
+     * `NavigationSpanEmitter.resolveDurationMs`.
      */
     @JvmField
     val NAVIGATION_DURATION_MS_KEY: AttributeKey<Long> = AttributeKey.longKey("navigation.duration_ms")
