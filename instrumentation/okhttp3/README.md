@@ -26,7 +26,7 @@ are provided by the OkHttp attributes getter.
   * `server.port` — logical server port
   * `network.peer.address` / `network.peer.port` — connection endpoint, when available
   * Captured request/response headers per configuration (`http.request.header.<name>` / `http.response.header.<name>`)
-  * Network phase timings (incubating, OkHttp only when enabled): `http.client.timing.dns_ms`, `connect_ms`, `tls_ms`, `ttfb_ms`, `download_ms`, `total_ms`, and related span events (`http.dns`, `http.connect`, `http.secure_connect`, `http.ttfb`, `http.download`, `http.call`)
+  * Network phase timings (incubating, OkHttp only when enabled): `http.client.timing.dns_ms`, `connect_ms`, `tls_ms`, `ttfb_ms`, `download_ms`, `total_ms`, `abandoned`, and related span events (`http.dns`, `http.connect`, `http.secure_connect`, `http.ttfb`, `http.download`, `http.call`)
 
 If a request fails, the span is ended and the error is recorded. Failed spans include a normalized
 `http.error.category` attribute alongside the standard `error.type` attribute:
@@ -96,6 +96,46 @@ instrumentation.setCaptureNetworkTimingPhases(false);
 
 > [!NOTE]
 > Phase breakdown requires OkHttp Byte Buddy instrumentation (`okhttp3-agent`). `download_ms` may be absent when the response body is not consumed before the span ends.
+
+### Span completion and the call duration cap
+
+With phase timing enabled the span is ended from OkHttp's `EventListener`, which reports a call as
+finished when its response body reaches EOF or is closed, whichever comes first. A body that is read
+to completion therefore ends its span promptly, but one that is never read — a server-sent-event
+stream, a long poll, or a response the caller simply drops — reports nothing until it is closed, and
+the span would otherwise stretch across the whole of that wait.
+
+A watchdog bounds this. Any span still open after the cap is ended anyway and carries
+`http.client.timing.abandoned = true` alongside `http.client.timing.phases_complete = false`, so a
+truncated duration is always identifiable and never silently mistaken for a slow request. The cap
+defaults to **5 minutes**; a client that sets OkHttp's own `callTimeout` is held to that instead,
+since the application has already stated the longest call it considers legitimate.
+
+> [!IMPORTANT]
+> **The cap is not a definition of "too slow".** Every call that finishes inside it reports its true
+> duration, however slow — a request that genuinely takes two minutes is recorded as two minutes.
+> The cap only applies to calls that never report completion at all, and it is deliberately set
+> above any plausible real request so that slow requests, which are the ones worth investigating,
+> are never deleted by it.
+>
+> The budget is applied **per phase**. A network interceptor sees the response once its *headers*
+> arrive, which separates two failures with nothing in common: before it the app is waiting on the
+> server, after it the app is reading — or failing to read — the body. Each phase gets the full
+> budget from its own start, so a slow server and a slow download are both measured in full instead
+> of sharing one clock and truncating whichever happens second. Both phases stay bounded, so a call
+> that never receives headers is still cut off rather than pending forever — which matters because
+> OkHttp's `callTimeout` defaults to disabled and `readTimeout` is per-read, so a trickling server
+> trips neither.
+>
+> Read `abandoned = true` as *"ran at least this long, exact duration unknown"* and exclude those
+> rows from latency percentiles rather than treating them as measurements. Lowering the cap below
+> the slowest request you care about will silently remove real findings — that is the failure mode
+> to avoid when tuning it.
+
+```java
+OkHttpInstrumentation instrumentation = AndroidInstrumentationLoader.getInstrumentation(OkHttpInstrumentation.class);
+instrumentation.setMaxCallDurationMillis(120_000L);
+```
 
 ## Quickstart
 

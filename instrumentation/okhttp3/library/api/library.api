@@ -1,4 +1,6 @@
 public final class io/opentelemetry/instrumentation/library/okhttp/OkHttpInstrumentation : io/opentelemetry/android/instrumentation/AndroidInstrumentation {
+	public static final field Companion Lio/opentelemetry/instrumentation/library/okhttp/OkHttpInstrumentation$Companion;
+	public static final field DEFAULT_MAX_CALL_DURATION_MILLIS J
 	public final field additionalExtractors Ljava/util/List;
 	public fun <init> ()V
 	public final fun addAttributesExtractor (Lio/opentelemetry/instrumentation/api/instrumenter/AttributesExtractor;)V
@@ -9,12 +11,17 @@ public final class io/opentelemetry/instrumentation/library/okhttp/OkHttpInstrum
 	public final fun getKnownMethods ()Ljava/util/Set;
 	public fun getName ()Ljava/lang/String;
 	public fun install (Landroid/content/Context;Lio/opentelemetry/android/OpenTelemetryRum;)V
+	public final fun maxCallDurationMillis ()J
 	public final fun setCaptureNetworkTimingPhases (Z)V
 	public final fun setCapturedRequestHeaders (Ljava/util/List;)V
 	public final fun setCapturedResponseHeaders (Ljava/util/List;)V
 	public final fun setEmitExperimentalHttpClientTelemetry (Z)V
 	public final fun setKnownMethods (Ljava/util/Set;)V
+	public final fun setMaxCallDurationMillis (J)V
 	public final fun setPeerServiceMapping (Ljava/util/Map;)V
+}
+
+public final class io/opentelemetry/instrumentation/library/okhttp/OkHttpInstrumentation$Companion {
 }
 
 public final class io/opentelemetry/instrumentation/library/okhttp/internal/OkHttpSingletons {

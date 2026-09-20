@@ -16,8 +16,66 @@
   a negative duration. Coil was already correct and is unchanged. Sub-millisecond durations on the
   memory-cache path now survive instead of being truncated by `currentTimeMillis`'s millisecond
   resolution.
+- OkHttp `http.client` spans can no longer run for hours. Since phase-timing capture moved span
+  completion to OkHttp's `EventListener`, a span ended only when the call was reported finished —
+  and OkHttp reports that when the response body reaches EOF **or is closed**. A body read to
+  completion was fine, but one never read (a server-sent-event stream, a long poll, or a response the
+  caller simply dropped) reported nothing until close, so the span covered the caller's entire hold.
+  Production showed durations up to **23.4 hours** on spans whose own `http.client.timing.ttfb_ms`
+  was a few tens of milliseconds. A watchdog now bounds every span: anything still open past the cap
+  is ended and marked `http.client.timing.abandoned = true` with
+  `http.client.timing.phases_complete = false`, so a truncated duration is never mistaken for a slow
+  request. Every call that finishes inside the cap reports its true duration however slow it was, so
+  a genuinely two-minute request is recorded as two minutes rather than truncated; the cap is set
+  above any plausible real request precisely so that slow requests, the ones worth investigating,
+  are never deleted by it. The cap defaults to 5 minutes and is configurable via
+  `OkHttpInstrumentation.setMaxCallDurationMillis`; a client that sets OkHttp's own `callTimeout` is
+  held to that instead. The same sweep reclaims the pending-call state, which previously grew without
+  bound — websocket upgrades in particular reach the `EventListener` but skip network interceptors,
+  so nothing ever collected theirs.
+- A redirect or auth retry no longer strands a span. The tracing interceptor is a *network*
+  interceptor, so it runs once per wire attempt; the second registration silently replaced the first
+  in the pending map, leaving a started span with no path to `end()` — leaked, and never exported.
+  Each attempt now gets its own correctly ended span. Timing state is per-`Call`, so the previous
+  attempt is ended without consuming the store; the surviving attempt still receives
+  `http.client.timing.*` on `callEnd`.
+- `http.client` spans are still emitted in minified builds. R8 renames the private
+  `OkHttpClient.Builder.eventListenerFactory` field the timing listener is installed through, and
+  since that listener became the only thing that ends an OkHttp span, the reflective failure meant
+  **no span was ever ended** — not merely, as previously believed, that `http.client.timing.*`
+  attributes went missing. When the wiring fails the interceptor now ends spans inline, matching the
+  behaviour used when phase timing is switched off.
 
 ### Added
+
+- `ui.navigation` spans now carry **`navigation.duration_ms`**, the time from the user action that
+  caused the navigation to the moment the destination was committed. Android previously emitted
+  navigation timestamps only, with no duration anywhere, which left the responsiveness pillar with no
+  Android input at all while iOS and Flutter both reported one. Sourced from a back press the
+  collector recorded, or otherwise from the most recent interaction start, which is the originating
+  tap; a back press wins when both apply. A back press is used **only for the pop it caused** — a
+  press that dismissed a dialog, or that the user abandoned by tapping forward instead, does not
+  time the next screen, which would report a long navigation that never happened. A tap is likewise
+  claimed by the first navigation that uses it, so a screen the app opens by itself later — a
+  session-expiry redirect, a timer, a deep link — reports `0` rather than the user's idle time since
+  the last tap. A second collector reporting the *same* navigation is still served, for 250 ms. Emitted by all three collectors (View, Compose Nav2,
+  Compose Nav3). **Timing is deliberately not gated on the 500 ms interaction parenting window or the
+  1 s back-press trigger TTL.** Those windows decide span parenting and trigger naming, where a stale
+  signal misleads; bounding *timing* by them would have dropped precisely the slow navigations worth
+  investigating — a 3-second navigation would report no duration rather than 3000 ms. A back
+  navigation slower than 1 s is therefore named `programmatic` and still carries its duration.
+  Staleness is bounded at 30 s instead, beyond which the value is **`0` rather than a clamp**,
+  since a clamped value would be indistinguishable from a real navigation of that length. **Set on every `ui.navigation` span**, reporting
+  `0` when no trustworthy user-action measurement exists — a programmatic navigation, an action
+  older than the limit, or a destination that committed before its own action. `0` means "not
+  measurable", **not** an instant navigation: those rows share the column with real measurements, so
+  aggregate over **`navigation.duration_ms > 0`** before computing averages or percentiles. Do
+  **not** filter on `navigation.trigger` for this — because timing outlives the naming windows, a
+  slow navigation carries a real duration under `unknown` or `programmatic`, so keeping only
+  `user_tap`/`back_press` would drop exactly the slow navigations the attribute exists to surface.
+  Covers up to the framework reporting the destination as current; time spent
+  composing or loading before the first frame is `navigation.ttid_ms`, which is deliberately not
+  included.
 
 - Hybrid-click date-picker capture: confirming a Material date picker now reports
   `interaction.type = date_picker` on the confirm-button span, plus `ui.control.value.selected_date`
