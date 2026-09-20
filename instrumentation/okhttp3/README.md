@@ -118,6 +118,15 @@ since the application has already stated the longest call it considers legitimat
 > above any plausible real request so that slow requests, which are the ones worth investigating,
 > are never deleted by it.
 >
+> The budget is applied **per phase**. A network interceptor sees the response once its *headers*
+> arrive, which separates two failures with nothing in common: before it the app is waiting on the
+> server, after it the app is reading — or failing to read — the body. Each phase gets the full
+> budget from its own start, so a slow server and a slow download are both measured in full instead
+> of sharing one clock and truncating whichever happens second. Both phases stay bounded, so a call
+> that never receives headers is still cut off rather than pending forever — which matters because
+> OkHttp's `callTimeout` defaults to disabled and `readTimeout` is per-read, so a trickling server
+> trips neither.
+>
 > Read `abandoned = true` as *"ran at least this long, exact duration unknown"* and exclude those
 > rows from latency percentiles rather than treating them as measurements. Lowering the cap below
 > the slowest request you care about will silently remove real findings — that is the failure mode

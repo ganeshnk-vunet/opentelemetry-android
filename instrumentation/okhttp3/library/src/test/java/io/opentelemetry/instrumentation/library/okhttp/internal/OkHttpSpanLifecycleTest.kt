@@ -158,6 +158,47 @@ class OkHttpSpanLifecycleTest {
     }
 
     @Test
+    fun `a slow body read gets its own budget and is not truncated`() {
+        server.enqueue(MockResponse.Builder().body("large payload").build())
+        val client = instrument()
+
+        // Headers arrive immediately; the body is then read slowly, as a large download on a poor
+        // connection would be. Measuring the body against a deadline set when the request started
+        // -- or against a short fixed window from the headers -- would truncate a legitimate
+        // transfer and mark it abandoned, which is the same defect as truncating a slow server.
+        val response = get(client)
+        fakeNanos += TimeUnit.MINUTES.toNanos(4)
+        OkHttpCallCompletionCoordinator.sweep()
+
+        assertThat(otel.spans).isEmpty()
+        assertThat(OkHttpCallCompletionCoordinator.pendingCount).isEqualTo(1)
+
+        response.body!!.source().readUtf8()
+        assertThat(otel.spans.single().attributes.asMap().mapKeys { it.key.key })
+            .doesNotContainKey(OkHttpTimingAttributes.ABANDONED)
+
+        response.close()
+    }
+
+    @Test
+    fun `a body that never arrives is still bounded once the headers budget expires`() {
+        server.enqueue(MockResponse.Builder().body("never read").build())
+        val client = instrument()
+
+        // The headers phase has its own budget too, so a call that stalls before the response
+        // cannot sit pending forever -- the backstop is never removed, only re-based.
+        val response = get(client)
+        fakeNanos += TimeUnit.MINUTES.toNanos(6)
+        OkHttpCallCompletionCoordinator.sweep()
+
+        assertThat(otel.spans).hasSize(1)
+        assertThat(otel.spans[0].attributes.asMap().mapKeys { it.key.key })
+            .containsEntry(OkHttpTimingAttributes.ABANDONED, true)
+
+        response.close()
+    }
+
+    @Test
     fun `the configured cap is honoured`() {
         server.enqueue(MockResponse.Builder().body("x").build())
         val client = instrument(configure = { setMaxCallDurationMillis(5_000L) })

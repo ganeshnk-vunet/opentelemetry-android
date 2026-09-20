@@ -104,6 +104,54 @@ class OkHttpCallCompletionCoordinatorTest {
         assertThat(OkHttpCallCompletionCoordinator.pendingCount).isZero()
     }
 
+    /**
+     * A slow server and a slow body read fail for different reasons and must not share one clock.
+     * Headers arriving late already consume the request budget; if the body were then measured
+     * against that same deadline it would be truncated almost immediately, turning a legitimate
+     * transfer into an abandoned one. End to end this is invisible, because MockWebServer returns
+     * headers instantly -- the phases have to be driven apart explicitly.
+     */
+    @Test
+    fun `the body gets its own budget once the headers arrive`() {
+        var now = 0L
+        OkHttpCallCompletionCoordinator.setNanoTimeSource { now }
+        OkHttpCallCompletionCoordinator.registerTraced(call, Context.root(), chain, span)
+
+        // Server takes 200s to send headers, well into the 300s request budget.
+        now = TimeUnit.SECONDS.toNanos(200)
+        OkHttpCallCompletionCoordinator.setResponse(call, mockk(relaxed = true))
+
+        // 400s total: past the deadline set at registration, but only 200s into reading the body.
+        now = TimeUnit.SECONDS.toNanos(400)
+        OkHttpCallCompletionCoordinator.sweepGuarded()
+
+        assertThat(OkHttpCallCompletionCoordinator.pendingCount).isEqualTo(1)
+        verify(exactly = 0) { instrumenter.end(any(), any(), any(), any()) }
+
+        // The body phase is bounded too -- it is re-based, not removed.
+        now = TimeUnit.SECONDS.toNanos(520)
+        OkHttpCallCompletionCoordinator.sweepGuarded()
+        assertThat(OkHttpCallCompletionCoordinator.pendingCount).isZero()
+    }
+
+    /**
+     * The pre-headers phase keeps a backstop. Skipping calls that have no response yet -- on the
+     * theory that OkHttp's own timeouts will handle them -- leaves a call unbounded whenever the
+     * app disables them, which is common for streaming and long-polling clients.
+     */
+    @Test
+    fun `a call that never receives headers is still bounded`() {
+        var now = 0L
+        OkHttpCallCompletionCoordinator.setNanoTimeSource { now }
+        OkHttpCallCompletionCoordinator.registerTraced(call, Context.root(), chain, span)
+
+        now = TimeUnit.SECONDS.toNanos(301)
+        OkHttpCallCompletionCoordinator.sweepGuarded()
+
+        assertThat(OkHttpCallCompletionCoordinator.pendingCount).isZero()
+        verify { instrumenter.end(any(), any(), any(), any()) }
+    }
+
     @Test
     fun `re-registering the same call ends the previous attempt's span`() {
         val firstSpan = mockk<Span>(relaxed = true)

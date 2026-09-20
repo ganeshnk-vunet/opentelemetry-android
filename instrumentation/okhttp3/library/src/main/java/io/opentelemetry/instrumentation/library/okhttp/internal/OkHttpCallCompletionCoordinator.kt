@@ -66,7 +66,8 @@ internal object OkHttpCallCompletionCoordinator {
         val context: Context,
         val chain: Interceptor.Chain,
         val span: Span,
-        val deadlineNanos: Long,
+        val budgetNanos: Long,
+        @Volatile var deadlineNanos: Long,
         @Volatile var response: Response? = null,
         @Volatile var error: Throwable? = null,
     )
@@ -116,15 +117,26 @@ internal object OkHttpCallCompletionCoordinator {
         pendingTraces.remove(call)?.let { previous ->
             completePending(call, previous, abandoned = false)
         }
+        val budgetNanos = budgetNanosFor(call)
         pendingTraces[call] =
-            PendingTrace(context, chain, span, deadlineNanosFor(call))
+            PendingTrace(context, chain, span, budgetNanos, nanoTimeSource() + budgetNanos)
     }
 
     fun setResponse(
         call: Call,
         response: Response,
     ) {
-        pendingTraces[call]?.response = response
+        val pending = pendingTraces[call] ?: return
+        pending.response = response
+        // A network interceptor's chain.proceed() returns once the response *headers* have
+        // arrived, so this is the boundary between two phases that fail for entirely different
+        // reasons: before it the app is waiting on the server, after it the app is reading -- or
+        // failing to read -- the body. Giving the body its own budget from here means a slow
+        // server and a slow download are each measured in full rather than sharing one clock and
+        // truncating whichever happens second. Both phases stay bounded, so nothing becomes
+        // unbounded: a call that never gets headers is still cut off by the budget set at
+        // registration.
+        pending.deadlineNanos = nanoTimeSource() + pending.budgetNanos
     }
 
     fun setError(
@@ -222,15 +234,14 @@ internal object OkHttpCallCompletionCoordinator {
      * configured cap applies. Read through the public [Call.timeout] rather than by reflection, so
      * minification cannot break it.
      */
-    private fun deadlineNanosFor(call: Call): Long {
+    private fun budgetNanosFor(call: Call): Long {
         val callTimeoutNanos =
             try {
                 call.timeout().timeoutNanos()
             } catch (_: RuntimeException) {
                 0L
             }
-        val budget = if (callTimeoutNanos > 0L) callTimeoutNanos else maxCallDurationNanos
-        return nanoTimeSource() + budget
+        return if (callTimeoutNanos > 0L) callTimeoutNanos else maxCallDurationNanos
     }
 
     private fun startWatchdog(maxCallDurationMillis: Long) {
