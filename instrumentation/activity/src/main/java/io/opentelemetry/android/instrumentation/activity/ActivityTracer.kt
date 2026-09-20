@@ -153,27 +153,28 @@ internal class ActivityTracer(
      * Returns `false` when no listener could be attached, so the caller ends the span immediately
      * rather than leaving it open for a callback that will never arrive.
      *
-     * The span is ended only if it is still the one held when the wait began. Every other
-     * lifecycle callback ends the active span, so backgrounding before the first frame legitimately
-     * closes this span early -- correctly, without a TTID, because no frame was ever shown. Without
-     * the identity check the late callback would then end whichever span had started since.
+     * The span is ended only if it is still the one handed over when the wait began -- see
+     * [ActiveSpan.endDeferred], which also ends it on any lifecycle end so it cannot outlive the
+     * activity waiting for a frame that will never be drawn.
      */
     private fun deferEndUntilFirstDraw(activity: Activity): Boolean {
-        val deferred = activeSpan.currentSpan() ?: return false
-        // Pop the span off the main thread now, keeping it current for exactly as long as it was
-        // before the end was deferred. Without this, anything started from onResume -- a profile
-        // fetch, a database open, a coroutine -- would be parented to app.start purely because it
-        // happened to be spawned while waiting for a frame.
-        activeSpan.closeScopeOnly()
+        // Hands the span over to the draw callback: off the main thread's context, so nothing
+        // started from onResume is parented to app.start, and out of the active slot, so the next
+        // lifecycle transition still gets its own span. ActiveSpan keeps ending it on any
+        // lifecycle end, so backgrounding before the frame closes it -- without a TTID, correctly,
+        // because no frame was shown.
+        val deferred = activeSpan.deferEnd() ?: return false
         return FirstDrawNotifier.onNextDraw(activity) {
-            if (activeSpan.currentSpan() === deferred) {
-                activeSpan.addEvent(AppStartupTimer.EVENT_TTID)
-                endActiveSpan()
-            }
+            activeSpan.endDeferred(deferred) { it.addEvent(AppStartupTimer.EVENT_TTID) }
         }
     }
 
     fun endActiveSpan() {
+        // Any end clears the wait: a warm span can be closed by a lifecycle callback that never
+        // reaches endSpanForActivityResumed -- an activity created but stopped before it resumes,
+        // behind the keyguard or launched into the background. Left set, the flag would defer the
+        // *next* span this tracer ends and stamp a TTID on a hot start or a plain lifecycle span.
+        awaitingFirstDraw = false
         // If we happen to be in app startup, make sure this ends it. It's harmless if we're already
         // out of the startup phase.
         appStartupTimer.end()

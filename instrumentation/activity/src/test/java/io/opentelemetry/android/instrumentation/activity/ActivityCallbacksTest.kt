@@ -15,6 +15,7 @@ import io.opentelemetry.android.internal.services.visiblescreen.VisibleScreenTra
 import io.opentelemetry.sdk.testing.junit5.OpenTelemetryExtension
 import io.opentelemetry.sdk.trace.data.EventData
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
@@ -23,6 +24,8 @@ import org.junit.jupiter.api.extension.RegisterExtension
 
 internal class ActivityCallbacksTest {
     private companion object {
+        const val TTID = "app.start.phase.initial_display"
+
         @RegisterExtension
         val otelTesting: OpenTelemetryExtension = OpenTelemetryExtension.create()
     }
@@ -84,6 +87,67 @@ internal class ActivityCallbacksTest {
         checkEventExists(events, "activityPreResumed")
         checkEventExists(events, "activityResumed")
         checkEventExists(events, "activityPostResumed")
+    }
+
+    /**
+     * The whole warm path, driven through the real callback sequence rather than the tracer:
+     * onActivityPostResumed returns with the span still open, and the frame that follows is what
+     * records the TTID and ends it.
+     */
+    @Test
+    fun warmStart_throughTheCallbacks_recordsTtidAtTheFirstFrame() {
+        val activityCallbacks = ActivityCallbacks(tracers)
+        val testHarness = ActivityCallbackTestHarness(activityCallbacks)
+        val screen = DrawableActivity()
+
+        // First run through is the cold start, which names the initial activity.
+        testHarness.runAppStartupLifecycle(screen.activity)
+        otelTesting.clearSpans()
+
+        // Second creation of the same activity is the warm start.
+        testHarness.runActivityCreationLifecycle(screen.activity)
+        assertTrue(otelTesting.spans.isEmpty(), "warm app.start must stay open past postResumed")
+
+        screen.drawFrame()
+
+        val warm = otelTesting.spans.single()
+        assertEquals(RumConstants.APP_START_SPAN_NAME, warm.name)
+        assertEquals("warm", warm.attributes.get(RumConstants.START_TYPE_KEY))
+        assertTrue(warm.events.any { it.name == TTID })
+    }
+
+    /**
+     * An activity created but stopped before it ever resumes -- launched into the background, or
+     * behind the keyguard -- never reaches the callback that consumes the wait. The hot start that
+     * follows must not inherit it: hot re-composites a hierarchy that is already laid out, so its
+     * first draw is not the quantity cold and warm report.
+     */
+    @Test
+    fun warmStart_stoppedBeforeResuming_doesNotLeakTheWaitOntoTheHotStart() {
+        val activityCallbacks = ActivityCallbacks(tracers)
+        val testHarness = ActivityCallbackTestHarness(activityCallbacks)
+        val screen = DrawableActivity()
+
+        testHarness.runAppStartupLifecycle(screen.activity)
+        otelTesting.clearSpans()
+
+        // Warm creation that stops before resuming.
+        val bundle = mockk<android.os.Bundle>()
+        activityCallbacks.onActivityPreCreated(screen.activity, bundle)
+        activityCallbacks.onActivityCreated(screen.activity, bundle)
+        activityCallbacks.onActivityPostCreated(screen.activity, bundle)
+        testHarness.runActivityStartedLifecycle(screen.activity)
+        testHarness.runActivityStoppedFromPausedLifecycle(screen.activity)
+        otelTesting.clearSpans()
+
+        // Coming back to the foreground: a hot start, which must end at postResumed as before.
+        testHarness.runActivityRestartedLifecycle(screen.activity)
+
+        assertFalse(screen.isAwaitingDraw, "hot start must not wait for a frame")
+        val hot = otelTesting.spans.single()
+        assertEquals(RumConstants.APP_START_SPAN_NAME, hot.name)
+        assertEquals("hot", hot.attributes.get(RumConstants.START_TYPE_KEY))
+        assertTrue(hot.events.none { it.name == TTID })
     }
 
     @Test

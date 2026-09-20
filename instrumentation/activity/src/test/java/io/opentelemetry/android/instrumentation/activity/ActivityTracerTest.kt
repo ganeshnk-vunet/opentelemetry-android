@@ -11,9 +11,6 @@ import io.mockk.impl.annotations.RelaxedMockK
 import io.mockk.junit5.MockKExtension
 import io.mockk.mockk
 import io.opentelemetry.api.trace.Span
-import io.mockk.slot
-import io.mockk.just
-import io.mockk.Runs
 import io.opentelemetry.android.common.RumConstants
 import io.opentelemetry.android.instrumentation.activity.startup.AppStartupTimer
 import io.opentelemetry.android.instrumentation.common.ActiveSpan
@@ -23,6 +20,7 @@ import io.opentelemetry.sdk.common.Clock
 import io.opentelemetry.sdk.testing.junit5.OpenTelemetryExtension
 import io.opentelemetry.sdk.trace.data.SpanData
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -35,6 +33,8 @@ import org.junit.jupiter.api.extension.RegisterExtension
 @ExtendWith(MockKExtension::class)
 class ActivityTracerTest {
     private companion object {
+        const val TTID = "app.start.phase.initial_display"
+
         @RegisterExtension
         val otelTesting: OpenTelemetryExtension = OpenTelemetryExtension.create()
     }
@@ -173,84 +173,75 @@ class ActivityTracerTest {
      */
     @Test
     fun warmStart_waitsForFirstDraw_thenRecordsTtidAndEnds() {
-        val activity = mockk<Activity>()
-        val decorView = mockk<android.view.View>(relaxed = true)
-        val observer = mockk<android.view.ViewTreeObserver>(relaxed = true)
-        val window = mockk<android.view.Window>(relaxed = true)
-        every { window.decorView } returns decorView
-        every { activity.window } returns window
-        every { decorView.viewTreeObserver } returns observer
-        every { observer.isAlive } returns true
-        val drawListener = slot<android.view.ViewTreeObserver.OnDrawListener>()
-        every { observer.addOnDrawListener(capture(drawListener)) } just Runs
-        val posted = slot<Runnable>()
-        every { decorView.post(capture(posted)) } returns true
+        val screen = DrawableActivity()
+        val trackableTracer = warmTracerFor(screen.activity)
 
-        val trackableTracer =
-            ActivityTracer(
-                activity = activity,
-                activeSpan = activeSpan,
-                tracer = tracer,
-                appStartupTimer = appStartupTimer,
-                initialAppActivity = "Activity",
-            )
         trackableTracer.startActivityCreation()
-        trackableTracer.endSpanForActivityResumed(activity)
+        trackableTracer.endSpanForActivityResumed(screen.activity)
 
         // Resumed has returned, but the frame has not been drawn: nothing is exported yet.
         assertTrue(otelTesting.spans.isEmpty())
 
-        drawListener.captured.onDraw()
-        posted.captured.run()
+        screen.drawFrame()
 
         val span = this.singleSpan
         assertEquals(RumConstants.APP_START_SPAN_NAME, span.name)
         assertEquals("warm", span.attributes.get(RumConstants.START_TYPE_KEY))
-        assertTrue(span.events.any { it.name == "app.start.phase.initial_display" })
+        assertTrue(span.events.any { it.name == TTID })
     }
 
     /**
      * Backgrounding before the first frame legitimately ends the span early and without a TTID --
      * no frame was ever shown. The late draw callback must not then end whatever span started
-     * since, which is what the identity check in deferEndUntilFirstDraw guards.
+     * since, which is what the identity check in [ActiveSpan.endDeferred] guards.
      */
     @Test
     fun warmStart_drawAfterSpanAlreadyEnded_doesNotEndAnUnrelatedSpan() {
-        val activity = mockk<Activity>()
-        val decorView = mockk<android.view.View>(relaxed = true)
-        val observer = mockk<android.view.ViewTreeObserver>(relaxed = true)
-        val window = mockk<android.view.Window>(relaxed = true)
-        every { window.decorView } returns decorView
-        every { activity.window } returns window
-        every { decorView.viewTreeObserver } returns observer
-        every { observer.isAlive } returns true
-        val drawListener = slot<android.view.ViewTreeObserver.OnDrawListener>()
-        every { observer.addOnDrawListener(capture(drawListener)) } just Runs
-        val posted = slot<Runnable>()
-        every { decorView.post(capture(posted)) } returns true
+        val screen = DrawableActivity()
+        val trackableTracer = warmTracerFor(screen.activity)
 
-        val trackableTracer =
-            ActivityTracer(
-                activity = activity,
-                activeSpan = activeSpan,
-                tracer = tracer,
-                appStartupTimer = appStartupTimer,
-                initialAppActivity = "Activity",
-            )
         trackableTracer.startActivityCreation()
-        trackableTracer.endSpanForActivityResumed(activity)
+        trackableTracer.endSpanForActivityResumed(screen.activity)
 
         // onPause ends it without a frame, then an unrelated lifecycle span starts.
         trackableTracer.endActiveSpan()
         trackableTracer.startSpanIfNoneInProgress("Paused")
 
-        drawListener.captured.onDraw()
-        posted.captured.run()
+        screen.drawFrame()
 
         val appStart = otelTesting.spans.single { it.name == RumConstants.APP_START_SPAN_NAME }
-        assertTrue(appStart.events.none { it.name == "app.start.phase.initial_display" })
+        assertTrue(appStart.events.none { it.name == TTID })
         // The unrelated span is still open -- the stale callback did not close it.
         assertTrue(activeSpan.spanInProgress())
+    }
+
+    /**
+     * Waiting for the frame must not hold the active slot: [ActiveSpan.spanInProgress] is what
+     * gates `startSpanIfNoneInProgress`, so a span parked there would swallow the next lifecycle
+     * span and misfile its events onto app.start. An activity that finishes itself from onResume
+     * pauses inside the one-frame window, which is exactly when that happens.
+     */
+    @Test
+    fun warmStart_pausedBeforeTheFrame_stillProducesItsOwnLifecycleSpan() {
+        val screen = DrawableActivity()
+        val trackableTracer = warmTracerFor(screen.activity)
+
+        trackableTracer.startActivityCreation()
+        trackableTracer.endSpanForActivityResumed(screen.activity)
+
+        // onActivityPrePaused arrives before the frame: it must get a span of its own.
+        trackableTracer.startSpanIfNoneInProgress("Paused")
+        trackableTracer.addEvent("activityPrePaused")
+        trackableTracer.endActiveSpan()
+
+        screen.drawFrame()
+
+        val appStart = otelTesting.spans.single { it.name == RumConstants.APP_START_SPAN_NAME }
+        assertTrue(appStart.events.none { it.name == TTID })
+        assertTrue(appStart.events.none { it.name == "activityPrePaused" })
+        val paused = otelTesting.spans.single { it.name == RumConstants.ACTIVITY_LIFECYCLE_SPAN_NAME }
+        assertEquals("Paused", paused.attributes.get(RumConstants.ACTIVITY_LIFECYCLE_EVENT_KEY))
+        assertTrue(paused.events.any { it.name == "activityPrePaused" })
     }
 
     /**
@@ -261,31 +252,13 @@ class ActivityTracerTest {
      */
     @Test
     fun warmStart_popsTheSpanOffTheThreadBeforeWaitingForTheFrame() {
-        val activity = mockk<Activity>()
-        val decorView = mockk<android.view.View>(relaxed = true)
-        val observer = mockk<android.view.ViewTreeObserver>(relaxed = true)
-        val window = mockk<android.view.Window>(relaxed = true)
-        every { window.decorView } returns decorView
-        every { activity.window } returns window
-        every { decorView.viewTreeObserver } returns observer
-        every { observer.isAlive } returns true
-        val drawListener = slot<android.view.ViewTreeObserver.OnDrawListener>()
-        every { observer.addOnDrawListener(capture(drawListener)) } just Runs
-        val posted = slot<Runnable>()
-        every { decorView.post(capture(posted)) } returns true
+        val screen = DrawableActivity()
+        val trackableTracer = warmTracerFor(screen.activity)
 
-        val trackableTracer =
-            ActivityTracer(
-                activity = activity,
-                activeSpan = activeSpan,
-                tracer = tracer,
-                appStartupTimer = appStartupTimer,
-                initialAppActivity = "Activity",
-            )
         val beforeStart = Span.current().spanContext.spanId
         trackableTracer.startActivityCreation()
         val whileCreating = Span.current().spanContext.spanId
-        trackableTracer.endSpanForActivityResumed(activity)
+        trackableTracer.endSpanForActivityResumed(screen.activity)
         val afterResumed = Span.current().spanContext.spanId
 
         // The span becomes current while the activity is being created, and must be popped back
@@ -294,15 +267,62 @@ class ActivityTracerTest {
         // ambient context from another test cannot mask a real leak.
         assertNotEquals(beforeStart, whileCreating)
         assertEquals(beforeStart, afterResumed)
-        assertTrue(activeSpan.spanInProgress())
+        // Out of the active slot as well as off the thread, so the next lifecycle span can start.
+        assertFalse(activeSpan.spanInProgress())
         assertTrue(otelTesting.spans.isEmpty())
 
-        drawListener.captured.onDraw()
-        posted.captured.run()
+        screen.drawFrame()
 
         val span = this.singleSpan
         assertEquals("warm", span.attributes.get(RumConstants.START_TYPE_KEY))
-        assertTrue(span.events.any { it.name == "app.start.phase.initial_display" })
+        assertTrue(span.events.any { it.name == TTID })
+    }
+
+    /**
+     * An activity created but stopped before it ever resumes -- launched into the background, or
+     * behind the keyguard -- ends its warm span through a callback that never reaches
+     * endSpanForActivityResumed. The wait must not survive that and land on the hot start that
+     * follows: hot re-composites a hierarchy that is already laid out, so its first draw answers a
+     * different question from cold's and warm's and is deliberately excluded from TTID.
+     */
+    @Test
+    fun warmStart_stoppedBeforeResuming_doesNotLeakTheWaitOntoAHotStart() {
+        val screen = DrawableActivity()
+        val trackableTracer = warmTracerFor(screen.activity)
+
+        trackableTracer.startActivityCreation()
+        trackableTracer.endActiveSpan()
+
+        // Back to the foreground: onActivityPreStarted makes this a "hot" app.start.
+        trackableTracer.initiateRestartSpanIfNecessary(false)
+        trackableTracer.endSpanForActivityResumed(screen.activity)
+
+        assertFalse(screen.isAwaitingDraw, "hot start must not wait for a frame")
+        val hot = otelTesting.spans.last { it.name == RumConstants.APP_START_SPAN_NAME }
+        assertEquals("hot", hot.attributes.get(RumConstants.START_TYPE_KEY))
+        assertTrue(hot.events.none { it.name == TTID })
+    }
+
+    /**
+     * The same leak, on the path a multi-activity app takes: `initiateRestartSpanIfNecessary`
+     * declines to call it a hot start and makes a plain lifecycle span, which must not end up
+     * carrying an `app.start.*` event.
+     */
+    @Test
+    fun warmStart_stoppedBeforeResuming_doesNotLeakTheWaitOntoALifecycleSpan() {
+        val screen = DrawableActivity()
+        val trackableTracer = warmTracerFor(screen.activity)
+
+        trackableTracer.startActivityCreation()
+        trackableTracer.endActiveSpan()
+
+        trackableTracer.initiateRestartSpanIfNecessary(true)
+        trackableTracer.endSpanForActivityResumed(screen.activity)
+
+        assertFalse(screen.isAwaitingDraw, "a lifecycle span must not wait for a frame")
+        val restarted = otelTesting.spans.last()
+        assertEquals(RumConstants.ACTIVITY_LIFECYCLE_SPAN_NAME, restarted.name)
+        assertTrue(restarted.events.none { it.name == TTID })
     }
 
     /** No window to observe: end immediately rather than wait for a callback that cannot arrive. */
@@ -310,22 +330,26 @@ class ActivityTracerTest {
     fun warmStart_withoutAWindow_endsImmediately() {
         val activity = mockk<Activity>()
         every { activity.window } returns null
+        val trackableTracer = warmTracerFor(activity)
 
-        val trackableTracer =
-            ActivityTracer(
-                activity = activity,
-                activeSpan = activeSpan,
-                tracer = tracer,
-                appStartupTimer = appStartupTimer,
-                initialAppActivity = "Activity",
-            )
         trackableTracer.startActivityCreation()
         trackableTracer.endSpanForActivityResumed(activity)
 
         val span = this.singleSpan
         assertEquals("warm", span.attributes.get(RumConstants.START_TYPE_KEY))
-        assertTrue(span.events.none { it.name == "app.start.phase.initial_display" })
+        assertTrue(span.events.none { it.name == TTID })
     }
+
+    /** A tracer that has already seen its activity once, so a creation is a warm start. */
+    private fun warmTracerFor(activity: Activity) =
+        ActivityTracer(
+            activity = activity,
+            activeSpan = activeSpan,
+            tracer = tracer,
+            appStartupTimer = appStartupTimer,
+            initialAppActivity = "Activity",
+        )
+
 
     @Test
     fun create_initialActivity_firstTime() {
