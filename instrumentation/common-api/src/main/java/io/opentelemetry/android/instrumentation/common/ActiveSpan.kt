@@ -37,6 +37,21 @@ class ActiveSpan(
         scope = span?.makeCurrent()
     }
 
+    /**
+     * Pops the span off the current thread's context while leaving it open in this holder.
+     *
+     * [startSpan] makes the span current, and [endActiveSpan] is what normally closes that scope.
+     * A caller that defers the end to a later callback would otherwise keep the span current for
+     * the whole wait, so anything started on this thread in between would be parented to it. This
+     * lets the end be deferred without extending how long the span stays current.
+     */
+    fun closeScopeOnly() {
+        scope?.let {
+            it.close()
+            scope = null
+        }
+    }
+
     fun endActiveSpan() {
         scope?.let {
             it.close()

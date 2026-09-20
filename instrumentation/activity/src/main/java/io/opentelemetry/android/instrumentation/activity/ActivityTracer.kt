@@ -160,6 +160,11 @@ internal class ActivityTracer(
      */
     private fun deferEndUntilFirstDraw(activity: Activity): Boolean {
         val deferred = activeSpan.currentSpan() ?: return false
+        // Pop the span off the main thread now, keeping it current for exactly as long as it was
+        // before the end was deferred. Without this, anything started from onResume -- a profile
+        // fetch, a database open, a coroutine -- would be parented to app.start purely because it
+        // happened to be spawned while waiting for a frame.
+        activeSpan.closeScopeOnly()
         return FirstDrawNotifier.onNextDraw(activity) {
             if (activeSpan.currentSpan() === deferred) {
                 activeSpan.addEvent(AppStartupTimer.EVENT_TTID)

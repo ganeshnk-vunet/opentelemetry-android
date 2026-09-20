@@ -10,6 +10,7 @@ import io.mockk.every
 import io.mockk.impl.annotations.RelaxedMockK
 import io.mockk.junit5.MockKExtension
 import io.mockk.mockk
+import io.opentelemetry.api.trace.Span
 import io.mockk.slot
 import io.mockk.just
 import io.mockk.Runs
@@ -250,6 +251,58 @@ class ActivityTracerTest {
         assertTrue(appStart.events.none { it.name == "app.start.phase.initial_display" })
         // The unrelated span is still open -- the stale callback did not close it.
         assertTrue(activeSpan.spanInProgress())
+    }
+
+    /**
+     * Deferring the end must not extend how long the span stays current on the main thread.
+     * `ActiveSpan.startSpan` calls `makeCurrent()`, so anything started from onResume while the
+     * scope was open -- a profile fetch, a database open, a coroutine -- would be parented to
+     * app.start purely for having been spawned during the wait for a frame.
+     */
+    @Test
+    fun warmStart_popsTheSpanOffTheThreadBeforeWaitingForTheFrame() {
+        val activity = mockk<Activity>()
+        val decorView = mockk<android.view.View>(relaxed = true)
+        val observer = mockk<android.view.ViewTreeObserver>(relaxed = true)
+        val window = mockk<android.view.Window>(relaxed = true)
+        every { window.decorView } returns decorView
+        every { activity.window } returns window
+        every { decorView.viewTreeObserver } returns observer
+        every { observer.isAlive } returns true
+        val drawListener = slot<android.view.ViewTreeObserver.OnDrawListener>()
+        every { observer.addOnDrawListener(capture(drawListener)) } just Runs
+        val posted = slot<Runnable>()
+        every { decorView.post(capture(posted)) } returns true
+
+        val trackableTracer =
+            ActivityTracer(
+                activity = activity,
+                activeSpan = activeSpan,
+                tracer = tracer,
+                appStartupTimer = appStartupTimer,
+                initialAppActivity = "Activity",
+            )
+        val beforeStart = Span.current().spanContext.spanId
+        trackableTracer.startActivityCreation()
+        val whileCreating = Span.current().spanContext.spanId
+        trackableTracer.endSpanForActivityResumed(activity)
+        val afterResumed = Span.current().spanContext.spanId
+
+        // The span becomes current while the activity is being created, and must be popped back
+        // off once resumed returns -- even though the span itself stays open awaiting the frame.
+        // Compared against the context in place beforehand rather than asserting invalidity, so
+        // ambient context from another test cannot mask a real leak.
+        assertNotEquals(beforeStart, whileCreating)
+        assertEquals(beforeStart, afterResumed)
+        assertTrue(activeSpan.spanInProgress())
+        assertTrue(otelTesting.spans.isEmpty())
+
+        drawListener.captured.onDraw()
+        posted.captured.run()
+
+        val span = this.singleSpan
+        assertEquals("warm", span.attributes.get(RumConstants.START_TYPE_KEY))
+        assertTrue(span.events.any { it.name == "app.start.phase.initial_display" })
     }
 
     /** No window to observe: end immediately rather than wait for a callback that cannot arrive. */
