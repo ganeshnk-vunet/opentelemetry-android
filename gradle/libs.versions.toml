@@ -65,6 +65,8 @@ kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutine
 opentelemetry-exporter-logging = { module = "io.opentelemetry:opentelemetry-exporter-logging" }
 opentelemetry-diskBuffering = { module = "io.opentelemetry.contrib:opentelemetry-disk-buffering", version.ref = "opentelemetry-contrib" }
 opentelemetry-processors = { module = "io.opentelemetry.contrib:opentelemetry-processors", version.ref = "opentelemetry-contrib" }
+wire-runtime = { module = "com.squareup.wire:wire-runtime", version = "6.4.5" }
+jackson-core = { module = "com.fasterxml.jackson.core:jackson-core", version = "2.21.7" }
 opentelemetry-exporter-otlp = { module = "io.opentelemetry:opentelemetry-exporter-otlp" }
 auto-service-annotations = { module = "com.google.auto.service:auto-service-annotations", version.ref = "autoService" }
 auto-service-processor = { module = "dev.zacsweers.autoservice:auto-service-ksp", version.ref = "autoServiceProcessor" }
