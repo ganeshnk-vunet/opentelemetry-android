@@ -71,6 +71,9 @@ dependencies {
     implementation(libs.opentelemetry.semconv.incubating)
     implementation(libs.opentelemetry.diskBuffering)
     implementation(libs.opentelemetry.processors)
+    // CVE-2026-45799, CVE-2026-63126, CVE-2026-68494, CVE-2026-89407, CVE-2026-89425: contrib still pulls the vulnerable versions
+    implementation(libs.wire.runtime)
+    implementation(libs.jackson.core)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.awaitility)
     testImplementation(libs.robolectric)
