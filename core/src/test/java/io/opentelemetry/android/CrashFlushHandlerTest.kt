@@ -27,6 +27,8 @@ class CrashFlushHandlerTest {
     @BeforeEach
     fun setUp() {
         previousHandler = Thread.getDefaultUncaughtExceptionHandler()
+        // Earlier tests that build a real SDK leave their crash handler installed; don't chain into it.
+        Thread.setDefaultUncaughtExceptionHandler(null)
     }
 
     @AfterEach
