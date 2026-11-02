@@ -111,8 +111,12 @@ class OpenTelemetryRumBuilderTest {
     @MockK
     private lateinit var connectivityManager: ConnectivityManager
 
+    // build() installs a JVM-wide crash handler; put the previous one back so later test classes don't inherit it.
+    private var previousUncaughtExceptionHandler: Thread.UncaughtExceptionHandler? = null
+
     @Before
     fun setup() {
+        previousUncaughtExceptionHandler = Thread.getDefaultUncaughtExceptionHandler()
         MockKAnnotations.init(this, relaxed = true)
         every { application.applicationContext } returns applicationContext
         every { application.mainLooper } returns looper
@@ -129,6 +133,11 @@ class OpenTelemetryRumBuilderTest {
         set(null)
         AppStartSpans.clear()
         BridgedSpans.clear()
+    }
+
+    @After
+    fun restoreUncaughtExceptionHandler() {
+        Thread.setDefaultUncaughtExceptionHandler(previousUncaughtExceptionHandler)
     }
 
     @Test
